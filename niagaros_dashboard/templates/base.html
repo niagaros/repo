@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Niagaros Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">🧊</span>
+        <strong>Niagaros</strong> <span class="muted">Local Dashboard</span>
+      </div>
+      <nav class="nav">
+        <a href="/" class="active">Dashboard</a>
+        <a href="#" title="Coming soon">Logs</a>
+        <a href="#" title="Coming soon">Settings</a>
+      </nav>
+    </header>
+
+    <main class="container">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+      <span>© {{ now.year if now else "2025" }} Niagaros</span>
+      <span class="muted">AWS log integration placeholder</span>
+    </footer>
+  </body>
+</html>

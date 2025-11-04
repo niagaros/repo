@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="intro">
+  <h1>Dashboard</h1>
+  <p class="muted">
+    Running locally with Python (Flask), HTML, and CSS.
+    This is a starter you can extend to show AWS logs later.
+  </p>
+</section>
+
+<section class="grid">
+  {% for w in widgets %}
+  <div class="card">
+    <div class="card-title">{{ w.title }}</div>
+    <div class="metric">{{ w.value }}</div>
+    <div class="footnote">{{ w.footnote }}</div>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <h2>Recent Events</h2>
+    <div class="actions">
+      <button disabled title="Connect AWS first">Refresh</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 160px;">Time</th>
+          <th style="width: 220px;">Service</th>
+          <th style="width: 120px;">Level</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.time }}</td>
+          <td>{{ r.service }}</td>
+          <td><span class="badge">{{ r.level }}</span></td>
+          <td class="mono">{{ r.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="next-steps">
+  <h3>Next steps: connect AWS logs</h3>
+  <ol>
+    <li>Create an AWS Lambda that runs CloudWatch Logs Insights queries.</li>
+    <li>Expose it via API Gateway (enable CORS).</li>
+    <li>Replace the placeholder data in <code>app.py</code> by calling your API with <code>requests</code> or <code>boto3</code>.</li>
+  </ol>
+  <p class="muted">
+    Tip: add a <code>/health</code> route and a <code>/api/logs</code> route later
+    if you want to proxy requests.
+  </p>
+</section>
+{% endblock %}
