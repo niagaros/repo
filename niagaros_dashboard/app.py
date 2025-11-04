@@ -13,14 +13,31 @@ app = Flask(
 )
 
 FAKE_WIDGETS = [
-    {"title": "Total Events (last hour)", "value": 0, "footnote": ""},
-    {"title": "Errors (last 24h)", "value": 0, "footnote": ""},
-    {"title": "Active Services", "value": 0, "footnote": ""},
-    {"title": "Avg Response (ms)", "value": 0, "footnote": ""},
+    {"title": "Total keys", "value": 0, "footnote": ""},
+    {"title": "Active keys", "value": 0, "footnote": ""},
+    {"title": "Inactive keys", "value": 0, "footnote": ""},
+    {"title": "Outdated keys", "value": 0, "footnote": ""},
 ]
 
 FAKE_TABLE = [
-    {"Access keys": "—", "Active": "—", "date": "—", "message": "Need attention"},
+    {
+        "access_key": "AKIAIOSFODNN7EXAMPLE",
+        "active": "Yes",
+        "date": "2025-11-04 10:30",
+        "message": "Key last used to access S3 bucket niagaros-data"
+    },
+    {
+        "access_key": "AKIA6ZVR3D4YEXAMPLE",
+        "active": "No",
+        "date": "2025-10-28 16:45",
+        "message": "Key was deactivated by admin"
+    },
+    {
+        "access_key": "AKIA9ABCD1234EXAMPLE",
+        "active": "Yes",
+        "date": "2025-11-03 08:15",
+        "message": "Key rotated successfully"
+    }
 ]
 
 @app.route("/")

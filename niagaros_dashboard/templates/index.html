@@ -27,23 +27,24 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr>
-          <th style="width: 160px;">Time</th>
-          <th style="width: 220px;">Service</th>
-          <th style="width: 120px;">Level</th>
-          <th>Message</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in rows %}
-        <tr>
-          <td>{{ r.time }}</td>
-          <td>{{ r.service }}</td>
-          <td><span class="badge">{{ r.level }}</span></td>
-          <td class="mono">{{ r.message }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
+  <tr>
+    <th style="width: 240px;">Access Key</th>
+    <th style="width: 100px;">Active</th>
+    <th style="width: 180px;">Date</th>
+    <th>Message</th>
+  </tr>
+</thead>
+<tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="mono">{{ r.access_key }}</td>
+    <td><span class="badge">{{ r.active }}</span></td>
+    <td>{{ r.date }}</td>
+    <td class="mono">{{ r.message }}</td>
+  </tr>
+  {% endfor %}
+</tbody>
+
     </table>
   </div>
 </section>
