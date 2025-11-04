@@ -3,8 +3,7 @@
 <section class="intro">
   <h1>Dashboard</h1>
   <p class="muted">
-    Running locally with Python (Flask), HTML, and CSS.
-    This is a starter you can extend to show AWS logs later.
+    AWS Access keys filter
   </p>
 </section>
 
@@ -50,15 +49,10 @@
 </section>
 
 <section class="next-steps">
-  <h3>Next steps: connect AWS logs</h3>
+  <h3>AWS logs</h3>
   <ol>
-    <li>Create an AWS Lambda that runs CloudWatch Logs Insights queries.</li>
-    <li>Expose it via API Gateway (enable CORS).</li>
-    <li>Replace the placeholder data in <code>app.py</code> by calling your API with <code>requests</code> or <code>boto3</code>.</li>
   </ol>
   <p class="muted">
-    Tip: add a <code>/health</code> route and a <code>/api/logs</code> route later
-    if you want to proxy requests.
   </p>
 </section>
 {% endblock %}
