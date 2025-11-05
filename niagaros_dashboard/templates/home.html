@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Hero with big centered logo -->
+<section class="hero" id="hero">
+  <div class="hero-inner">
+    <img class="hero-logo" src="{{ url_for('static', filename='logo.png') }}" alt="Niagaros logo" />
+    <h1 class="hero-title"></h1>
+    <p class="muted hero-tagline">Choose a dashboard to get started</p>
+  </div>
+</section>
+
+<!-- Dashboard cards -->
+<section class="grid hero-grid">
+  <a class="card link-card" href="{{ url_for('access_keys') }}">
+    <div class="card-title">Access Keys</div>
+    <div class="footnote">View total, active, and inactive IAM keys</div>
+  </a>
+
+  <a class="card link-card" href="{{ url_for('logs') }}">
+    <div class="card-title">Logs</div>
+    <div class="footnote">CloudWatch / CloudTrail dashboards (coming soon)</div>
+  </a>
+
+  <a class="card link-card" href="{{ url_for('metrics') }}">
+    <div class="card-title">Metrics</div>
+    <div class="footnote">Service health and app metrics (coming soon)</div>
+  </a>
+
+  <a class="card link-card" href="{{ url_for('settings') }}">
+    <div class="card-title">Settings</div>
+    <div class="footnote">Profiles, regions, and preferences (coming soon)</div>
+  </a>
+</section>
+
+<!-- Fade logo on scroll -->
+<script>
+(function () {
+  const root = document.documentElement;
+  function onScroll() {
+    const fadeDistance = 180; // shorter fade
+    const p = Math.min(1, Math.max(0, window.scrollY / fadeDistance));
+    root.style.setProperty('--hero-opacity', (1 - p).toString());
+  }
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
+})();
+</script>
+
+{% endblock %}
+
+

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="intro">
+  <h1>Access Keys</h1>
+  <p class="muted">Totals come from IAM (or placeholders if AWS isn’t connected yet).</p>
+</section>
+
+<section class="grid">
+  {% for w in widgets %}
+  <div class="card">
+    <div class="card-title">{{ w.title }}</div>
+    <div class="metric">{{ w.value }}</div>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <h2>Keys Overview</h2>
+    <div class="actions">
+      <button disabled title="Connect AWS first">Refresh</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 240px;">Access Key</th>
+          <th style="width: 100px;">Active</th>
+          <th style="width: 180px;">Date</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="mono">{{ r.access_key }}</td>
+          <td><span class="badge">{{ r.active }}</span></td>
+          <td>{{ r.date }}</td>
+          <td class="mono">{{ r.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

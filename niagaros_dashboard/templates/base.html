@@ -3,21 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Niagaros Dashboard</title>
+    <title>Niagaros</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">
-        <span class="logo">🧊</span>
-        <strong>Niagaros</strong> <span class="muted">Dashboard</span>
-      </div>
-      <nav class="nav">
-        <a href="/" class="active">Dashboard</a>
-        <a href="#" title="Coming soon">Logs</a>
-        <a href="#" title="Coming soon">Settings</a>
-      </nav>
-    </header>
+  <div class="brand">
+    <strong>Niagaros Dashboard</strong>
+  </div>
+
+
+  <nav class="nav">
+    <a href="{{ url_for('home') }}" class="{{ 'active' if active_page=='home' else '' }}">Home</a>
+    <a href="{{ url_for('access_keys') }}" class="{{ 'active' if active_page=='access-keys' else '' }}">Access Keys</a>
+    <a href="{{ url_for('logs') }}" class="{{ 'active' if active_page=='logs' else '' }}">Logs</a>
+    <a href="{{ url_for('metrics') }}" class="{{ 'active' if active_page=='metrics' else '' }}">Metrics</a>
+    <a href="{{ url_for('settings') }}" class="{{ 'active' if active_page=='settings' else '' }}">Settings</a>
+  </nav>
+</header>
+
 
     <main class="container">
       {% block content %}{% endblock %}
@@ -25,7 +29,8 @@
 
     <footer class="footer">
       <span>© {{ now.year if now else "2025" }} Niagaros</span>
-      <span class="muted">AWS logs</span>
+      <span class="muted"></span>
     </footer>
   </body>
 </html>
+
