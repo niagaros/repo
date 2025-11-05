@@ -1,12 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Hero with big centered logo -->
-<section class="hero" id="hero">
+<!-- Hero with GIF + logo on left, text on right -->
+<section class="hero hero-split" id="hero">
   <div class="hero-inner">
-    <img class="hero-logo" src="{{ url_for('static', filename='logo.png') }}" alt="Niagaros logo" />
-    <h1 class="hero-title"></h1>
-    <p class="muted hero-tagline">Choose a dashboard to get started</p>
+    <div class="hero-left">
+      <div class="gif-box">
+  <img class="hero-gif" src="{{ url_for('static', filename='niagaros.gif') }}" alt="Niagaros animation" />
+    </div>
+
+    </div>
+    <div class="hero-right">
+      <h1 class="hero-title">Niagaros Dashboard Overview</h1>
+      <p class="hero-subtitle">Have an overview of your recourses on different clouds using Niagaros</p>
+    </div>
   </div>
 </section>
 
@@ -33,12 +40,11 @@
   </a>
 </section>
 
-<!-- Fade logo on scroll -->
 <script>
 (function () {
   const root = document.documentElement;
   function onScroll() {
-    const fadeDistance = 180; // shorter fade
+    const fadeDistance = 220;
     const p = Math.min(1, Math.max(0, window.scrollY / fadeDistance));
     root.style.setProperty('--hero-opacity', (1 - p).toString());
   }
@@ -47,6 +53,9 @@
 })();
 </script>
 
+
 {% endblock %}
+
+
 
 

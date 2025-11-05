@@ -9,10 +9,8 @@
   <body>
     <header class="topbar">
   <div class="brand">
-    <strong>Niagaros Dashboard</strong>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Niagaros logo" class="nav-logo" />
   </div>
-
-
   <nav class="nav">
     <a href="{{ url_for('home') }}" class="{{ 'active' if active_page=='home' else '' }}">Home</a>
     <a href="{{ url_for('access_keys') }}" class="{{ 'active' if active_page=='access-keys' else '' }}">Access Keys</a>
@@ -21,6 +19,7 @@
     <a href="{{ url_for('settings') }}" class="{{ 'active' if active_page=='settings' else '' }}">Settings</a>
   </nav>
 </header>
+
 
 
     <main class="container">

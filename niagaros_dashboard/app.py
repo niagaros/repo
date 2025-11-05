@@ -112,6 +112,7 @@ def _debug():
         "files_in_templates": files
     }
 
+
 if __name__ == "__main__":
     app.run(debug=True)
 
