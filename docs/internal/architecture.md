@@ -1,108 +1,106 @@
-# ☁️ Cloud Security Platform – Architectuur Overzicht
+# ☁️ Cloud Security Platform – Architecture Overview
 
-Dit document beschrijft de technische architectuur van ons cloud security platform, geïnspireerd op oplossingen zoals Wiz en Orca Security.  
-Het platform analyseert klantomgevingen in AWS op risico’s, misconfiguraties en beveiligingsproblemen via een agentless scanner.
+This document describes the technical architecture of our cloud security platform, inspired by solutions like Wiz and Orca Security.  
+The platform analyzes customer environments in AWS for risks, misconfigurations, and security issues using an agentless scanner.
 
-## 🗺️ Architectuurdiagram
+## 🗺️ Architecture Diagram
 
 <p align="center">
-  <img src="./docs/images/ArchitectuurNiagaros.png" width="80%" alt="Architectuurdiagram Niagaros">
+  <img src="./docs/images/ArchitectureNiagaros.png" width="80%" alt="Niagaros Architecture Diagram">
 </p>
 
-<p align="center"><em>Figuur 1: Overzicht van de Niagaros Cloud Security Architectuur</em></p>
+<p align="center"><em>Figure 1: Overview of the Niagaros Cloud Security Architecture</em></p>
 
 ## Lambda Scanner
-De **Lambda Scanner** is het hart van de scan-engine.  
-Deze functie voert periodieke of on-demand scans uit bij klantomgevingen via **AWS STS AssumeRole** om tijdelijke toegang te verkrijgen.  
-De Lambda haalt metadata op van cloudresources (S3, EC2, IAM, etc.) en zet deze om in gestructureerde data.  
-De resultaten worden doorgestuurd naar DynamoDB voor analyse en rapportage.
+The **Lambda Scanner** is the core of the scan engine.  
+This function performs periodic or on-demand scans in customer environments using **AWS STS AssumeRole** to obtain temporary access.  
+The Lambda retrieves metadata from cloud resources (S3, EC2, IAM, etc.) and converts it into structured data.  
+The results are forwarded to DynamoDB for analysis and reporting.
 
 ---
 
 ## Amazon API Gateway
-De **API Gateway** fungeert als de beveiligde ingang van de backend.  
-Het ontvangt verzoeken vanuit de frontend (zoals "start scan" of "haal resultaten op") en routeert ze naar de juiste Lambda-functies.  
-Daarnaast verzorgt het authenticatie, throttling, logging en requestvalidatie.  
-Dit zorgt voor schaalbare en veilige communicatie tussen frontend en backend.
+The **API Gateway** serves as the secure entry point of the backend.  
+It receives requests from the frontend (such as “start scan” or “fetch results”) and routes them to the correct Lambda functions.  
+Additionally, it handles authentication, throttling, logging, and request validation.  
+This ensures scalable and secure communication between the frontend and backend.
 
 ---
 
-## Externe AWS (Klantomgeving)
-De **klantomgeving** bevat de AWS-resources die worden geanalyseerd.  
-Onze Lambda Scanner gebruikt tijdelijke STS-credentials om in te loggen via een trust policy.  
-Er worden enkel **read-only** API-calls uitgevoerd (geen wijzigingen).  
-Zo blijft de klantomgeving volledig veilig en controleerbaar.
+## External AWS (Customer Environment)
+The **customer environment** contains the AWS resources being analyzed.  
+Our Lambda Scanner uses temporary STS credentials to log in through a trust policy.  
+Only **read-only** API calls are performed (no changes).  
+This keeps the customer environment fully secure and controllable.
 
 ---
 
 ## AWS IAM (Assume Role + Permissions)
-De klant maakt een **IAM Role** aan met beperkte leesrechten.  
-Deze Role vertrouwt uitsluitend ons AWS-account via een trust policy.  
-Onze Lambda gebruikt **AssumeRole** om tijdelijke toegang te krijgen en voert daarna de scans uit.  
-Geen permanente sleutels of agenten zijn nodig.
+The customer creates an **IAM Role** with restricted read privileges.  
+This Role only trusts our AWS account through a trust policy.  
+Our Lambda uses **AssumeRole** to obtain temporary access and then performs the scans.  
+No permanent keys or agents are required.
 
 ---
 
-## AWS Resources (S3, EC2, VPC, RDS, enz.)
-Dit zijn de daadwerkelijke componenten die worden gecontroleerd.  
-De Scanner bekijkt configuraties, permissies en security settings van deze resources.  
-Risico’s zoals open S3-buckets of zwakke IAM-policies worden gedetecteerd.  
-De ruwe scanresultaten worden vervolgens verwerkt door een tweede Lambda.
+## AWS Resources (S3, EC2, VPC, RDS, etc.)
+These are the actual components being checked.  
+The Scanner reviews configurations, permissions, and security settings of these resources.  
+Risks such as publicly accessible S3 buckets or weak IAM policies are detected.  
+The raw scan results are then processed by a second Lambda.
 
 ---
 
 ## DynamoDB
-**DynamoDB** slaat alle verwerkte scanresultaten en risico’s op.  
-De database is snel, serverless en ideaal voor real-time dashboards.  
-Elk record bevat informatie zoals resource-ID, tenant-ID, ernst, en detectietijd.  
-Hieruit kan de frontend direct inzichten halen zonder zware queries.
+**DynamoDB** stores all processed scan results and risks.  
+The database is fast, serverless, and ideal for real-time dashboards.  
+Each record contains information such as resource ID, tenant ID, severity, and detection timestamp.  
+The frontend can directly fetch insights without heavy querying.
 
 ---
 
 ## Lambda (Data Processing)
-Deze **verwerkings-Lambda** filtert, classificeert en prioriteert scanresultaten.  
-Hij verrijkt data met context (bijv. “critical” of “compliant”).  
-De functie schrijft de opgeschoonde data naar DynamoDB.  
-Zo blijft de dataset overzichtelijk en bruikbaar voor rapportage en visualisatie.
+This **processing Lambda** filters, classifies, and prioritizes scan results.  
+It enriches data with context (e.g., “critical” or “compliant”).  
+The function writes the refined data into DynamoDB.  
+This keeps the dataset clean and useful for reporting and visualization.
 
 ---
 
 ## GitHub + CI/CD Pipeline
-De codebase staat in **GitHub** en wordt automatisch gedeployed via een **CI/CD-pijplijn** (AWS CodePipeline of GitHub Actions).  
-Elke wijziging triggert automatische tests en builds.  
-Succesvolle builds worden direct gedeployed naar de AWS-omgeving.  
-Dit garandeert snelle iteraties en veilige releases.
+The codebase resides in **GitHub** and is automatically deployed via a **CI/CD pipeline** (AWS CodePipeline or GitHub Actions).  
+Each update triggers automated tests and builds.  
+Successful builds are deployed directly into the AWS environment.  
+This ensures fast iterations and secure releases.
 
 ---
 
 ## Amplify (Domain Hosting)
-**AWS Amplify** host de frontend webapplicatie en koppelt deze aan een domein.  
-Het biedt automatische builds, HTTPS-beveiliging en versiebeheer via GitHub-integratie.  
-Amplify zorgt dat de webapp altijd up-to-date is met de laatste backendfunctionaliteit.  
-Het is de centrale interface voor klanten om risico’s en rapportages te bekijken.
+**AWS Amplify** hosts the frontend web application and connects it to a domain.  
+It provides automated builds, HTTPS security, and versioning through GitHub integration.  
+Amplify ensures that the web-app is always up-to-date with the latest backend capabilities.  
+It is the central interface for customers to review risks and reports.
 
 ---
 
 ## AWS Cognito (User Database)
-**Cognito** regelt gebruikersauthenticatie en -autorisatie.  
-Gebruikers loggen in via e-mail of Single Sign-On (bijv. Google of Microsoft).  
-Cognito genereert beveiligde JWT-tokens voor API-verificatie.  
-Het zorgt ervoor dat alleen geautoriseerde gebruikers toegang hebben tot hun data.
+**Cognito** handles user authentication and authorization.  
+Users log in via email or Single Sign-On (e.g., Google or Microsoft).  
+Cognito generates secure JWT tokens for API verification.  
+It ensures only authorized users can access their data.
 
 ---
 
 ## Front-end Web (Dashboard)
-De **frontend webapp** is gebouwd in React of Next.js en toont risico-analyses en compliance-statussen.  
-Het haalt gegevens op via API Gateway en visualiseert deze met interactieve grafieken.  
-Klanten kunnen scans starten, resultaten filteren en rapporten exporteren.  
-De frontend communiceert uitsluitend via beveiligde HTTPS-verbindingen.
+The **frontend web application** is built in React or Next.js and displays risk analysis and compliance statuses.  
+It retrieves data via API Gateway and visualizes it through interactive charts.  
+Customers can start scans, filter results, and export reports.  
+The frontend communicates exclusively over secure HTTPS connections.
 
 ---
 
 ## Amazon CloudWatch (Monitoring & Debugging)
-**CloudWatch** verzamelt logs, metrics en alarmen van alle AWS-componenten.  
-Het helpt bij het monitoren van prestaties, foutopsporing en uptime-bewaking.  
-Automatische alerts signaleren problemen of mislukte scans direct.  
-Essentieel voor stabiliteit, debugging en incident response.
-
----
+**CloudWatch** collects logs, metrics, and alerts from all AWS components.  
+It helps monitor performance, debug issues, and maintain uptime.  
+Automatic alerts notify of problems or failed scans immediately.  
+It is essential for stability, troubleshooting, and incident response.
