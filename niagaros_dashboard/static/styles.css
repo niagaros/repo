@@ -16,17 +16,119 @@ html, body{
   font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
+/* ---------- Topbar / dropdown base ---------- */
 .topbar {
+  position: relative;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 24px;
-  background-color: var(--bg);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  height: 56px;
+  padding: 0 16px;
+  background: var(--topbar-bg, #0f1724);
+  box-sizing: border-box;
+  overflow: visible; /* important so the menu isn't clipped */
+  z-index: 40;
 }
+
+/* container for hamburger + menu */
+.cloud-dropdown {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  z-index: 100;
+  display: inline-block;
+}
+
+/* hamburger button */
+.hamburger-btn {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.hamburger-btn:focus { outline: 2px solid rgba(99,102,241,0.22); outline-offset: 2px; }
+
+/* three bars */
+.hamburger-btn .bar {
+  display: block;
+  height: 2px;
+  width: 20px;
+  background: var(--text-color, #fff);
+  border-radius: 2px;
+}
+
+/* ---------- dropdown menu (opens downward) ---------- */
+.cloud-menu {
+  position: absolute;
+  top: calc(100% + 8px);  /* below the button */
+  left: 0;
+  min-width: 160px;
+  background: var(--menu-bg, #fff);
+  color: var(--menu-text, #111);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(2,6,23,0.45);
+  border: 1px solid rgba(0,0,0,0.08);
+  overflow: hidden;
+  transform-origin: top center;
+  transform: translateY(-6px) scaleY(0.98);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 180ms cubic-bezier(.2,.9,.2,1), opacity 160ms ease;
+  z-index: 120;
+}
+
+/* visible state */
+.cloud-dropdown.open .cloud-menu {
+  transform: translateY(0) scaleY(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* menu items */
+.cloud-item {
+  display: block;
+  padding: 10px 14px;
+  text-decoration: none;
+  color: inherit;
+  font-size: 14px;
+}
+.cloud-item:hover,
+.cloud-item:focus {
+  background: rgba(0,0,0,0.04);
+  outline: none;
+}
+
+/* keep nav out of the way */
+.nav { margin-left: auto; display:flex; gap:12px; align-items:center; }
+
+/* small screens */
+@media (max-width: 520px) {
+  .cloud-dropdown { left: 8px; }
+  .hamburger-btn { width: 36px; height: 36px; }
+  .cloud-menu { min-width: 140px; top: calc(100% + 6px); }
+}
+
+
+/* Make sure nav does not overlap (push nav to the right) */
+.nav {
+  margin-left: auto; /* nav on the right; hamburger stays left */
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.nav a { color: var(--text-color, #fff); text-decoration: none; padding: 6px 8px; border-radius: 6px; }
+.nav a.active { background: rgba(255,255,255,0.04); }
+
+
+
 
 .brand {
   display: flex;

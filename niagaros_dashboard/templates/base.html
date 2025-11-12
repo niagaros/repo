@@ -6,11 +6,112 @@
     <title>Niagaros</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
+
+  <script>
+(function() {
+  const dropdown = document.getElementById('cloudDropdown');
+  const btn = document.getElementById('cloudBtn');
+  const menu = document.getElementById('cloudMenu');
+
+  function openMenu() {
+    dropdown.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    menu.setAttribute('aria-hidden', 'false');
+    // focus first item for keyboard users
+    const first = menu.querySelector('[role="menuitem"]');
+    if (first) first.focus();
+  }
+
+  function closeMenu() {
+    dropdown.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-hidden', 'true');
+  }
+
+  function toggleMenu(e) {
+    if (dropdown.classList.contains('open')) closeMenu();
+    else openMenu();
+  }
+
+  // click toggles
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    toggleMenu();
+  });
+
+  // keyboard on the button
+  btn.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      openMenu();
+    } else if (e.key === 'Escape') {
+      closeMenu();
+    }
+  });
+
+  // keyboard navigation inside menu
+  menu.addEventListener('keydown', function(e) {
+    const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+    const idx = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = items[(idx + 1) % items.length];
+      next && next.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = items[(idx - 1 + items.length) % items.length];
+      prev && prev.focus();
+    } else if (e.key === 'Escape') {
+      closeMenu();
+      btn.focus();
+    }
+  });
+
+  // click outside to close
+  document.addEventListener('click', function(e) {
+    if (!dropdown.contains(e.target)) closeMenu();
+  });
+
+  // clicking an item closes the menu (and allows normal navigation)
+  menu.addEventListener('click', function(e) {
+    const item = e.target.closest('[role="menuitem"]');
+    if (item) {
+      closeMenu();
+      // let anchor navigate normally
+    }
+  });
+
+  // keep menu from being opened twice if other script exists:
+  // remove other event listeners on old elements if present (defensive)
+  // (No-op if nothing else attached)
+})();
+</script>
+
+
   <body>
     <header class="topbar">
-  <div class="brand">
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="Niagaros logo" class="nav-logo" />
+  <!-- Hamburger "logo" button (top-left) -->
+  <div class="cloud-dropdown" id="cloudDropdown">
+    <button
+      id="cloudBtn"
+      class="hamburger-btn"
+      aria-expanded="false"
+      aria-controls="cloudMenu"
+      aria-haspopup="true"
+      aria-label="Open cloud providers"
+    >
+      <span class="bar"></span>
+      <span class="bar"></span>
+      <span class="bar"></span>
+    </button>
+
+    <!-- Dropdown that opens downward -->
+    <div class="cloud-menu" id="cloudMenu" role="menu" aria-labelledby="cloudBtn" aria-hidden="true">
+      <a role="menuitem" href="#" class="cloud-item">AWS</a>
+      <a role="menuitem" href="#" class="cloud-item">Azure</a>
+    </div>
   </div>
+
   <nav class="nav">
     <a href="{{ url_for('home') }}" class="{{ 'active' if active_page=='home' else '' }}">Home</a>
     <a href="{{ url_for('access_keys') }}" class="{{ 'active' if active_page=='access-keys' else '' }}">Access Keys</a>
@@ -19,6 +120,55 @@
     <a href="{{ url_for('settings') }}" class="{{ 'active' if active_page=='settings' else '' }}">Settings</a>
   </nav>
 </header>
+
+
+
+
+<script>
+  (function() {
+    const dropdown = document.getElementById('cloudDropdown');
+    const btn = document.getElementById('cloudBtn');
+    const menu = document.getElementById('cloudMenu');
+
+    function closeDropdown() {
+      dropdown.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleDropdown() {
+      const open = dropdown.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) menu.querySelector('a')?.focus();
+    }
+
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      toggleDropdown();
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', function(e){
+      if (!dropdown.contains(e.target)) closeDropdown();
+    });
+
+    // keyboard support
+    btn.addEventListener('keydown', function(e){
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (!dropdown.classList.contains('open')) toggleDropdown();
+        menu.querySelector('a')?.focus();
+      }
+      if (e.key === 'Escape') closeDropdown();
+    });
+
+    menu.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') {
+        closeDropdown();
+        btn.focus();
+      }
+    });
+  })();
+</script>
 
 
 
