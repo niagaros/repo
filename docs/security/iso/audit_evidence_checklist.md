@@ -30,7 +30,7 @@ This checklist helps to ensure that sufficient and appropriate evidence is colle
 
 | Control Point | Check | How to Verify |
 |----------------|--------|--------------|
-| Has the authenticity of the evidence been confirmed? | [ ] | Validate timestamps, metadata, audit logs, or system tags. |
+| Has the authenticity of the evidence been confirmed? | [] | Validate timestamps, metadata, audit logs, or system tags. |
 | Is the evidence sufficient to prove the control is effective (not just exists)? | [ ] | Assess whether the evidence demonstrates *actual use*, not just documents. |
 | Has the auditor confirmed that no conflicting evidence exists? | [ ] | Cross-check different sources (e.g., policy vs system logs). |
 
