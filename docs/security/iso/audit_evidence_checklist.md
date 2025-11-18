@@ -9,7 +9,7 @@ This checklist helps to ensure that sufficient and appropriate evidence is colle
 
 | Control Point | Check | How to Verify |
 |----------------|--------|--------------|
-| Has evidence been identified for each control or requirement? | [ ] | Compare the evidence list with the Annex A checklist or audit scope. |
+| Has evidence been identified for each control or requirement? |  [ ] | Compare the evidence list with the Annex A checklist or audit scope. |
 | Is the type of evidence appropriate (documented, digital, interview, observation)? | [ ] | Validate that evidence matches audit criteria and provides proof (not assumptions or statements). |
 | Is the evidence relevant to the current version of the control or policy? | [ ] | Check version numbers, approval dates, and whether evidence matches the latest revision. |
 
@@ -30,7 +30,7 @@ This checklist helps to ensure that sufficient and appropriate evidence is colle
 
 | Control Point | Check | How to Verify |
 |----------------|--------|--------------|
-| Has the authenticity of the evidence been confirmed? | [] | Validate timestamps, metadata, audit logs, or system tags. |
+| Has the authenticity of the evidence been confirmed? | [ ] | Validate timestamps, metadata, audit logs, or system tags. |
 | Is the evidence sufficient to prove the control is effective (not just exists)? | [ ] | Assess whether the evidence demonstrates *actual use*, not just documents. |
 | Has the auditor confirmed that no conflicting evidence exists? | [ ] | Cross-check different sources (e.g., policy vs system logs). |
 
