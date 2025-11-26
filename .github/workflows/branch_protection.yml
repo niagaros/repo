@@ -1,0 +1,26 @@
+name: Validate PR Source Branches
+
+on:
+  pull_request:
+    branches:
+      - main
+      - acceptance
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source branch
+        run: |
+          TARGET="${{ github.base_ref }}"
+          SOURCE="${{ github.head_ref }}"
+          echo "Target: $TARGET"
+          echo "Source: $SOURCE"
+
+          # Only allow acceptance -> main
+          if [ "$TARGET" = "main" ] && [ "$SOURCE" != "acceptance" ]; then
+            echo "::error::Only pull requests from 'acceptance' may be merged into 'main'."
+            exit 1
+          fi
+
+          echo "✅ Branch validation passed."
