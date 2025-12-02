@@ -8,4 +8,5 @@ This space contains customer‑facing documentation for Niagaros.
 - **Environments** – how to get Niagaros running in your environment.
 - **Features** – feature guides and usage examples.
 - **Support** – getting started, FAQ, and contact options.
+- **Security** – Public security and compliance knowledge.
 
