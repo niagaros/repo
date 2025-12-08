@@ -11,10 +11,10 @@ This file is the entry point for navigating all Niagaros documentation.
   partners (integration guides, sales enablement, technical requirements).
 - `Images/` – shared visual assets (architecture diagrams, UI mockups) used by
   the docs above.
-- `_legacy/` – snapshot of the previous documentation tree for reference.
 
 Every major directory contains its own `overview.md` for more context. Start at
 the folder relevant to your audience (internal, public, partner) and work your
 way down.
+
 
 
