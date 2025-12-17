@@ -108,6 +108,8 @@ aws s3api list-buckets --query 'Buckets[].Name'
 1. **Keep only approved regions active:**  
    - eu-north-1 (primary workloads)  
    - us-east-1 (AWS global services)
+2. **Double check region**
+   - eu-west-1 (Has open AWS and cloudformation)
 2. **Disable all other regions** to reduce cost and security risk.
 3. **Implement recurring region audits** via CSPM:
    - Weekly scan
@@ -117,4 +119,20 @@ aws s3api list-buckets --query 'Buckets[].Name'
 ---
 
 ## 6. Conclusion
-The assessment provides a clear overview of Domits’ multi-region AWS environment. Limiting active regions and monitoring with CSPM reduces risk and simplifies cloud security management.
+
+After performing a full resource inventory across all AWS regions using automated scanning and manual verification, the following conclusions were reached:
+
+- **Only two regions contain active and relevant resources:**  
+  **eu-north-1** and **us-east-1**.  
+  These regions host the operational workloads such as Lambda functions, API Gateway, Cognito, Amplify, CloudFormation, and logging services.
+
+- **The region eu-west-1 required additional verification** because a CloudFormation stack (`amplify-domits-dev-a219c`) was detected.  
+  After further inspection, this stack was identified as an unused **development Amplify environment**, with no active deployments, domains, or linked services.  
+  It was confirmed safe to disable.
+
+- **All remaining regions contained only empty network defaults** (VPC, Subnets, Security Groups) and no compute, database, identity, or application services.  
+  These regions were validated as unused and have been **safely disabled** to reduce cost, attack surface, and operational complexity.
+
+**Outcome:**  
+The AWS environment now operates exclusively in **eu-north-1** and **us-east-1**, with all other regions disabled for security and cost optimization.
+
