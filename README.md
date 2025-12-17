@@ -115,3 +115,29 @@ Planned MVP deliverables:
 
 ---
 
+## Repository Structure
+
+- **`/.github`**  
+  GitHub configuration for this project, such as Actions workflows, security checks, and templates.  
+  Used to automate CI/CD and keep code quality and scans consistent across branches.
+
+- **`/frontend`**  
+  Frontend application that shows scan results, risks, and compliance status to users.  
+  It only talks to the backend API (no direct access to AWS) so all security logic stays server-side.  
+  Contains the main pages (`src/pages`), reusable UI components (`src/components`), API client (`src/services`), and the Amplify build/deploy config (`amplify.yml`).
+
+- **`/backend`**  
+  Serverless backend running on AWS Lambda + API Gateway.  
+  Responsible for collecting AWS configuration data, applying rules, and computing compliance so the frontend only receives already processed findings.  
+  Includes API handlers (`src/api`), the scan engine (`src/engine`), collectors for AWS services (`src/collectors`), declarative rules (`src/rules`), standards mapping (`src/standards`), post-processing (`src/postprocess`), shared utilities (`src/utils`), tests (`src/tests`), and runtime config (`src/config`), with infrastructure defined in `serverless.yml`.
+
+- **`/shared`**  
+  Shared types and constants that are used by both frontend and backend.  
+  Ensures both sides use the same structures and values for scan results, severities, and labels.
+
+- **`/docs`**  
+  Documentation and research for Niagaros.  
+  Explains the architecture, rule design, and standards mapping, and is used for onboarding and future product decisions.
+
+---
+
