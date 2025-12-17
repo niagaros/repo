@@ -31,7 +31,6 @@ This MVP lays the foundation for future expansion (multiple AWS services, multi-
   - Missing or weak encryption
   - Misconfigured bucket policies or ACLs
   - Missing logging or versioning
-  - Excessive IAM permissions
 - Risk rating (Low, Medium, High, Critical)
 - Basic output/reporting of findings (CLI or simple API)
 
@@ -44,21 +43,30 @@ This MVP lays the foundation for future expansion (multiple AWS services, multi-
 
 ---
 
-## Architecture (High-Level)
+## Architecture
 
-The MVP architecture consists of:
+The MVP architecture follows a simple flow from data collection to actionable results.
 
-1. **AWS Data Collector**  
-   Retrieves S3 configuration details using AWS SDK.
+![Niagaros CSPM Architecture Flow](docs/Images/ArchitectureFlow.png)
 
-2. **Rule Engine**  
-   Applies CIS Benchmarks/Controls, AWS best practices, and Niagaros-defined rules.
+At a high level, the platform consists of:
 
-3. **Risk Classifier**  
-   Evaluates findings and assigns a severity rating.
+1. **Front-end (Amplify)**  
+   A future web dashboard (behind Cognito auth) that will visualize findings and compliance status.
 
-4. **Results Output**  
-   Outputs findings as JSON, logs, or a basic report format.
+2. **API Layer (API Gateway + Lambda)**  
+   Exposes operations like starting scans and retrieving results, and validates JWTs from Cognito.
+
+3. **Engine**  
+   - **Collectors** – pull RAW AWS data (initially S3 configs) using the AWS SDK  
+   - **Rule Engine** – applies CIS/AWS best-practice rules and Niagaros-specific checks  
+   - **Standards Mapper & Post-Processor** – maps rules to frameworks (e.g. CIS AWS, GDPR), normalizes findings, and adds severity.
+
+4. **Results Storage**  
+   Persists normalized findings in DynamoDB and S3 for querying, reporting, and future dashboards.
+
+5. **Source Control & CI/CD (GitHub)**  
+   Houses the Niagaros repo structure and pipelines that deploy the engine and API to AWS.
 
 ---
 
