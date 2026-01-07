@@ -141,3 +141,19 @@ Planned MVP deliverables:
 
 ---
 
+## 📄 License
+
+This project is licensed under the MIT License.
+
+You are free to:
+- Use the code for personal or commercial purposes
+- Modify and distribute the code
+- Include it in proprietary or open-source projects
+
+Under the following conditions:
+- The original copyright and license notice must be included in any copies or substantial portions of the software
+- All contributions are assumed to be licensed under the same MIT License unless explicitly stated otherwise
+
+This software is provided “as is”, without warranty of any kind.
+
+See the [LICENSE](./LICENSE) file for full details.
