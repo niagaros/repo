@@ -134,5 +134,4 @@ After performing a full resource inventory across all AWS regions using automate
   These regions were validated as unused and have been **safely disabled** to reduce cost, attack surface, and operational complexity.
 
 **Outcome:**  
-The AWS environment now operates exclusively in **eu-north-1** and **us-east-1**, with all other regions disabled for security and cost optimization.
-
+The AWS environment now operates exclusively in **eu-north-1** and **us-east-1**, with all other resources in the regions disabled. Also an protection layer was added in wich it is not possible to add resources to an unused region, reducing the attack surface.
