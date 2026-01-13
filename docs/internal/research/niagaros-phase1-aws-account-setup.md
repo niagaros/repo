@@ -113,7 +113,7 @@ aws guardduty create-members \
 
 ## Verification
 
-- CloudTrail logging is ON
-- GuardDuty active across all accounts
+- IAM least privilage
+- Cloudwatch logs active
 - S3 logging bucket blocks public access
 
