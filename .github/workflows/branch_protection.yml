@@ -14,8 +14,14 @@ jobs:
         run: |
           TARGET="${{ github.base_ref }}"
           SOURCE="${{ github.head_ref }}"
-          echo "Target: $TARGET"
-          echo "Source: $SOURCE"
+          echo "Target branch: $TARGET"
+          echo "Source branch: $SOURCE"
+
+          # Allow all PRs to acceptance
+          if [ "$TARGET" = "acceptance" ]; then
+            echo "✅ PR to 'acceptance' is allowed."
+            exit 0
+          fi
 
           # Only allow acceptance -> main
           if [ "$TARGET" = "main" ] && [ "$SOURCE" != "acceptance" ]; then
