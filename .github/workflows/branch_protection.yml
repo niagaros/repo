@@ -3,8 +3,7 @@ name: Validate PR Source Branches
 on:
   pull_request:
     branches:
-      - main
-      - acceptance
+      - main  # Only trigger on PRs targeting main
 
 jobs:
   validate:
@@ -14,12 +13,17 @@ jobs:
         run: |
           TARGET="${{ github.base_ref }}"
           SOURCE="${{ github.head_ref }}"
-          echo "Target: $TARGET"
-          echo "Source: $SOURCE"
+          echo "Target branch: $TARGET"
+          echo "Source branch: $SOURCE"
 
-          # Only allow acceptance -> main
-          if [ "$TARGET" = "main" ] && [ "$SOURCE" != "acceptance" ]; then
+          # Only allow merges from 'acceptance' into 'main'
+          if [ "$SOURCE" != "acceptance" ]; then
             echo "::error::Only pull requests from 'acceptance' may be merged into 'main'."
+            exit 1
+          fi
+
+          echo "✅ PR source branch is valid."
+
             exit 1
           fi
 
