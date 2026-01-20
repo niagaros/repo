@@ -1,6 +1,6 @@
 # Niagaros CSPM (Cloud Security Posture Management) – MVP
 
-aiagaros is developing a Cloud Security Posture Management (CSPM) solution to help organizations identify security misconfigurations in their cloud environments.  
+Niagaros is developing a Cloud Security Posture Management (CSPM) solution to help organizations identify security misconfigurations in their cloud environments.  
 This repository contains the initial MVP version of the Niagaros CSPM platform, built specifically for **Domits** as the first pilot customer.
 
 The first iteration focuses exclusively on **AWS** and starts with a single resource type: **Amazon S3**.
