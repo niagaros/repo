@@ -37,12 +37,6 @@ _Select all that apply:_
 
 ---
 
-## 🔄 Refactoring / Non-Functional Changes
-_List files/modules reorganized without functional changes:_
-
-```text
-src/features/example.xx
-
 ## 📦 Dependencies
 - [ ] NPM packages added
 - [ ] NPM packages removed
