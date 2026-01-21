@@ -1,159 +1,298 @@
-# Niagaros CSPM (Cloud Security Posture Management) – MVP
+# Niagaros CNAPP (Cloud-Native Application Protection Platform)
 
-Niagaros is developing a Cloud Security Posture Management (CSPM) solution to help organizations identify security misconfigurations in their cloud environments.  
-This repository contains the initial MVP version of the Niagaros CSPM platform, built specifically for **Domits** as the first pilot customer.
+> **Niagaros CNAPP – MVP for Domits**  
+A unified cloud security platform focused on identifying, analyzing, and prioritizing misconfigurations across cloud-native environments.
 
-The first iteration focuses exclusively on **AWS** and starts with a single resource type: **Amazon S3**.
+---
+
+## Social Proof
+Niagaros is being actively developed and validated in collaboration with **Domits** as the first pilot customer. This MVP represents a real-world, production-focused implementation of Cloud Security Posture Management (CSPM) aligned with industry best practices and compliance frameworks.
+
+---
+
+## Introduction to Cloud Security
+
+Build a shared baseline on cloud and AI-native security concepts, roles, and controls:
+
+- **Cloud Security Glossary** – [niagaros.com/glossary](https://niagaros.com/glossary/)
+- **Cloud Security Skills Training (AWS, Azure, GCP, OCI)** – [niagaros.com/cloud-security-skills-training-aws-azure-gcp-oci/](https://niagaros.com/cloud-security-skills-training-aws-azure-gcp-oci/)
+- **Compliance Frameworks** – [niagaros.com/frameworks](https://niagaros.com/frameworks/)
+- **Cybersecurity Job Roles** – [niagaros.com/cybersecurity-job-roles](https://niagaros.com/cybersecurity-job-roles/)
+- **Unified Cloud Security Categories** – [niagaros.com/unified-cloud-security-categories](https://niagaros.com/unified-cloud-security-categories/)
+- **Cloud Security Risk Assessment** – [niagaros.com/cloud-security-risk-assessment](https://niagaros.com/cloud-security-risk-assessment/)
+
+---
+
+## What is Niagaros?
+
+**Niagaros** is developing a **CNAPP (Cloud-Native Application Protection Platform)** designed to provide organizations with a **unified security architecture** that protects cloud-native applications across their entire lifecycle — from development and deployment to runtime.
+
+CNAPP addresses the fragmentation of traditional cloud security tools by consolidating multiple security domains into a **single, integrated platform**.
+
+### CNAPP Coverage Areas
+
+- **CSPM** – Cloud Security Posture Management  
+- **CWPP** – Cloud Workload Protection Platform  
+- **CIEM** – Cloud Infrastructure Entitlements Management  
+- **UVM** – Unified Vulnerability Management  
+- **CDR** – Cloud Detection & Response  
+- **DSPM** – Data Security Posture Management  
+- **Container & Kubernetes Security**  
+- **Cloud Compliance & Governance**  
+- **AI-SPM** – AI Security Posture Management  
+- **SCA & SBOM** – Software Supply Chain Security  
+- **Sensor / Runtime Security**
+
+> **Current Focus:** The MVP focuses exclusively on **CSPM for AWS**, starting with  resource types Domits use like: **Amazon S3, IAM, Cloudwatch**.
+
+---
+
+## Table of Contents
+
+- [Introduction to Cloud Security](#introduction-to-cloud-security)  
+- [Project Overview](#project-overview)  
+- [MVP Scope](#mvp-scope)  
+- [Architecture](#architecture)  
+- [Why S3 First?](#why-s3-first)  
+- [Tech Stack](#tech-stack)  
+- [Development Status](#development-status)  
+- [Documentation Hubs](#documentation-hubs)  
+- [Repository Structure](#repository-structure)  
+- [Technical Leadership](#technical-leadership)  
+- [License](#-license)
 
 ---
 
 ## Project Overview
 
-Modern cloud environments introduce a wide range of security risks, especially when configurations are inconsistent or not continuously monitored. Domits currently lacks clear visibility into whether their AWS resources — particularly S3 buckets — are securely configured.
+Modern cloud environments introduce a wide range of security risks, especially when configurations are inconsistent or not continuously monitored. **Domits currently lacks clear visibility into whether their AWS resources — particularly S3 buckets — are securely configured.**
 
-Niagaros is creating a targeted CSPM solution that:
-- Analyzes AWS S3 configurations
-- Detects misconfigurations and security risks
-- Rates these risks by severity
-- Generates clear and actionable insights
+Niagaros provides a targeted CSPM solution that:
 
-This MVP lays the foundation for future expansion (multiple AWS services, multi-cloud support, dashboards, automated remediation, etc.).
+- Collects AWS configuration data  
+- Detects misconfigurations and security risks  
+- Maps findings to industry standards and compliance frameworks  
+- Rates risks by severity  
+- Produces clear, actionable security insights  
+
+This MVP lays the foundation for:
+
+- Multi-service AWS coverage  
+- Multi-cloud support (Azure, GCP)  
+- Dashboards and compliance scoring  
+- Automated remediation  
+- Continuous monitoring and alerting  
 
 ---
 
 ## MVP Scope
 
-### **Included**
-- AWS as the only cloud provider
-- S3 as the only supported service
-- Detection of S3 misconfigurations such as:
-  - Public exposure
-  - Missing or weak encryption
-  - Misconfigured bucket policies or ACLs
-  - Missing logging or versioning
-- Risk rating (Low, Medium, High, Critical)
-- Basic output/reporting of findings (CLI or simple API)
+### Included
 
-### **Excluded (for now)**
-- Additional AWS services (EC2, RDS, IAM, Lambda, etc.)
-- Multi-cloud support (Azure, GCP)
-- Automated remediation
-- Dashboard UI
-- Organization-wide posture scoring
+- **Cloud Provider:** AWS only  
+- **Service Coverage:** Amazon S3  
+- **Detection Capabilities:**  
+  - Public bucket exposure  
+  - Missing or weak encryption  
+  - Misconfigured bucket policies and ACLs  
+  - Missing access logging  
+  - Missing versioning  
+- **Risk Classification:** Low, Medium, High, Critical  
+- **Output:**  
+  - CLI output or simple API response  
+  - Normalized findings with metadata and severity  
+
+### Excluded (Planned for Future Phases)
+
+- Additional AWS services (EC2, RDS, IAM, Lambda, EKS, etc.)  
+- Multi-cloud support (Azure, GCP)  
+- Automated remediation  
+- Web-based dashboard UI  
+- Organization-wide posture scoring  
+- Alerting and integrations (Slack, SIEM, ticketing systems)  
 
 ---
 
 ## Architecture
 
-The MVP architecture follows a simple flow from data collection to actionable results.
-
 ![Niagaros CSPM Architecture Flow](docs/Images/ArchitectureFlow.png)
 
-At a high level, the platform consists of:
+### High-Level Flow
 
-1. **Front-end (Amplify)**  
-   A future web dashboard (behind Cognito auth) that will visualize findings and compliance status.
+1. **Frontend (Amplify Hosting)**  
+   A future web-based dashboard secured with **Amazon Cognito** for authentication. Displays findings, risk levels, and compliance mapping.
 
 2. **API Layer (API Gateway + Lambda)**  
-   Exposes operations like starting scans and retrieving results, and validates JWTs from Cognito.
+   Exposes endpoints to:  
+   - Trigger scans  
+   - Retrieve findings  
+   - Validate user identity via JWT tokens  
 
-3. **Engine**  
-   - **Collectors** – pull RAW AWS data (initially S3 configs) using the AWS SDK  
-   - **Rule Engine** – applies CIS/AWS best-practice rules and Niagaros-specific checks  
-   - **Standards Mapper & Post-Processor** – maps rules to frameworks (e.g. CIS AWS, GDPR), normalizes findings, and adds severity.
+3. **CSPM Engine**  
+   - **Collectors** – Pull raw AWS configuration data using the AWS SDK  
+   - **Rule Engine** – Applies CIS AWS Benchmarks and Niagaros security rules  
+   - **Standards Mapper** – Maps findings to compliance frameworks (CIS, GDPR, ISO 27001, etc.)  
+   - **Post-Processor** – Normalizes results and assigns severity  
 
 4. **Results Storage**  
-   Persists normalized findings in DynamoDB and S3 for querying, reporting, and future dashboards.
+   - **DynamoDB** – Structured findings and metadata  
+   - **Amazon S3** – Raw scan data and historical reports  
 
-5. **Source Control & CI/CD (GitHub)**  
-   Houses the Niagaros repo structure and pipelines that deploy the engine and API to AWS.
+5. **CI/CD & Source Control (GitHub + Amplify)**  
+   Automated pipelines for:  
+   - Testing  
+   - Security scanning  
+   - Deployment to AWS  
 
 ---
 
 ## Why S3 First?
 
-S3 buckets are one of the most commonly misconfigured AWS resources and often lead to:
+Amazon S3 is one of the most commonly misconfigured cloud services and a leading cause of:
+
 - Data exposure  
-- Public access issues  
-- Sensitive information leaks  
+- Public access leaks  
+- Sensitive information disclosure  
 - Compliance violations  
 
-Starting with S3 allows Niagaros to build a strong foundation while addressing Domits' security visibility needs.
+Starting with S3 allows Niagaros to:
+
+- Validate the rule engine architecture  
+- Establish standards mapping  
+- Prove value quickly for Domits  
+- Build a scalable foundation for future cloud services  
+
+---
+
+## Tech Stack
+
+- 🖥️ **Frontend:** React Native, JavaScript, TypeScript, SASS/SCSS  
+- 🧠 **Backend:** Node.js, AWS Lambda, PostgreSQL  
+- ☁️ **Cloud:** Amazon Web Services  
+- 🧪 **Testing:** Jest, Cypress  
+- 🚀 **CI/CD:** GitHub Actions, Amplify  
+- 📦 **Package Management:** npm  
+- 🪛 **Tooling:** TypeORM  
 
 ---
 
 ## Development Status
 
-This project is currently in **active development** as part of the Niagaros CSPM pilot for Domits.
+This project is currently in **active development** as part of the Niagaros CSPM pilot for **Domits**.
 
-Planned MVP deliverables:
-- [ ] S3 configuration scanner  
+### Planned MVP Deliverables
+
+- [ ] S3 configuration collector  
 - [ ] Core rule engine  
 - [ ] Risk scoring model  
-- [ ] Basic output formatting  
-- [ ] Documentation for setup and usage  
-- [ ] Initial validation against the Domits AWS environment  
+- [ ] Standards and compliance mapper  
+- [ ] CLI / API output formatter  
+- [ ] Setup and deployment documentation  
+- [ ] Validation in Domits AWS environment  
 
 ---
 
-## Technologies
+## Documentation Hubs
 
-- **AWS SDK (boto3 or AWS SDK for Node/Go/Python)**  
-- **Python or TypeScript (tech stack depends on final choice)**  
-- **CIS Benchmark for AWS**  
-- **AWS IAM, S3 APIs, CloudFormation metadata (optional)**  
-- **Niagaros internal risk model**  
+Niagaros documentation is structured to serve multiple audiences:
 
----
+- **`docs/internal`**  
+  Internal Niagaros documentation, including:  
+  - Product vision  
+  - Long-term roadmap  
+  - Architecture decisions  
+  - Security models  
 
-## Documentation
+- **`docs/public`**  
+  Public-facing documentation:  
+  - Security rules  
+  - CSPM methodology  
+  - Detected misconfiguration types  
+  - Compliance mappings  
 
-- `docs/internal` – Internal Niagaros documentation, including product vision, long-term strategy, and architectural decisions.
-- `docs/public` – Public-facing documentation such as security rules, detected misconfigurations, and general CSPM methodology.
-- `docs/partner` – Documentation intended for partner organizations like Domits, including onboarding instructions, usage guidelines, and integration requirements.
-
+- **`docs/partner`**  
+  Partner documentation (e.g., Domits):  
+  - Onboarding guides  
+  - Integration steps  
+  - Usage instructions  
+  - Access and permissions setup  
 
 ---
 
 ## Repository Structure
 
-- **`/.github`**  
-  GitHub configuration for this project, such as Actions workflows, security checks, and templates.  
-  Used to automate CI/CD and keep code quality and scans consistent across branches.
+### `/.github`
+GitHub configuration for workflows, security scanning, and templates.  
+Used to automate CI/CD and enforce consistent quality and security checks.
 
-- **`/frontend`**  
-  Frontend application that shows scan results, risks, and compliance status to users.  
-  It only talks to the backend API (no direct access to AWS) so all security logic stays server-side.  
-  Contains the main pages (`src/pages`), reusable UI components (`src/components`), API client (`src/services`), and the Amplify build/deploy config (`amplify.yml`).
+### `/frontend`
+Frontend application responsible for:
+- Displaying scan results  
+- Visualizing risk levels  
+- Showing compliance mappings  
 
-- **`/backend`**  
-  Serverless backend running on AWS Lambda + API Gateway.  
-  Responsible for collecting AWS configuration data, applying rules, and computing compliance so the frontend only receives already processed findings.  
-  Includes API handlers (`src/api`), the scan engine (`src/engine`), collectors for AWS services (`src/collectors`), declarative rules (`src/rules`), standards mapping (`src/standards`), post-processing (`src/postprocess`), shared utilities (`src/utils`), tests (`src/tests`), and runtime config (`src/config`), with infrastructure defined in `serverless.yml`.
 
-- **`/shared`**  
-  Shared types and constants that are used by both frontend and backend.  
-  Ensures both sides use the same structures and values for scan results, severities, and labels.
+> The frontend never talks directly to AWS APIs. All security logic remains server-side.
 
-- **`/docs`**  
-  Documentation and research for Niagaros.  
-  Explains the architecture, rule design, and standards mapping, and is used for onboarding and future product decisions.
+### `/backend`
+Serverless backend running on **AWS Lambda + API Gateway**.
+
+Responsibilities:
+- Collect AWS configuration data  
+- Apply security rules  
+- Map to compliance standards  
+- Normalize and score risks  
+
+Structure:
+- `src/api` – API handlers  
+- `src/engine` – Scan and rule engine  
+- `src/collectors` – AWS data collectors  
+- `src/rules` – Declarative security rules  
+- `src/standards` – Compliance mappings  
+- `src/postprocess` – Normalization and scoring  
+- `src/utils` – Shared utilities  
+- `src/tests` – Unit and integration tests  
+- `src/config` – Runtime configuration  
+- `serverless.yml` – Infrastructure as code  
+
+### `/shared`
+Shared types, enums, and constants used by both frontend and backend.  
+Ensures consistent schemas for findings, severities, and labels.
+
+### `/docs`
+Architecture documentation, research, rule design, and onboarding material.  
+Used for internal alignment and external partner enablement.
+
+---
+
+## Technical Leadership
+
+This project follows:
+- **Security-first design principles**  
+- **Infrastructure as Code (IaC)**  
+- **Least-privilege IAM model**  
+- **Compliance-driven architecture**  
+- **Scalable, event-driven design**  
+
+For ongoing technical direction and architecture decisions, see:  
+- **Niagaros CSPM Technical Direction & Architecture – GitHub Issue #57**  
+  <https://github.com/niagaros/repo/issues/57>
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the **MIT License**.
 
 You are free to:
-- Use the code for personal or commercial purposes
-- Modify and distribute the code
-- Include it in proprietary or open-source projects
+- Use the code for personal or commercial purposes  
+- Modify and distribute the code  
+- Include it in proprietary or open-source projects  
 
 Under the following conditions:
-- The original copyright and license notice must be included in any copies or substantial portions of the software
-- All contributions are assumed to be licensed under the same MIT License unless explicitly stated otherwise
+- The original copyright and license notice must be included in all copies or substantial portions of the software  
+- All contributions are assumed to be licensed under the same MIT License unless explicitly stated otherwise  
 
-This software is provided “as is”, without warranty of any kind.
+This software is provided **“as is”**, without warranty of any kind.
 
 See the [LICENSE](./LICENSE) file for full details.
