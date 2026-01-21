@@ -12,14 +12,14 @@ Niagaros is being actively developed and validated in collaboration with **Domit
 
 ## Introduction to Cloud Security
 
-Build a shared baseline on cloud and AI-native security concepts, roles, and controls:
+Build a shared baseline on cloud and AI-native security concepts, roles, and controls by exploring:
 
-- **Cloud Security Glossary** – [niagaros.com/glossary](https://niagaros.com/glossary/)
-- **Cloud Security Skills Training (AWS, Azure, GCP, OCI)** – [niagaros.com/cloud-security-skills-training-aws-azure-gcp-oci/](https://niagaros.com/cloud-security-skills-training-aws-azure-gcp-oci/)
-- **Compliance Frameworks** – [niagaros.com/frameworks](https://niagaros.com/frameworks/)
-- **Cybersecurity Job Roles** – [niagaros.com/cybersecurity-job-roles](https://niagaros.com/cybersecurity-job-roles/)
-- **Unified Cloud Security Categories** – [niagaros.com/unified-cloud-security-categories](https://niagaros.com/unified-cloud-security-categories/)
-- **Cloud Security Risk Assessment** – [niagaros.com/cloud-security-risk-assessment](https://niagaros.com/cloud-security-risk-assessment/)
+- **[Cloud Security Glossary](https://niagaros.com/glossary/)**  
+- **[Cloud Security Skills Training (AWS, Azure, GCP, OCI)](https://niagaros.com/cloud-security-skills-training-aws-azure-gcp-oci/)**  
+- **[Compliance Frameworks](https://niagaros.com/frameworks/)**  
+- **[Cybersecurity Job Roles](https://niagaros.com/cybersecurity-job-roles/)**  
+- **[Unified Cloud Security Categories](https://niagaros.com/unified-cloud-security-categories/)**  
+- **[Cloud Security Risk Assessment](https://niagaros.com/cloud-security-risk-assessment/)**  
 
 ---
 
