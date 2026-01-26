@@ -1,4 +1,4 @@
-# Niagaros CSPM (Cloud Security Posture Management)
+# Niagaros CNAPP (Cloud-Native Application Protection Platform)
 
 > **Niagaros CNAPP – MVP for Domits**  
 A unified cloud security platform focused on identifying, analyzing, and prioritizing misconfigurations across cloud-native environments.
@@ -7,6 +7,19 @@ A unified cloud security platform focused on identifying, analyzing, and priorit
 
 ## Social Proof
 Niagaros is being actively developed and validated in collaboration with **Domits** as the first pilot customer. This MVP represents a real-world, production-focused implementation of Cloud Security Posture Management (CSPM) aligned with industry best practices and compliance frameworks.
+
+---
+
+## Introduction to Cloud Security
+
+Build a shared baseline on cloud and AI-native security concepts, roles, and controls by exploring:
+
+- **[Cloud Security Glossary](https://niagaros.com/glossary/)**  
+- **[Cloud Security Skills Training (AWS, Azure, GCP, OCI)](https://niagaros.com/cloud-security-skills-training-aws-azure-gcp-oci/)**  
+- **[Compliance Frameworks](https://niagaros.com/frameworks/)**  
+- **[Cybersecurity Job Roles](https://niagaros.com/cybersecurity-job-roles/)**  
+- **[Unified Cloud Security Categories](https://niagaros.com/unified-cloud-security-categories/)**  
+- **[Cloud Security Risk Assessment](https://niagaros.com/cloud-security-risk-assessment/)**  
 
 ---
 
@@ -30,17 +43,18 @@ CNAPP addresses the fragmentation of traditional cloud security tools by consoli
 - **SCA & SBOM** – Software Supply Chain Security  
 - **Sensor / Runtime Security**
 
-> **Current Focus:** The MVP focuses exclusively on **CSPM for AWS**, starting with a single resource type: **Amazon S3**.
+> **Current Focus:** The MVP focuses exclusively on **CSPM for AWS**, starting with  resource types Domits use like: **Amazon S3, IAM, Cloudwatch**.
 
 ---
 
 ## Table of Contents
 
+- [Introduction to Cloud Security](#introduction-to-cloud-security)  
 - [Project Overview](#project-overview)  
 - [MVP Scope](#mvp-scope)  
 - [Architecture](#architecture)  
 - [Why S3 First?](#why-s3-first)  
-- [Technology Stack](#technology-stack)  
+- [Tech Stack](#tech-stack)  
 - [Development Status](#development-status)  
 - [Documentation Hubs](#documentation-hubs)  
 - [Repository Structure](#repository-structure)  
