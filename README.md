@@ -164,15 +164,33 @@ Starting with S3 allows Niagaros to:
 
 ---
 
-## Tech Stack
+## Technology Stack
 
-- 🖥️ **Frontend:** React Native, JavaScript, TypeScript, SASS/SCSS  
-- 🧠 **Backend:** Node.js, AWS Lambda, PostgreSQL  
-- ☁️ **Cloud:** Amazon Web Services  
-- 🧪 **Testing:** Jest, Cypress  
-- 🚀 **CI/CD:** GitHub Actions, Amplify  
-- 📦 **Package Management:** npm  
-- 🪛 **Tooling:** TypeORM  
+### Frontend
+- React Native  
+- TypeScript / JavaScript  
+- SASS / SCSS  
+
+### Backend
+- Node.js  
+- AWS Lambda  
+- PostgreSQL  
+
+### Cloud & Infrastructure
+- Amazon Web Services (AWS)  
+- Amplify Hosting  
+- API Gateway  
+- DynamoDB  
+- Amazon S3  
+- Amazon Cognito  
+
+### DevOps & Tooling
+- GitHub Actions (CI/CD)  
+- npm  
+
+### Testing
+- Jest  
+- Cypress  
 
 ---
 
@@ -273,10 +291,6 @@ This project follows:
 - **Least-privilege IAM model**  
 - **Compliance-driven architecture**  
 - **Scalable, event-driven design**  
-
-For ongoing technical direction and architecture decisions, see:  
-- **Niagaros CSPM Technical Direction & Architecture – GitHub Issue #57**  
-  <https://github.com/niagaros/repo/issues/57>
 
 ---
 
