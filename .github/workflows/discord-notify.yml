@@ -2,15 +2,60 @@ name: Discord notifications
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - "**"
+  pull_request_target:
+    types: [opened, reopened, closed, ready_for_review]
+  issues:
+    types: [opened, reopened, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   notify:
     runs-on: ubuntu-latest
+    if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
     steps:
-      - name: Send Discord message
+      - name: Notify Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          SERVER_URL: ${{ github.server_url }}
         run: |
-          curl -H "Content-Type: application/json" \
-          -X POST \
-          -d '{"content":"🚀 Er is gepusht naar main in ${{ github.repository }} door ${{ github.actor }}"}' \
-          ${{ secrets.DISCORD_WEBHOOK }}
+          set -euo pipefail
+
+          TITLE="GitHub: ${EVENT_NAME}"
+          URL="${SERVER_URL}/${REPO}"
+
+          if [ "${EVENT_NAME}" = "push" ]; then
+            BRANCH="${REF#refs/heads/}"
+            MSG="$(jq -r '.head_commit.message // "No message"' "$GITHUB_EVENT_PATH" | head -c 250)"
+            COMMIT_URL="$(jq -r '.head_commit.url // empty' "$GITHUB_EVENT_PATH")"
+            TITLE="Push to ${BRANCH}"
+            URL="${COMMIT_URL:-$URL}"
+            CONTENT="🔔 **${TITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\nMessage: ${MSG}\n${URL}"
+          elif [ "${EVENT_NAME}" = "pull_request_target" ]; then
+            ACTION="$(jq -r '.action' "$GITHUB_EVENT_PATH")"
+            NUMBER="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
+            PTITLE="$(jq -r '.pull_request.title' "$GITHUB_EVENT_PATH")"
+            PURL="$(jq -r '.pull_request.html_url' "$GITHUB_EVENT_PATH")"
+            CONTENT="🔔 **PR ${ACTION}: #${NUMBER}**\n**${PTITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\n${PURL}"
+          elif [ "${EVENT_NAME}" = "issues" ]; then
+            ACTION="$(jq -r '.action' "$GITHUB_EVENT_PATH")"
+            NUMBER="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
+            ITITLE="$(jq -r '.issue.title' "$GITHUB_EVENT_PATH")"
+            IURL="$(jq -r '.issue.html_url' "$GITHUB_EVENT_PATH")"
+            CONTENT="🔔 **Issue ${ACTION}: #${NUMBER}**\n**${ITITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\n${IURL}"
+          else
+            CONTENT="🔔 **${TITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\n${URL}"
+          fi
+
+          payload=$(jq -n --arg content "$CONTENT" '{content: $content}')
+
+          curl -sS -X POST -H "Content-Type: application/json" \
+            -d "$payload" "$DISCORD_WEBHOOK_URL" > /dev/null
