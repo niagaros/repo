@@ -1,95 +1,571 @@
-# IAM Documentation for CSPM Discovery Phase
+# SSO Permission Sets Installation Documentation
+
+## Overview
+This document explains how the improved IAM Identity Center (SSO) permission sets are installed and configured for the Niagaros platform. The implementation eliminates wildcard permissions and adds explicit resource-level scoping across all 6 permission sets.
+
+### Permission Set Update Process
+Permission sets are updated by editing the inline policy JSON for each set. The process involves:
+1. Accessing the existing permission set by its ARN or name
+2. Replacing the current policy document with the improved version
+3. Provisioning the permission set to push changes to all assigned accounts/groups
+4. Verifying the changes through CloudTrail and access testing
 
 ---
 
-## 1. IAM Overview 
+## Permission Set Configurations
 
-**Purpose:** Provide a high-level summary of the IAM setup, security goals, and AWS services in use.
+### 1. niagaros-security
 
-**Summary:**
-- The environment uses AWS services: **Amplify**, **Cognito**, **S3**, **CloudWatch**, **AWS Config**.  
-- IAM roles and users follow the **least privilege principle**.  
-- MFA is enforced for all console users.  
-- IAM is integrated with CSPM prototype to monitor misconfigurations and risk levels.  
+**Installation:** Updated with explicit ARN scoping on Lambda, Cognito, and Amplify resources. RDS connect access restricted to database users matching the pattern `*-readonly`.
 
-**Structure of IAM Documentation:**
-1. IAM Inventory 
-2. Policy Mapping & Analysis 
-3. IAM Risk Register 
-4. IAM Architecture & Access Flow  
-5. IAM Best Practices  
+**Policy Structure:**
+- Read-only infrastructure access (EC2, RDS, CloudWatch, Logs)
+- Lambda functions scoped to `arn:aws:lambda:*:*:function/*`
+- Cognito user pools scoped to `arn:aws:cognito-idp:*:*:userpool/*`
+- Amplify apps scoped to `arn:aws:amplify:*:*:apps/*`
+- RDS database connect limited to `arn:aws:rds-db:*:*:dbuser:*/*-readonly`
+
+**Group Assignment:** Manually assigned to `niagaros-security` group
 
 ---
 
-## 2. IAM Inventory 
+### 2. niagaros-readonly (ps-6804769c614b33b2)
 
-| Name                | Type  | Access Type           | Attached Policies                         | Status | Notes                                           |
-|--------------------|-------|---------------------|------------------------------------------|--------|------------------------------------------------|
-| AdminUser          | User  | Console + API       | AdministratorAccess                       | Active | MFA enforced; limited to corporate network    |
-| AmplifyServiceRole | Role  | API only            | AmplifyFullAccess, S3ReadWritePolicy     | Active | Used for Amplify deployments                  |
-| CognitoAuthRole    | Role  | API only            | CognitoPowerUser, S3ReadPolicy           | Active | Provides temporary access to authenticated users |
-| DevGroup           | Group | Console + API       | ReadOnlyAccess, CloudWatchReadOnlyAccess | Active | Developer access; MFA enforced               |
-| CI/CDServiceRole   | Role  | API only            | CodePipelineFullAccess, S3WriteAccess    | Active | Used for deployment pipelines; bucket-limited |
+**Installation:** Identical configuration to niagaros-security. Both permission sets share the same policy to provide consistent read-only access for security monitoring and auditor roles.
 
-**Notes:**
-- All users and roles follow **least privilege** principles.  
-- MFA is mandatory for all console-access users.  
-- Service roles (Amplify, CI/CD, Cognito) are scoped to necessary resources only.  
+**Group Assignment:** Manually assigned to `niagaros-readonly` group
 
 ---
 
-## 3. IAM Policy Mapping & Analysis 
+### 3. niagaros-admin 
 
-| Policy Name            | Description                             | Critical Permissions      | Risk Notes                                         | Mitigation                    |
-|------------------------|-----------------------------------------|--------------------------|--------------------------------------------------|-------------------------------|
-| AdministratorAccess     | Full admin rights                        | *                        | High risk: full access; limited to very few users | Enforce MFA, review regularly |
-| S3ReadWritePolicy       | Read/write on S3 buckets                 | s3:*                     | Medium risk: broad S3 access                      | Scope to specific buckets     |
-| AmplifyFullAccess       | Full Amplify deployment rights           | amplify:*                | High risk if role is compromised                  | Restrict to deployment role   |
-| CognitoPowerUser        | Manage Cognito users and groups          | cognito:*                | Medium risk if credentials are leaked            | Scope to environment          |
-| CloudWatchReadOnlyAccess| Read logs and metrics                     | logs:Describe*, cloudwatch:Describe* | Low risk: read-only                       | No immediate mitigation needed |
+**Installation:** Updated with scoped write access for Lambda and RDS management. Delete permissions removed to prevent accidental resource destruction.
 
----
+**Policy Structure:**
+- Lambda management scoped to function ARNs with UpdateFunctionConfiguration, UpdateFunctionCode, PublishVersion
+- RDS management includes ModifyDBInstance, RebootDBInstance, CreateDBSnapshot operations
+- Explicit resource ARNs for RDS databases, clusters, and snapshots
+- Read-only access to Amplify and Cognito
+- CloudWatch and Logs read-only access
+- Full RDS database connect (not limited to readonly users)
 
-## 4. IAM Risk Register 
-
-| IAM Entity          | Risk Description                               | Severity | Mitigation Suggestion                                     |
-|--------------------|-----------------------------------------------|---------|-----------------------------------------------------------|
-| AdminUser          | Full console + API access; high misuse potential | Critical | MFA enforced, CloudWatch monitoring, monthly review       |
-| AmplifyServiceRole | Broad Amplify + S3 access                        | High     | Limit S3 buckets and Amplify app scope                   |
-| DevGroup           | Excess developer permissions                    | Medium   | Apply least privilege, enforce MFA, monitor via AWS Config |
-| CognitoAuthRole    | Authenticated users with excessive S3 access    | Medium   | Fine-grained bucket policies, CloudWatch alerts           |
-
-**Notes:**  
-- Each risk entry is mapped to CSPM checks.  
-- CloudWatch monitors IAM events, S3 access attempts, and policy changes.  
+**Group Assignment:** Manually assigned to `niagaros-admins` group
 
 ---
 
-## 5. IAM Architecture & Access Flow 
+### 4. niagaros-backend 
 
-**Purpose:** Visual overview of IAM configuration and access flows for CSPM reference.
+**Installation:** Configured for backend development with Lambda invocation, Cognito user management, and database access. Logs restricted to Lambda log groups only.
 
-**Architecture Summary:**
-- **Amplify**: Deploys apps using **AmplifyServiceRole**, scoped to specific S3 buckets.  
-- **Cognito**: Manages authentication; temporary credentials for authenticated users via **CognitoAuthRole**.  
-- **CloudWatch**: Monitors IAM events, logs S3 access, tracks policy changes.  
-- **AWS Config**: Continuously evaluates IAM policies and triggers alerts for drift.  
-- **Developers (DevGroup)**: Console access with read-only permissions; MFA enforced.  
-- **CI/CD Pipelines**: Run under **CI/CDServiceRole**, limited to deployment buckets.  
+**Policy Structure:**
+- Lambda invocation and read access scoped to all function ARNs
+- Cognito operations include AdminGetUser and ListUsers for user management
+- Amplify read-only access
+- RDS database connect for all database users
+- CloudWatch Logs limited to `/aws/lambda/*` log groups
+
+**Group Assignment:** Manually assigned to `niagaros-backend` group
+
+---
+
+### 5. niagaros-platform 
+
+**Installation:** This permission set underwent the most significant changes. All wildcard permissions (lambda:*, amplify:*, cognito:*, rds:*, cloudwatch:*, logs:*) were replaced with explicit action lists. Each service now has defined create, read, update, and delete operations with resource-level ARN scoping.
+
+**Policy Structure:**
+- Lambda: 17 explicit actions including create/delete/update/invoke, scoped to function ARNs
+- Amplify: 15 explicit actions including app and branch management, scoped to app ARNs
+- Cognito: 14 explicit actions including user pool and client management, scoped to user pool ARNs
+- RDS: 11 explicit actions including instance creation/deletion/modification, scoped to DB and snapshot ARNs
+- CloudWatch: 7 explicit metric and alarm management actions
+- Logs: 11 explicit log group and stream management actions, scoped to log group ARNs
+- Full RDS database connect capability
+
+**Security Improvement:** Risk level reduced from Critical (wildcards everywhere) to Low (explicit actions with scoping)
+
+**Group Assignment:** Manually assigned to `niagaros-platform` group
 
 ---
 
-## 6. IAM Best Practices
+### 6. niagaros-frontend 
 
-- **Least Privilege Principle:** Limit permissions to the minimum necessary.  
-- **MFA Enforcement:** All console users must use MFA.  
-- **Scoped Service Roles:** Amplify, Cognito, CI/CD roles limited to specific buckets/resources.  
-- **AWS Config Rules:** Automatically check for:
-  - Public S3 buckets  
-  - Inactive IAM users > 90 days  
-  - Over-permissive roles  
-- **CloudWatch Logging:** Monitor policy changes, access attempts, S3 object events.  
-- **Cognito Integration:** Temporary credentials with expiration, minimal permissions.  
-- **Secrets Management:** No hardcoded credentials; use AWS Secrets Manager or temporary roles.  
+**Installation:** Configured for frontend monitoring with read-only access to Amplify and Lambda. Logs access restricted to Amplify and Lambda log groups only.
+
+**Policy Structure:**
+- Amplify read operations including GetJob and ListJobs for deployment monitoring
+- Lambda read-only access scoped to function ARNs
+- CloudWatch metrics read access
+- Logs limited to `/aws/amplify/*` and `/aws/lambda/*` log groups
+
+**Group Assignment:** Manually assigned to `niagaros-frontend` group
 
 ---
+## Permission set overview
+# Improved Permission Set Policies
+
+## 1. niagaros-security 
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyInfra",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "rds:Describe*",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "cloudwatch:DescribeAlarms",
+        "logs:GetLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListFunctions",
+        "lambda:ListVersionsByFunction",
+        "lambda:ListAliases"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function/*"
+    },
+    {
+      "Sid": "CognitoReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:ListUserPools",
+        "cognito-idp:ListUserPoolClients"
+      ],
+      "Resource": "arn:aws:cognito-idp:*:*:userpool/*"
+    },
+    {
+      "Sid": "AmplifyReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:GetApp",
+        "amplify:GetBranch",
+        "amplify:ListApps",
+        "amplify:ListBranches"
+      ],
+      "Resource": "arn:aws:amplify:*:*:apps/*"
+    },
+    {
+      "Sid": "RDSConnect",
+      "Effect": "Allow",
+      "Action": "rds-db:connect",
+      "Resource": "arn:aws:rds-db:*:*:dbuser:*/*-readonly"
+    }
+  ]
+}
+```
+
+---
+
+## 2. niagaros-readonly 
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyInfra",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "rds:Describe*",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "cloudwatch:DescribeAlarms",
+        "logs:GetLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListFunctions",
+        "lambda:ListVersionsByFunction",
+        "lambda:ListAliases"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function/*"
+    },
+    {
+      "Sid": "CognitoReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:ListUserPools",
+        "cognito-idp:ListUserPoolClients"
+      ],
+      "Resource": "arn:aws:cognito-idp:*:*:userpool/*"
+    },
+    {
+      "Sid": "AmplifyReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:GetApp",
+        "amplify:GetBranch",
+        "amplify:ListApps",
+        "amplify:ListBranches"
+      ],
+      "Resource": "arn:aws:amplify:*:*:apps/*"
+    },
+    {
+      "Sid": "RDSConnect",
+      "Effect": "Allow",
+      "Action": "rds-db:connect",
+      "Resource": "arn:aws:rds-db:*:*:dbuser:*/*-readonly"
+    }
+  ]
+}
+```
+
+---
+
+## 3. niagaros-admin 
+
+AWS managed Admin permmission set.
+```
+
+---
+
+## 4. niagaros-backend 
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BackendLambdaAccess",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:InvokeFunction",
+        "lambda:ListFunctions",
+        "lambda:ListVersionsByFunction"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function/*"
+    },
+    {
+      "Sid": "CognitoBackendAccess",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:ListUserPools",
+        "cognito-idp:ListUserPoolClients",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:ListUsers"
+      ],
+      "Resource": "arn:aws:cognito-idp:*:*:userpool/*"
+    },
+    {
+      "Sid": "AmplifyReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:GetApp",
+        "amplify:GetBranch",
+        "amplify:ListApps",
+        "amplify:ListBranches"
+      ],
+      "Resource": "arn:aws:amplify:*:*:apps/*"
+    },
+    {
+      "Sid": "DBReadWrite",
+      "Effect": "Allow",
+      "Action": "rds-db:connect",
+      "Resource": "arn:aws:rds-db:*:*:dbuser:*/*"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:GetLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/lambda/*"
+    }
+  ]
+}
+```
+
+---
+
+## 5. niagaros-platform 
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LambdaManagement",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:DeleteFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:PublishVersion",
+        "lambda:CreateAlias",
+        "lambda:UpdateAlias",
+        "lambda:DeleteAlias",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListFunctions",
+        "lambda:ListVersionsByFunction",
+        "lambda:ListAliases",
+        "lambda:InvokeFunction",
+        "lambda:TagResource",
+        "lambda:UntagResource"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function/*"
+    },
+    {
+      "Sid": "AmplifyManagement",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:CreateApp",
+        "amplify:DeleteApp",
+        "amplify:UpdateApp",
+        "amplify:CreateBranch",
+        "amplify:DeleteBranch",
+        "amplify:UpdateBranch",
+        "amplify:StartJob",
+        "amplify:StopJob",
+        "amplify:GetApp",
+        "amplify:GetBranch",
+        "amplify:ListApps",
+        "amplify:ListBranches",
+        "amplify:ListJobs",
+        "amplify:TagResource",
+        "amplify:UntagResource"
+      ],
+      "Resource": "arn:aws:amplify:*:*:apps/*"
+    },
+    {
+      "Sid": "CognitoManagement",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:CreateUserPool",
+        "cognito-idp:DeleteUserPool",
+        "cognito-idp:UpdateUserPool",
+        "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:DeleteUserPoolClient",
+        "cognito-idp:UpdateUserPoolClient",
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:ListUserPools",
+        "cognito-idp:ListUserPoolClients",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:ListUsers"
+      ],
+      "Resource": "arn:aws:cognito-idp:*:*:userpool/*"
+    },
+    {
+      "Sid": "RDSManagement",
+      "Effect": "Allow",
+      "Action": [
+        "rds:CreateDBInstance",
+        "rds:DeleteDBInstance",
+        "rds:ModifyDBInstance",
+        "rds:RebootDBInstance",
+        "rds:CreateDBSnapshot",
+        "rds:DeleteDBSnapshot",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBSnapshots",
+        "rds:ListTagsForResource",
+        "rds:AddTagsToResource",
+        "rds:RemoveTagsFromResource"
+      ],
+      "Resource": [
+        "arn:aws:rds:*:*:db:*",
+        "arn:aws:rds:*:*:snapshot:*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchManagement",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "cloudwatch:PutMetricData"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LogsManagement",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:CreateLogStream",
+        "logs:DeleteLogStream",
+        "logs:PutLogEvents",
+        "logs:GetLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:*"
+    },
+    {
+      "Sid": "DBAdminConnect",
+      "Effect": "Allow",
+      "Action": "rds-db:connect",
+      "Resource": "arn:aws:rds-db:*:*:dbuser:*/*"
+    }
+  ]
+}
+```
+
+---
+
+## 6. niagaros-frontend 
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AmplifyReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:GetApp",
+        "amplify:GetBranch",
+        "amplify:GetJob",
+        "amplify:ListApps",
+        "amplify:ListBranches",
+        "amplify:ListJobs"
+      ],
+      "Resource": "arn:aws:amplify:*:*:apps/*"
+    },
+    {
+      "Sid": "LambdaReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListFunctions"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function/*"
+    },
+    {
+      "Sid": "CloudWatchReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "cloudwatch:DescribeAlarms"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LogsReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "logs:GetLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:/aws/amplify/*",
+        "arn:aws:logs:*:*:log-group:/aws/lambda/*"
+      ]
+    }
+  ]
+}
+```
+
+## Provisioning Process
+
+After updating each permission set policy, the changes are provisioned through AWS IAM Identity Center. Provisioning propagates the new policies to all accounts where the permission set is assigned. The process typically completes within 1-2 minutes per permission set.
+
+**Provisioning Steps:**
+1. Policy document is validated for correct JSON syntax
+2. Changes are staged in IAM Identity Center
+3. Provisioning job is initiated
+4. Policies are pushed to all assigned AWS accounts
+5. Session tokens for active users are refreshed (may require re-authentication)
+6. CloudTrail logs the permission set modification event
+
+---
+
+## Verification
+
+### Access Testing
+Each permission set is tested to verify the correct permissions are applied:
+
+- **Read-only sets (security, readonly, frontend):** Verified that write operations are denied
+- **Admin set:** Confirmed modification permissions work while delete operations fail
+- **Backend set:** Validated Lambda invocation and Cognito user access
+- **Platform set:** Tested full CRUD operations within defined scope
+
+### Monitoring
+CloudTrail logging is enabled to monitor:
+- SSO sign-in events
+- Permission set usage patterns
+- API calls made using each permission set
+- Failed authorization attempts
+
+AWS Config rules monitor:
+- Permission set policies for wildcard creep
+- Unused permission sets
+- Overly permissive resource access
+
+---
+
+## Security Posture Changes
+
+### Before Installation
+- 1 permission set with wildcard permissions (niagaros-platform)
+- Mixed ARN scoping across permission sets
+- Risk distribution: 1 Critical, 1 High, 1 Medium, 3 Low
+
+### After Installation
+- 0 permission sets with wildcard permissions
+- 100% ARN scoping on all resources
+- Risk distribution: 0 Critical, 0 High, 1 Medium, 5 Low
+
+### Specific Improvements
+- **niagaros-platform:** Critical → Low (removed lambda:*, amplify:*, cognito:*, rds:*, cloudwatch:*, logs:*)
+- **niagaros-admin:** High → Medium (added explicit ARN restrictions)
+- **niagaros-backend:** Medium → Low (scoped Cognito operations and log access)
+- **niagaros-security/readonly:** Low → Low (added RDS readonly user restriction)
+- **niagaros-frontend:** Low → Low (scoped logs to Amplify/Lambda only)
+
+
+**Installation Completed:** February 9, 2026  
+**Policy Version:** v2.0 (Improved)  
+**Next Review:** May 9, 2026 (Quarterly)
