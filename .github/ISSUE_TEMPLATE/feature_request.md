@@ -25,10 +25,8 @@ What does success look like if this feature is implemented?
 
 Who benefits from this feature?
 
-- [ ] Guests / Customers
-- [ ] Hosts / Property Managers / Enterprise
 - [ ] Admin / Internal users
-- [ ] Developers
+- [ ] Startups / Mid-market / Enterprise
 - [ ] Other: _______
 
 ## 📈 Business & User Impact
