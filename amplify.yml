@@ -5,6 +5,13 @@ applications:
       phases:
         preBuild:
           commands:
+            - |
+              if [ "$AWS_BRANCH" = "main" ]; then
+                SECRET_ID="niagaros/cspm/frontend-config/prod"
+              else
+                SECRET_ID="niagaros/cspm/frontend-config/acceptance"
+              fi
+            - aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text > public/config.json
             - npm ci
         build:
           commands:
@@ -12,7 +19,8 @@ applications:
       artifacts:
         baseDirectory: build
         files:
-          - '**/*'
+          - "**/*"
       cache:
         paths:
           - node_modules/**/*
+
