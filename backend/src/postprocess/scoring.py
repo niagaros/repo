@@ -6,22 +6,6 @@ SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 
 
 def calculate_score(findings: list) -> dict:
-    """
-    Calculates overall compliance score and breaks it down per severity.
-
-    Returns:
-    {
-        "overall":     87.5,
-        "passed":      14,
-        "failed":      2,
-        "total":       16,
-        "by_severity": {
-            "CRITICAL": {"passed": 1, "failed": 1, "total": 2},
-            "HIGH":     {"passed": 5, "failed": 1, "total": 6},
-            ...
-        }
-    }
-    """
     if not findings:
         return {
             "overall":     0,
@@ -31,7 +15,7 @@ def calculate_score(findings: list) -> dict:
             "by_severity": {},
         }
 
-    passed = sum(1 for f in findings if f["status"] == "PASS")
+    passed = sum(1 for f in findings if f["result"] == "PASS")
     total  = len(findings)
     failed = total - passed
 
@@ -40,7 +24,7 @@ def calculate_score(findings: list) -> dict:
         group   = [f for f in findings if str(f["severity"]) == sev]
         s_total = len(group)
         if s_total:
-            s_passed = sum(1 for f in group if f["status"] == "PASS")
+            s_passed = sum(1 for f in group if f["result"] == "PASS")
             by_severity[sev] = {
                 "passed": s_passed,
                 "failed": s_total - s_passed,
