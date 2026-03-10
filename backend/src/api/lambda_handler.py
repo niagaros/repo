@@ -1,7 +1,7 @@
 import json
 import logging
 
-from backend.engine.scanner import Scanner
+from engine.scanner import Scanner
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

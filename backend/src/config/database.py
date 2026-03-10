@@ -46,17 +46,17 @@ class Database:
             return {}
 
         with self.conn.cursor() as cur:
-            execute_values(cur, """
+            rows = execute_values(cur, """
                 INSERT INTO resources
                     (cloud_account_id, resource_type, resource_id,
                      resource_name, region, config)
                 VALUES %s
-                ON CONFLICT (cloud_account_id, resource_type, resource_id)
+                ON CONFLICT (cloud_account_id, resource_id)
                 DO UPDATE SET
-                    resource_name = EXCLUDED.resource_name,
-                    region        = EXCLUDED.region,
-                    config        = EXCLUDED.config,
-                    discovered_at = NOW()
+                    resource_name   = EXCLUDED.resource_name,
+                    region          = EXCLUDED.region,
+                    config          = EXCLUDED.config,
+                    last_scanned_at = NOW()
                 RETURNING resource_id, id
             """, [(
                 cloud_account_id,
@@ -66,7 +66,6 @@ class Database:
                 r.get("region"),
                 json.dumps(r.get("config", {})),
             ) for r in resources], fetch=True)
-            rows = cur.fetchall()
 
         self.conn.commit()
         logger.info(f"Database: upserted {len(rows)} resources")
@@ -86,23 +85,24 @@ class Database:
             execute_values(cur, """
                 INSERT INTO findings
                     (resource_id, check_id, framework, title,
-                     description, remediation, severity, status, details)
+                     remediation, severity, status, result, details)
                 VALUES %s
                 ON CONFLICT (resource_id, check_id)
                 DO UPDATE SET
-                    status   = EXCLUDED.status,
-                    severity = EXCLUDED.severity,
-                    details  = EXCLUDED.details,
-                    found_at = NOW()
+                    status      = EXCLUDED.status,
+                    result      = EXCLUDED.result,
+                    severity    = EXCLUDED.severity,
+                    details     = EXCLUDED.details,
+                    detected_at = NOW()
             """, [(
                 f["resource_id"],
                 f["check_id"],
-                str(f["framework"]),
+                f.get("framework"),
                 f["title"],
-                f.get("description"),
                 f.get("remediation"),
                 str(f["severity"]),
-                f["status"],
+                "open" if f["result"] == "FAIL" else "pass",
+                f["result"],
                 json.dumps(f.get("details", {})),
             ) for f in findings])
 

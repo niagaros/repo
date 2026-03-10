@@ -1,0 +1,9 @@
+package/
+cspm-scanner.zip
+response.json
+payload.json
+__pycache__/
+*.pyc
+*.pyo
+.env
+

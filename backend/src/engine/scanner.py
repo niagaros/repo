@@ -3,25 +3,18 @@ import inspect
 import logging
 import pkgutil
 
-import backend.collectors.aws as collectors_pkg
-import backend.rules.cis      as rules_pkg
-from backend.collectors.base_collector import BaseCollector
-from backend.rules.base_check          import BaseCheck
-from backend.engine.aws_session        import AWSSession
-from backend.config.database           import Database
-from backend.postprocess.scoring       import calculate_score
+import collectors.aws as collectors_pkg
+import rules.cis      as rules_pkg
+from collectors.base_collector import BaseCollector
+from rules.base_check          import BaseCheck
+from engine.aws_session        import AWSSession
+from config.database           import Database
+from postprocess.scoring       import calculate_score
 
 logger = logging.getLogger(__name__)
 
 
 def _discover(package, base_class: type) -> list:
-    """
-    Auto-discovers all concrete subclasses of base_class
-    inside the given package — no manual registration needed.
-
-    Adding a new collector = drop a file in collectors/aws/
-    Adding a new rule      = drop a file in rules/cis/
-    """
     classes = []
     for _, name, _ in pkgutil.walk_packages(
         package.__path__,
@@ -34,7 +27,6 @@ def _discover(package, base_class: type) -> list:
                     classes.append(obj)
         except Exception as e:
             logger.error(f"Scanner: failed to import {name} — {e}")
-
     return classes
 
 
@@ -91,10 +83,9 @@ class Scanner:
                         "check_id":    meta["check_id"],
                         "framework":   meta["framework"],
                         "title":       meta["title"],
-                        "description": meta.get("description"),
                         "remediation": meta.get("remediation"),
-                        "severity":    meta["severity"],
-                        "status":      result.status,
+                        "severity":    meta["severity"].value,
+                        "result":      result.status,
                         "details":     result.details,
                     })
                 except Exception as e:
