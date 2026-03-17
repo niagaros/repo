@@ -14,7 +14,7 @@ class CloudWatchCollector:
     into a snapshot for the rule engine.
     """
 
-    def __init__(self, region: str):
+    def __init__(self, region: str, session=None):
         self.region = region
 
         self._boto_config = Config(
@@ -22,11 +22,13 @@ class CloudWatchCollector:
             retries={"max_attempts": 10, "mode": "standard"},
         )
 
-        self.cloudtrail = boto3.client("cloudtrail", config=self._boto_config)
-        self.logs = boto3.client("logs", config=self._boto_config)
-        self.cloudwatch = boto3.client("cloudwatch", config=self._boto_config)
-        self.sns = boto3.client("sns", config=self._boto_config)
-        self.sts = boto3.client("sts", config=self._boto_config)
+        _session = session or boto3.Session()
+
+        self.cloudtrail = _session.client("cloudtrail", config=self._boto_config)
+        self.logs = _session.client("logs", config=self._boto_config)
+        self.cloudwatch = _session.client("cloudwatch", config=self._boto_config)
+        self.sns = _session.client("sns", config=self._boto_config)
+        self.sts = _session.client("sts", config=self._boto_config)
 
     @staticmethod
     def _now_iso() -> str:
@@ -34,12 +36,6 @@ class CloudWatchCollector:
 
     @staticmethod
     def _extract_log_group_name_from_arn(log_group_arn: Optional[str]) -> Optional[str]:
-        """
-        Example:
-          arn:aws:logs:eu-north-1:115462458880:log-group:aws-cloudtrail-logs-...:*
-        Returns:
-          aws-cloudtrail-logs-...
-        """
         if not log_group_arn:
             return None
         marker = ":log-group:"
@@ -50,7 +46,6 @@ class CloudWatchCollector:
 
     @staticmethod
     def _strip_response_metadata(obj: Any) -> Any:
-        """Remove AWS ResponseMetadata recursively (normalization)."""
         if isinstance(obj, dict):
             return {k: CloudWatchCollector._strip_response_metadata(v) for k, v in obj.items() if k != "ResponseMetadata"}
         if isinstance(obj, list):
@@ -59,12 +54,6 @@ class CloudWatchCollector:
 
     @staticmethod
     def _management_events_logged(selectors_resp: Dict[str, Any]) -> bool:
-        """
-        True if management events are being logged:
-        - AdvancedEventSelectors include eventCategory == Management
-        OR
-        - Legacy EventSelectors have IncludeManagementEvents == True
-        """
         if not selectors_resp:
             return False
 
@@ -94,9 +83,6 @@ class CloudWatchCollector:
         return None
 
     def _paginate(self, client, operation: str, result_key: str, **kwargs) -> List[Dict[str, Any]]:
-        """
-        Safe pagination using boto3 paginator (prevents infinite loops).
-        """
         paginator = client.get_paginator(operation)
         items: List[Dict[str, Any]] = []
         for page in paginator.paginate(**kwargs):
@@ -123,16 +109,12 @@ class CloudWatchCollector:
             "region": self.region,
             "collected_at": self._now_iso(),
             "errors": [],
-            # normalized blocks (consistent keys)
             "cloudtrail": {"trails": []},
             "logs": {"log_groups": []},
             "cloudwatch": {"alarms": []},
             "sns": {"topics": []},
         }
 
-        # -----------------------------
-        # 1) CloudTrail: trails
-        # -----------------------------
         try:
             trails_resp = self.cloudtrail.describe_trails()
             raw_trails = trails_resp.get("trailList", []) or []
@@ -140,9 +122,6 @@ class CloudWatchCollector:
             snapshot["errors"].append({"service": "cloudtrail", "api": "describeTrails", "message": str(e)})
             raw_trails = []
 
-        # -----------------------------
-        # 2) CloudTrail: status + selectors per trail, then NORMALIZE into one object per trail
-        # -----------------------------
         normalized_trails: List[Dict[str, Any]] = []
 
         for t in raw_trails:
@@ -150,7 +129,6 @@ class CloudWatchCollector:
             if not trail_arn:
                 continue
 
-            # get trail status
             try:
                 status = self.cloudtrail.get_trail_status(Name=trail_arn)
                 status = self._strip_response_metadata(status)
@@ -158,7 +136,6 @@ class CloudWatchCollector:
                 snapshot["errors"].append({"service": "cloudtrail", "api": "getTrailStatus", "resource": trail_arn, "message": str(e)})
                 status = {}
 
-            # get event selectors
             try:
                 selectors = self.cloudtrail.get_event_selectors(TrailName=trail_arn)
                 selectors = self._strip_response_metadata(selectors)
@@ -195,9 +172,6 @@ class CloudWatchCollector:
         normalized_trails.sort(key=lambda x: (x.get("name") or "", x.get("trail_arn") or ""))
         snapshot["cloudtrail"]["trails"] = normalized_trails
 
-        # -----------------------------
-        # 3) CloudWatch Logs: log groups referenced by CloudTrail log group arns
-        # -----------------------------
         referenced_log_group_names = sorted(
             {t.get("cloudwatch_logs_log_group_name") for t in normalized_trails if t.get("cloudwatch_logs_log_group_name")}
         )
@@ -209,7 +183,6 @@ class CloudWatchCollector:
             except Exception as e:
                 snapshot["errors"].append({"service": "logs", "api": "describeLogGroups", "resource": prefix, "message": str(e)})
 
-        # metric filters per log group name, then merge into log_group objects (normalized)
         metric_filters_by_name: Dict[str, List[Dict[str, Any]]] = {}
         for lg_name in referenced_log_group_names:
             try:
@@ -236,9 +209,6 @@ class CloudWatchCollector:
         normalized_log_groups.sort(key=lambda x: x.get("log_group_name") or "")
         snapshot["logs"]["log_groups"] = normalized_log_groups
 
-        # -----------------------------
-        # 4) CloudWatch: alarms (paginated)
-        # -----------------------------
         try:
             alarms = self._paginate(self.cloudwatch, "describe_alarms", "MetricAlarms")
         except Exception as e:
@@ -248,9 +218,6 @@ class CloudWatchCollector:
         alarms_sorted = sorted(alarms, key=lambda x: x.get("AlarmName", ""))
         snapshot["cloudwatch"]["alarms"] = alarms_sorted
 
-        # -----------------------------
-        # 5) SNS: topics used by alarm actions + subscriptions per topic (paginated)
-        # -----------------------------
         topic_arns_used = self._collect_sns_topic_arns_from_alarms(alarms_sorted)
 
         try:
