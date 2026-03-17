@@ -1,61 +1,53 @@
-name: Discord notifications
-
-on:
-  push:
-    branches:
-      - "**"
-  pull_request_target:
-    types: [opened, reopened, closed, ready_for_review]
-  issues:
-    types: [opened, reopened, closed]
-  workflow_dispatch:
+name: Discord Notifications
 
 permissions:
   contents: read
 
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    types: [opened, closed, reopened, ready_for_review, review_requested]
+  issues:
+    types: [opened, closed, reopened, assigned, labeled]
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
 jobs:
   notify:
     runs-on: ubuntu-latest
-    if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
     steps:
-      - name: Notify Discord
+      - name: Push notification
+        if: github.event_name == 'push'
+        uses: Ilshidur/action-discord@master
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          EVENT_NAME: ${{ github.event_name }}
-          ACTOR: ${{ github.actor }}
-          REPO: ${{ github.repository }}
-          REF: ${{ github.ref }}
-          SERVER_URL: ${{ github.server_url }}
-        run: |
-          set -euo pipefail
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            📦 **Push** to `${{ github.ref_name }}` by **${{ github.actor }}**
+            ${{ github.event.head_commit.message }}
+            ${{ github.event.head_commit.url }}
 
-          TITLE="GitHub: ${EVENT_NAME}"
-          URL="${SERVER_URL}/${REPO}"
+      - name: Pull request notification
+        if: github.event_name == 'pull_request'
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            🔀 **PR ${{ github.event.action }}**: ${{ github.event.pull_request.title }}
+            By **${{ github.actor }}** → `${{ github.event.pull_request.base.ref }}`
+            ${{ github.event.pull_request.html_url }}
 
-          if [ "${EVENT_NAME}" = "push" ]; then
-            BRANCH="${REF#refs/heads/}"
-            MSG="$(jq -r '.head_commit.message // "No message"' "$GITHUB_EVENT_PATH" | head -c 250)"
-            COMMIT_URL="$(jq -r '.head_commit.url // empty' "$GITHUB_EVENT_PATH")"
-            TITLE="Push to ${BRANCH}"
-            URL="${COMMIT_URL:-$URL}"
-            CONTENT="🔔 **${TITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\nMessage: ${MSG}\n${URL}"
-          elif [ "${EVENT_NAME}" = "pull_request_target" ]; then
-            ACTION="$(jq -r '.action' "$GITHUB_EVENT_PATH")"
-            NUMBER="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
-            PTITLE="$(jq -r '.pull_request.title' "$GITHUB_EVENT_PATH")"
-            PURL="$(jq -r '.pull_request.html_url' "$GITHUB_EVENT_PATH")"
-            CONTENT="🔔 **PR ${ACTION}: #${NUMBER}**\n**${PTITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\n${PURL}"
-          elif [ "${EVENT_NAME}" = "issues" ]; then
-            ACTION="$(jq -r '.action' "$GITHUB_EVENT_PATH")"
-            NUMBER="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
-            ITITLE="$(jq -r '.issue.title' "$GITHUB_EVENT_PATH")"
-            IURL="$(jq -r '.issue.html_url' "$GITHUB_EVENT_PATH")"
-            CONTENT="🔔 **Issue ${ACTION}: #${NUMBER}**\n**${ITITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\n${IURL}"
-          else
-            CONTENT="🔔 **${TITLE}**\nRepo: **${REPO}**\nBy: **${ACTOR}**\n${URL}"
-          fi
-
-          payload=$(jq -n --arg content "$CONTENT" '{content: $content}')
-
-          curl -sS -X POST -H "Content-Type: application/json" \
-            -d "$payload" "$DISCORD_WEBHOOK_URL" > /dev/null
+      - name: Issue notification
+        if: github.event_name == 'issues'
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            🐛 **Issue ${{ github.event.action }}**: ${{ github.event.issue.title }}
+            By **${{ github.actor }}**
+            ${{ github.event.issue.html_url }}
