@@ -29,7 +29,7 @@ Permission sets are updated by editing the inline policy JSON for each set. The 
 
 ---
 
-### 2. niagaros-readonly (ps-6804769c614b33b2)
+### 2. niagaros-readonly 
 
 **Installation:** Identical configuration to niagaros-security. Both permission sets share the same policy to provide consistent read-only access for security monitoring and auditor roles.
 

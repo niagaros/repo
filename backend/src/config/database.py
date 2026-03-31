@@ -17,11 +17,6 @@ def _get_credentials() -> dict:
 
 
 class Database:
-    """
-    Handles all database operations.
-    Uses upsert so re-running a scan updates existing records
-    instead of creating duplicates.
-    """
 
     def __init__(self):
         creds = _get_credentials()
@@ -38,10 +33,6 @@ class Database:
     # ── resources ─────────────────────────────────────────────────
 
     def upsert_resources(self, cloud_account_id: str, resources: list) -> dict:
-        """
-        Insert or update resources.
-        Returns mapping of resource_id -> database UUID.
-        """
         if not resources:
             return {}
 
@@ -74,10 +65,6 @@ class Database:
     # ── findings ──────────────────────────────────────────────────
 
     def upsert_findings(self, findings: list):
-        """
-        Insert or update findings.
-        Re-running a scan updates status instead of duplicating rows.
-        """
         if not findings:
             return
 
@@ -121,6 +108,71 @@ class Database:
             """, (json.dumps(score), cloud_account_id))
         self.conn.commit()
         logger.info(f"Database: compliance score updated — {score}")
+
+    # ── orchestrator ───────────────────────────────────────────────
+
+    def get_active_accounts(self) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, role_arn, external_id
+                FROM cloud_accounts
+                WHERE status = 'active'
+            """)
+            rows = cur.fetchall()
+        return [
+            {"id": str(r[0]), "role_arn": r[1], "external_id": r[2]}
+            for r in rows
+        ]
+
+    def get_enabled_scanners(self) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT function_name, resource_type, description
+                FROM scanners
+                WHERE enabled = true
+            """)
+            rows = cur.fetchall()
+        return [
+            {"function_name": r[0], "resource_type": r[1], "description": r[2]}
+            for r in rows
+        ]
+
+    def record_scanner_triggered(self, function_name: str):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                UPDATE scanners
+                SET last_triggered_at = NOW(),
+                    last_status       = 'triggered',
+                    total_runs        = total_runs + 1
+                WHERE function_name = %s
+            """, (function_name,))
+        self.conn.commit()
+
+    def record_scanner_failed(self, function_name: str, error: str):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                UPDATE scanners
+                SET last_triggered_at = NOW(),
+                    last_status       = 'failed',
+                    last_error        = %s,
+                    total_runs        = total_runs + 1,
+                    total_failures    = total_failures + 1
+                WHERE function_name = %s
+            """, (error, function_name))
+        self.conn.commit()
+
+    def record_scanner_completed(self, function_name: str):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                UPDATE scanners
+                SET last_completed_at = NOW(),
+                    last_status       = 'completed',
+                    last_error        = NULL
+                WHERE function_name = %s
+            """, (function_name,))
+        self.conn.commit()
+
+    # ── utils ──────────────────────────────────────────────────────
 
     def close(self):
         self.conn.close()
