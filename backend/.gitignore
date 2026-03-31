@@ -1,9 +1,13 @@
 package/
+orchestrator-package/
 cspm-scanner.zip
+cspm-orchestrator.zip
 response.json
 payload.json
+orchestrator-response.json
+orchestrator-payload.json
 __pycache__/
 *.pyc
 *.pyo
-.env
-
+*.zip
+*.env
