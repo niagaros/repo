@@ -1,0 +1,4 @@
+{
+  "REACT_APP_API_BASE_URL": "https://zlm0sbtl66.execute-api.eu-west-1.amazonaws.com",
+  "REACT_APP_REGION": "eu-west-1"
+}
