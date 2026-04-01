@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSPM Dashboard — Niagaros</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #1a1d24;
+    --border: #252830;
+    --accent: #e83a3a;
+    --accent2: #ff6b35;
+    --high: #e83a3a;
+    --medium: #f59e0b;
+    --low: #3b82f6;
+    --pass: #22c55e;
+    --text: #f0f2f7;
+    --muted: #6b7280;
+    --tag-bg: #1e2128;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,58,58,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,58,58,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+    padding: 24px 0;
+  }
+
+  .logo {
+    padding: 0 20px 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+
+  .logo-text { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; }
+  .logo-sub { font-size: 10px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; letter-spacing: 1px; }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px;
+    font-size: 13px; font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: all 0.2s;
+  }
+
+  .nav-item:hover { color: var(--text); background: var(--surface2); }
+  .nav-item.active { color: var(--text); border-left-color: var(--accent); background: var(--surface2); }
+
+  .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+
+  .nav-badge {
+    margin-left: auto;
+    background: var(--accent);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* Main content */
+  .main {
+    margin-left: 220px;
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+  }
+
+  /* Topbar */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 5;
+  }
+
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+  .page-title { font-size: 18px; font-weight: 800; }
+
+  .breadcrumb {
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    background: var(--surface2);
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+
+  .scan-info {
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+  }
+
+  .btn-scan {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: 'Syne', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    transition: opacity 0.2s;
+  }
+  .btn-scan:hover { opacity: 0.85; }
+
+  /* Content */
+  .content { padding: 28px 32px; }
+
+  /* Stats row */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr) 1.4fr;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    animation: fadeUp 0.4s ease both;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .stat-card.high::before { background: var(--high); }
+  .stat-card.medium::before { background: var(--medium); }
+  .stat-card.low::before { background: var(--low); }
+  .stat-card.total::before { background: linear-gradient(90deg, var(--high), var(--medium)); }
+  .stat-card.posture::before { background: var(--accent); }
+
+  .stat-label {
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .stat-number {
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-number.high { color: var(--high); }
+  .stat-number.medium { color: var(--medium); }
+  .stat-number.low { color: var(--low); }
+
+  .stat-sub {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* Posture card */
+  .posture-card {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .posture-ring {
+    position: relative;
+    width: 72px; height: 72px;
+    flex-shrink: 0;
+  }
+
+  .posture-ring svg {
+    transform: rotate(-90deg);
+  }
+
+  .posture-ring .ring-bg { fill: none; stroke: var(--surface2); stroke-width: 6; }
+  .posture-ring .ring-fill { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 201; stroke-dashoffset: 201; animation: ringFill 1.2s 0.5s ease forwards; }
+
+  @keyframes ringFill { to { stroke-dashoffset: 201; } }
+
+  .posture-score {
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 800;
+    color: var(--accent);
+  }
+
+  .posture-info {}
+  .posture-status { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+  .posture-checks { font-size: 24px; font-weight: 800; line-height: 1; }
+  .posture-checks span { font-size: 13px; font-weight: 400; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+
+  /* Account info bar */
+  .account-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 24px;
+    animation: fadeUp 0.4s 0.1s ease both;
+  }
+
+  .account-item { display: flex; flex-direction: column; gap: 2px; }
+  .account-item-label { font-size: 10px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; letter-spacing: 1px; text-transform: uppercase; }
+  .account-item-value { font-size: 13px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+
+  .account-divider { width: 1px; height: 28px; background: var(--border); }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--pass);
+    display: inline-block;
+    margin-right: 6px;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Findings table */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 16px; font-weight: 800;
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .count-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--muted);
+  }
+
+  .filter-row {
+    display: flex; gap: 8px;
+  }
+
+  .filter-btn {
+    padding: 5px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Syne', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .filter-btn:hover, .filter-btn.active { color: var(--text); border-color: var(--accent); }
+
+  .findings-table {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    animation: fadeUp 0.4s 0.2s ease both;
+  }
+
+  .table-header {
+    display: grid;
+    grid-template-columns: 110px 70px 1fr 160px 80px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    background: var(--surface2);
+  }
+
+  .finding-row {
+    display: grid;
+    grid-template-columns: 110px 70px 1fr 160px 80px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    transition: background 0.15s;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  .finding-row:last-child { border-bottom: none; }
+  .finding-row:hover { background: var(--surface2); }
+
+  .check-id {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent2);
+  }
+
+  .severity-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .sev-high { background: rgba(232,58,58,0.15); color: var(--high); border: 1px solid rgba(232,58,58,0.3); }
+  .sev-medium { background: rgba(245,158,11,0.15); color: var(--medium); border: 1px solid rgba(245,158,11,0.3); }
+  .sev-low { background: rgba(59,130,246,0.15); color: var(--low); border: 1px solid rgba(59,130,246,0.3); }
+
+  .finding-title {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .finding-remediation {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 3px;
+    font-family: 'IBM Plex Mono', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 420px;
+  }
+
+  .status-fail {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--high);
+  }
+
+  .status-fail::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--high);
+    flex-shrink: 0;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Footer note */
+  .footer-note {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    padding-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">🛡️</div>
+    <div class="logo-text">Niagaros CSPM</div>
+    <div class="logo-sub">CNAPP PLATFORM</div>
+  </div>
+  <div class="nav-item active"><span class="nav-icon">📊</span> Dashboard</div>
+  <div class="nav-item"><span class="nav-icon">🔍</span> Findings <span class="nav-badge">14</span></div>
+  <div class="nav-item"><span class="nav-icon">📋</span> Compliance</div>
+  <div class="nav-item"><span class="nav-icon">☁️</span> Resources</div>
+  <div class="nav-item"><span class="nav-icon">🔑</span> IAM Analysis</div>
+  <div class="nav-item"><span class="nav-icon">🔔</span> Alerts</div>
+  <div style="margin-top: auto;">
+    <div class="nav-item"><span class="nav-icon">⚙️</span> Settings</div>
+  </div>
+</nav>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Security Dashboard</div>
+      <div class="breadcrumb">Cloud: AWS &nbsp;/&nbsp; eu-west-1 &nbsp;/&nbsp; Domits</div>
+    </div>
+    <div class="topbar-right">
+      <div class="scan-info">Last scan: <strong>CloudWatch CIS</strong> — 14 checks</div>
+      <button class="btn-scan">▶ Scan Now</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- Account bar -->
+    <div class="account-bar">
+      <div class="account-item">
+        <div class="account-item-label">Account</div>
+        <div class="account-item-value">Domits (115462458880)</div>
+      </div>
+      <div class="account-divider"></div>
+      <div class="account-item">
+        <div class="account-item-label">Scanner</div>
+        <div class="account-item-value">cloudwatch-cis-scanner</div>
+      </div>
+      <div class="account-divider"></div>
+      <div class="account-item">
+        <div class="account-item-label">Framework</div>
+        <div class="account-item-value">CIS AWS Foundations v1.4</div>
+      </div>
+      <div class="account-divider"></div>
+      <div class="account-item">
+        <div class="account-item-label">Status</div>
+        <div class="account-item-value"><span class="status-dot"></span>Active</div>
+      </div>
+      <div class="account-divider"></div>
+      <div class="account-item">
+        <div class="account-item-label">Region</div>
+        <div class="account-item-value">eu-west-1</div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card total" style="animation-delay:0s">
+        <div class="stat-label">Total Findings</div>
+        <div class="stat-number" style="color:var(--text)">14</div>
+        <div class="stat-sub">0 passing · 14 failing</div>
+      </div>
+      <div class="stat-card high" style="animation-delay:0.05s">
+        <div class="stat-label">High Severity</div>
+        <div class="stat-number high">6</div>
+        <div class="stat-sub">CW.4,5,7,8,9,14</div>
+      </div>
+      <div class="stat-card medium" style="animation-delay:0.1s">
+        <div class="stat-label">Medium Severity</div>
+        <div class="stat-number medium">5</div>
+        <div class="stat-sub">CW.6,10,11,12,13</div>
+      </div>
+      <div class="stat-card low" style="animation-delay:0.15s">
+        <div class="stat-label">Low Severity</div>
+        <div class="stat-number low">3</div>
+        <div class="stat-sub">CW.1,2,3</div>
+      </div>
+      <div class="stat-card posture" style="animation-delay:0.2s">
+        <div class="posture-card">
+          <div class="posture-ring">
+            <svg viewBox="0 0 72 72" width="72" height="72">
+              <circle class="ring-bg" cx="36" cy="36" r="32"/>
+              <circle class="ring-fill" cx="36" cy="36" r="32" style="stroke-dashoffset:201"/>
+            </svg>
+            <div class="posture-score">0%</div>
+          </div>
+          <div class="posture-info">
+            <div class="posture-status">Critical</div>
+            <div class="posture-checks">0 <span>/ 14 passing</span></div>
+            <div class="stat-sub" style="margin-top:4px">CloudWatch module</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Findings table -->
+    <div class="section-header">
+      <div class="section-title">
+        CloudWatch CIS Findings
+        <span class="count-badge">14</span>
+      </div>
+      <div class="filter-row">
+        <button class="filter-btn active">All</button>
+        <button class="filter-btn">High</button>
+        <button class="filter-btn">Medium</button>
+        <button class="filter-btn">Low</button>
+      </div>
+    </div>
+
+    <div class="findings-table">
+      <div class="table-header">
+        <div>Check ID</div>
+        <div>Severity</div>
+        <div>Description</div>
+        <div>Remediation</div>
+        <div>Status</div>
+      </div>
+
+      <!-- HIGH -->
+      <div class="finding-row" style="animation-delay:0.1s">
+        <div class="check-id">CloudWatch.4</div>
+        <div><span class="severity-badge sev-high">High</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for IAM policy changes</div>
+          <div class="finding-remediation">Create metric filter for IAM policy changes + attach CloudWatch alarm</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter on CloudTrail log group + SNS alarm</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.12s">
+        <div class="check-id">CloudWatch.5</div>
+        <div><span class="severity-badge sev-high">High</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for CloudTrail configuration changes</div>
+          <div class="finding-remediation">Detect create, update, delete and start/stop logging of trails</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter on CloudTrail + CloudWatch alarm + SNS</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.14s">
+        <div class="check-id">CloudWatch.7</div>
+        <div><span class="severity-badge sev-high">High</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for disabling or scheduled deletion of KMS CMKs</div>
+          <div class="finding-remediation">Detect KMS customer managed key disabling / scheduled deletion</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + CloudWatch alarm + SNS notification</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.16s">
+        <div class="check-id">CloudWatch.8</div>
+        <div><span class="severity-badge sev-high">High</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for S3 bucket policy changes</div>
+          <div class="finding-remediation">Detect PutBucketAcl, PutBucketPolicy, DeleteBucketPolicy events</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter on CloudTrail + CloudWatch alarm + SNS</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.18s">
+        <div class="check-id">CloudWatch.9</div>
+        <div><span class="severity-badge sev-high">High</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for AWS Config configuration changes</div>
+          <div class="finding-remediation">Detect AWS Config configuration change events</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter on CloudTrail + CloudWatch alarm + SNS</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.20s">
+        <div class="check-id">CloudWatch.14</div>
+        <div><span class="severity-badge sev-high">High</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for VPC changes</div>
+          <div class="finding-remediation">Detect create, delete, modify VPCs and VPC peering connections</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + CloudWatch alarm + SNS notification</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <!-- MEDIUM -->
+      <div class="finding-row" style="animation-delay:0.22s">
+        <div class="check-id">CloudWatch.6</div>
+        <div><span class="severity-badge sev-medium">Medium</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for AWS Console authentication failures</div>
+          <div class="finding-remediation">Pattern: ConsoleLogin + errorMessage = "Failed authentication"</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + alarm on repeated failed login attempts</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.24s">
+        <div class="check-id">CloudWatch.10</div>
+        <div><span class="severity-badge sev-medium">Medium</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for security group changes</div>
+          <div class="finding-remediation">Detect create, delete, and modification of inbound/outbound rules</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter on CloudTrail + CloudWatch alarm + SNS</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.26s">
+        <div class="check-id">CloudWatch.11</div>
+        <div><span class="severity-badge sev-medium">Medium</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for changes to Network Access Control Lists (NACLs)</div>
+          <div class="finding-remediation">Detect NACL changes and attach a CloudWatch alarm</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + CloudWatch alarm + SNS notification</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.28s">
+        <div class="check-id">CloudWatch.12</div>
+        <div><span class="severity-badge sev-medium">Medium</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for changes to network gateways</div>
+          <div class="finding-remediation">Detect create, delete, attach and detach of internet/customer gateways</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + CloudWatch alarm + SNS notification</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.30s">
+        <div class="check-id">CloudWatch.13</div>
+        <div><span class="severity-badge sev-medium">Medium</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for route table changes</div>
+          <div class="finding-remediation">Detect route table changes and attach a CloudWatch alarm</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + CloudWatch alarm + SNS notification</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <!-- LOW -->
+      <div class="finding-row" style="animation-delay:0.32s">
+        <div class="check-id">CloudWatch.1</div>
+        <div><span class="severity-badge sev-low">Low</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm should exist for usage of the root user</div>
+          <div class="finding-remediation">Pattern: userIdentity.type = "Root" && invokedBy NOT EXISTS</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + alarm + SNS to active subscription</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.34s">
+        <div class="check-id">CloudWatch.2</div>
+        <div><span class="severity-badge sev-low">Low</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for unauthorized API calls</div>
+          <div class="finding-remediation">Pattern: errorCode = "*UnauthorizedOperation" || "AccessDenied*"</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + alarm + SNS to active subscription</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+
+      <div class="finding-row" style="animation-delay:0.36s">
+        <div class="check-id">CloudWatch.3</div>
+        <div><span class="severity-badge sev-low">Low</span></div>
+        <div>
+          <div class="finding-title">Log metric filter and alarm for Management Console sign-in without MFA</div>
+          <div class="finding-remediation">Pattern: ConsoleLogin + MFAUsed != "Yes" + IAMUser + Success</div>
+        </div>
+        <div class="finding-remediation" style="max-width:none">Metric filter + alarm + SNS to active subscription</div>
+        <div><span class="status-fail">FAIL</span></div>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      CSPM Platform — Niagaros &nbsp;·&nbsp; Student: Daniil &nbsp;·&nbsp; AWS Account: Domits (115462458880) &nbsp;·&nbsp; Data live from RDS cspm_production
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Filter buttons
+  const filterBtns = document.querySelectorAll('.filter-btn');
+  const rows = document.querySelectorAll('.finding-row');
+
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const filter = btn.textContent.toLowerCase();
+      rows.forEach(row => {
+        const sev = row.querySelector('.severity-badge').textContent.toLowerCase();
+        row.style.display = (filter === 'all' || sev === filter) ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

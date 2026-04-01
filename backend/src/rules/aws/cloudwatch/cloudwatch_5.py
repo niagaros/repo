@@ -9,8 +9,4 @@ class CloudWatch5Check(CloudWatchBaseCheck):
         "{ ($.eventName = CreateTrail) || ($.eventName = UpdateTrail) || "
         "($.eventName = DeleteTrail) || ($.eventName = StartLogging) || ($.eventName = StopLogging) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects changes to CloudTrail itself "
-        "(create, update, delete, start and stop logging of trails) "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for CloudTrail configuration changes via a CloudTrail metric filter and notify via SNS."

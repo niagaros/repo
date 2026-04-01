@@ -57,25 +57,22 @@ def _get_connection():
 # Helpers
 # ---------------------------------------------------------------------------
 
-SEVERITY_MAP = {
-    "CRITICAL": "critical",
-    "HIGH": "high",
-    "MEDIUM": "medium",
-    "LOW": "low",
-}
+
 
 STATUS_MAP = {
-    "PASS": "resolved",
-    "FAIL": "open",
+    "PASS": "pass",
+    "FAIL": "fail",
 }
 
 
 def _normalize_severity(raw: str) -> str:
-    return SEVERITY_MAP.get((raw or "").upper(), "medium")
+    valid = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
+    upper = (raw or "").upper()
+    return upper if upper in valid else "MEDIUM"
 
 
 def _normalize_status(raw: str) -> str:
-    return STATUS_MAP.get((raw or "").upper(), "open")
+    return STATUS_MAP.get((raw or "").upper(), "fail")
 
 
 

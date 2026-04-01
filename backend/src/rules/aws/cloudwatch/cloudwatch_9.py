@@ -10,7 +10,4 @@ class CloudWatch9Check(CloudWatchBaseCheck):
         "(($.eventName = StopConfigurationRecorder) || ($.eventName = DeleteDeliveryChannel) || "
         "($.eventName = PutDeliveryChannel) || ($.eventName = PutConfigurationRecorder)) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects AWS Config configuration changes "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for AWS Config configuration changes via a CloudTrail metric filter and notify via SNS."

@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros CSPM — Security Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0b0d12;
+  --s1: #111318;
+  --s2: #181b22;
+  --s3: #1e2230;
+  --bd: #252a38;
+  --tx: #e2e6f3;
+  --mu: #5c6480;
+  --ac: #4c7bff;
+  --cr: #ff3d5e;
+  --hi: #ff6330;
+  --me: #f5a623;
+  --lo: #38b2e8;
+  --pa: #2fce7a;
+  --fa: #ff3d5e;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--tx);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px}
+body{display:flex;min-height:100vh;overflow-x:hidden}
+
+/* Sidebar */
+.sidebar{width:220px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--bd);display:flex;flex-direction:column;padding:0;position:fixed;top:0;left:0;bottom:0;z-index:20}
+.logo{padding:22px 20px 20px;border-bottom:1px solid var(--bd)}
+.logo-icon{width:34px;height:34px;background:var(--ac);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:10px}
+.logo-name{font-size:14px;font-weight:800;letter-spacing:-.3px}
+.logo-tag{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.nav{flex:1;padding:12px 0}
+.nav-group-label{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;letter-spacing:2px;text-transform:uppercase;padding:14px 20px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;font-size:12px;font-weight:600;color:var(--mu);cursor:pointer;border-left:2px solid transparent;transition:all .15s;letter-spacing:.1px}
+.nav-item:hover{color:var(--tx);background:var(--s2)}
+.nav-item.active{color:var(--tx);border-left-color:var(--ac);background:var(--s2)}
+.nav-icon{font-size:15px;width:20px;text-align:center}
+.nav-badge{margin-left:auto;background:var(--cr);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;font-family:'DM Mono',monospace}
+.sidebar-footer{padding:16px 20px;border-top:1px solid var(--bd)}
+.sidebar-footer .nav-item{padding:8px 0}
+
+/* Main */
+.main{margin-left:220px;flex:1;display:flex;flex-direction:column;min-height:100vh}
+
+/* Topbar */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;background:var(--s1);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:10}
+.topbar-left{display:flex;align-items:center;gap:14px}
+.page-title{font-size:16px;font-weight:800;letter-spacing:-.3px}
+.crumb{font-family:'DM Mono',monospace;font-size:10px;background:var(--s2);border:1px solid var(--bd);padding:4px 10px;border-radius:20px;color:var(--mu)}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.scan-info{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace}
+.dot-live{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--pa);margin-right:5px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.btn-scan{background:var(--ac);color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:'Plus Jakarta Sans',sans-serif;transition:opacity .2s}
+.btn-scan:hover{opacity:.85}
+
+/* Content */
+.content{padding:24px 28px;flex:1}
+
+/* Loading */
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--mu)}
+.spinner{width:36px;height:36px;border:3px solid var(--bd);border-top-color:var(--ac);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Error */
+.error-box{background:rgba(255,61,94,.08);border:1px solid rgba(255,61,94,.25);border-radius:10px;padding:20px;color:var(--cr);font-family:'DM Mono',monospace;font-size:12px}
+
+/* Overview cards */
+.overview-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.ov-card{background:var(--s1);border:1px solid var(--bd);border-radius:11px;padding:18px 20px;position:relative;overflow:hidden;animation:up .35s ease both}
+.ov-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.ov-card.cr::before{background:var(--cr)}
+.ov-card.hi::before{background:var(--hi)}
+.ov-card.me::before{background:var(--me)}
+.ov-card.lo::before{background:var(--lo)}
+.ov-label{font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.ov-num{font-size:34px;font-weight:800;line-height:1}
+.ov-num.cr{color:var(--cr)}
+.ov-num.hi{color:var(--hi)}
+.ov-num.me{color:var(--me)}
+.ov-num.lo{color:var(--lo)}
+.ov-sub{font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;margin-top:5px}
+
+/* Score + services section */
+.score-section{display:grid;grid-template-columns:260px 1fr;gap:14px;margin-bottom:16px}
+.score-card{background:var(--s1);border:1px solid var(--bd);border-radius:11px;padding:22px;display:flex;align-items:center;gap:20px;animation:up .35s .05s ease both}
+.ring-wrap{position:relative;flex-shrink:0}
+.ring-wrap svg{transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--s3);stroke-width:9}
+.ring-fill{fill:none;stroke:var(--ac);stroke-width:9;stroke-linecap:round;stroke-dasharray:220;stroke-dashoffset:220;transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1)}
+.ring-val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring-pct{font-size:20px;font-weight:800;color:var(--ac);line-height:1}
+.ring-lbl{font-size:8px;color:var(--mu);font-family:'DM Mono',monospace;letter-spacing:1px;margin-top:2px}
+.score-info .score-title{font-size:13px;font-weight:700;margin-bottom:3px}
+.score-info .score-sub{font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:14px}
+.sev-bars{display:flex;flex-direction:column;gap:6px}
+.sev-row{display:flex;align-items:center;gap:8px;font-size:10px}
+.sev-row-lbl{width:52px;color:var(--mu);font-family:'DM Mono',monospace}
+.sev-track{flex:1;height:4px;background:var(--s3);border-radius:2px;overflow:hidden}
+.sev-fill{height:100%;border-radius:2px;transition:width 1.2s ease}
+.sev-pct{width:30px;text-align:right;font-weight:600;font-size:10px}
+
+.services-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.svc-card{background:var(--s1);border:1px solid var(--bd);border-radius:11px;padding:18px;position:relative;overflow:hidden;animation:up .35s ease both}
+.svc-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--svc-color)}
+.svc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.svc-name{font-size:12px;font-weight:700}
+.svc-type{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.8px}
+.svc-icon{font-size:20px}
+.svc-score{font-size:30px;font-weight:800;line-height:1;margin-bottom:4px}
+.svc-sub{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:12px}
+.svc-bar{height:5px;background:var(--s3);border-radius:3px;overflow:hidden;margin-bottom:12px}
+.svc-bar-fill{height:100%;border-radius:3px;background:var(--svc-color);transition:width 1.2s ease}
+.svc-stats{display:flex;gap:12px}
+.svc-stat-val{font-size:15px;font-weight:700}
+.svc-stat-val.pa{color:var(--pa)}
+.svc-stat-val.fa{color:var(--fa)}
+.svc-stat-lbl{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.5px}
+
+/* Findings */
+.findings-section{margin-top:16px;animation:up .35s .15s ease both}
+.sec-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.sec-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.badge{font-family:'DM Mono',monospace;font-size:10px;color:var(--mu);background:var(--s2);border:1px solid var(--bd);padding:2px 8px;border-radius:4px}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.fbtn{padding:4px 11px;border-radius:5px;border:1px solid var(--bd);background:var(--s2);color:var(--mu);font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Plus Jakarta Sans',sans-serif}
+.fbtn:hover,.fbtn.on{color:var(--tx);border-color:var(--ac);background:rgba(76,123,255,.1)}
+.table-wrap{background:var(--s1);border:1px solid var(--bd);border-radius:11px;overflow:hidden}
+.tbl-head{display:grid;grid-template-columns:130px 90px 82px 1fr 82px;padding:9px 18px;background:var(--s2);border-bottom:1px solid var(--bd);font-size:9px;font-family:'DM Mono',monospace;color:var(--mu);letter-spacing:1px;text-transform:uppercase}
+.tbl-row{display:grid;grid-template-columns:130px 90px 82px 1fr 82px;padding:13px 18px;border-bottom:1px solid var(--bd);align-items:center;transition:background .12s;cursor:default}
+.tbl-row:last-child{border-bottom:none}
+.tbl-row:hover{background:var(--s2)}
+.check-id{font-family:'DM Mono',monospace;font-size:11px;font-weight:500;color:var(--ac)}
+.rbadge{display:inline-flex;align-items:center;font-size:9px;font-weight:700;font-family:'DM Mono',monospace;padding:3px 7px;border-radius:4px;letter-spacing:.5px}
+.rb-cw{background:rgba(76,123,255,.12);color:var(--ac)}
+.rb-s3{background:rgba(47,206,122,.12);color:var(--pa)}
+.rb-iam{background:rgba(245,166,35,.12);color:var(--me)}
+.rb-kms{background:rgba(255,99,48,.12);color:var(--hi)}
+.rb-other{background:var(--s3);color:var(--mu)}
+.sevbadge{display:inline-block;padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;font-family:'DM Mono',monospace;text-transform:uppercase}
+.sev-CRITICAL{background:rgba(255,61,94,.12);color:var(--cr);border:1px solid rgba(255,61,94,.2)}
+.sev-HIGH{background:rgba(255,99,48,.12);color:var(--hi);border:1px solid rgba(255,99,48,.2)}
+.sev-MEDIUM{background:rgba(245,166,35,.12);color:var(--me);border:1px solid rgba(245,166,35,.2)}
+.sev-LOW{background:rgba(56,178,232,.12);color:var(--lo);border:1px solid rgba(56,178,232,.2)}
+.find-title{font-size:12px;font-weight:600;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+.find-rem{font-size:10px;color:var(--mu);margin-top:2px;font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+.res-fail{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--fa);font-family:'DM Mono',monospace}
+.res-pass{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--pa);font-family:'DM Mono',monospace}
+.rdot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.rdot-fa{background:var(--fa)}
+.rdot-pa{background:var(--pa)}
+
+@keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">🛡</div>
+    <div class="logo-name">Niagaros</div>
+    <div class="logo-tag">CSPM Platform</div>
+  </div>
+  <div class="nav">
+    <div class="nav-group-label">Main</div>
+    <div class="nav-item active"><span class="nav-icon">◈</span> Dashboard</div>
+    <div class="nav-item"><span class="nav-icon">◎</span> Findings <span class="nav-badge" id="nav-count">—</span></div>
+    <div class="nav-item"><span class="nav-icon">◻</span> Resources</div>
+    <div class="nav-group-label">Compliance</div>
+    <div class="nav-item"><span class="nav-icon">◷</span> CIS Benchmark</div>
+    <div class="nav-item"><span class="nav-icon">◑</span> IAM Analysis</div>
+    <div class="nav-item"><span class="nav-icon">◈</span> Alerts</div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="nav-item"><span class="nav-icon">◌</span> Settings</div>
+  </div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Security Dashboard</div>
+      <div class="crumb" id="crumb-info">Loading…</div>
+    </div>
+    <div class="topbar-right">
+      <div class="scan-info"><span class="dot-live"></span><span id="last-scan">Fetching data…</span></div>
+      <button class="btn-scan" onclick="loadData()">▶ Refresh</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div id="loading-state" class="loading">
+      <div class="spinner"></div>
+      <span>Loading security data…</span>
+    </div>
+    <div id="dashboard-content" style="display:none">
+
+      <!-- Overview cards -->
+      <div class="overview-grid" id="overview-grid"></div>
+
+      <!-- Score + services -->
+      <div class="score-section">
+        <div class="score-card">
+          <div class="ring-wrap">
+            <svg width="88" height="88" viewBox="0 0 88 88">
+              <circle class="ring-bg" cx="44" cy="44" r="35"/>
+              <circle class="ring-fill" id="ring-fill" cx="44" cy="44" r="35"/>
+            </svg>
+            <div class="ring-val">
+              <div class="ring-pct" id="ring-pct">—</div>
+              <div class="ring-lbl">SCORE</div>
+            </div>
+          </div>
+          <div class="score-info">
+            <div class="score-title">Overall CIS Score</div>
+            <div class="score-sub" id="score-sub">— / — checks passing</div>
+            <div class="sev-bars" id="sev-bars"></div>
+          </div>
+        </div>
+        <div class="services-grid" id="services-grid"></div>
+      </div>
+
+      <!-- Findings -->
+      <div class="findings-section">
+        <div class="sec-header">
+          <div class="sec-title">All Findings <span class="badge" id="find-count">—</span></div>
+          <div class="filters" id="filters"></div>
+        </div>
+        <div class="table-wrap">
+          <div class="tbl-head">
+            <div>Check ID</div><div>Service</div><div>Severity</div><div>Finding</div><div>Status</div>
+          </div>
+          <div id="findings-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+
+const SVC_CFG = {
+  CloudWatch: { name:'CloudWatch', icon:'📊', color:'#4c7bff', cls:'rb-cw' },
+  S3:         { name:'S3 Storage',  icon:'🪣', color:'#2fce7a', cls:'rb-s3' },
+  IAM:        { name:'IAM',         icon:'🔑', color:'#f5a623', cls:'rb-iam' },
+  KMS:        { name:'KMS',         icon:'🔐', color:'#ff6330', cls:'rb-kms' },
+};
+
+let allFindings = [];
+let activeFilter = { type:'all', val:'all' };
+
+async function loadData() {
+  document.getElementById('loading-state').style.display='flex';
+  document.getElementById('dashboard-content').style.display='none';
+  try {
+    const r = await fetch(API);
+    const d = await r.json();
+    render(d);
+  } catch(e) {
+    document.getElementById('loading-state').innerHTML = `<div class="error-box">Error loading data: ${e.message}</div>`;
+  }
+}
+
+function render(d) {
+  const total = d.total || {};
+  const overall = total.score || 0;
+  const t = total.total || 0;
+  const p = total.passed || 0;
+  const bySev = d.by_severity || {};
+  allFindings = d.findings || [];
+
+  // Topbar
+  document.getElementById('last-scan').textContent = 'Last scan: ' + (d.last_scan_at||'—').substring(0,16);
+  document.getElementById('crumb-info').textContent = 'AWS · Domits Production · eu-west-1';
+  document.getElementById('nav-count').textContent = allFindings.length;
+
+  // Overview cards
+  const sevs = [
+    { key:'CRITICAL', label:'Critical', cls:'cr', fallback:0 },
+    { key:'HIGH',     label:'High',     cls:'hi', fallback:0 },
+    { key:'MEDIUM',   label:'Medium',   cls:'me', fallback:0 },
+    { key:'LOW',      label:'Low',      cls:'lo', fallback:0 },
+  ];
+  document.getElementById('overview-grid').innerHTML = sevs.map(s => {
+    const sd = bySev[s.key]||{};
+    return `<div class="ov-card ${s.cls}">
+      <div class="ov-label">${s.label} Severity</div>
+      <div class="ov-num ${s.cls}">${sd.total||0}</div>
+      <div class="ov-sub">${sd.failed||0} failing · ${sd.passed||0} passing</div>
+    </div>`;
+  }).join('');
+
+  // Ring
+  const circ = 220;
+  const offset = circ * (1 - overall/100);
+  document.getElementById('ring-pct').textContent = overall+'%';
+  document.getElementById('score-sub').textContent = p+' / '+t+' checks passing';
+  setTimeout(()=>{ document.getElementById('ring-fill').style.strokeDashoffset = offset; },100);
+
+  // Sev bars
+  document.getElementById('sev-bars').innerHTML = ['CRITICAL','HIGH','MEDIUM','LOW'].map(k => {
+    const sd = bySev[k]||{};
+    const pct = sd.total ? Math.round(sd.passed/sd.total*100) : 0;
+    const colors = {CRITICAL:'#ff3d5e',HIGH:'#ff6330',MEDIUM:'#f5a623',LOW:'#38b2e8'};
+    return `<div class="sev-row">
+      <div class="sev-row-lbl">${k}</div>
+      <div class="sev-track"><div class="sev-fill" style="width:${pct}%;background:${colors[k]}"></div></div>
+      <div class="sev-pct" style="color:${colors[k]}">${pct}%</div>
+    </div>`;
+  }).join('');
+
+  // Services
+  document.getElementById('services-grid').innerHTML = (d.services||[]).map((s,i) => {
+    const cfg = SVC_CFG[s.service] || {name:s.service,icon:'☁️',color:'#5c6480',cls:'rb-other'};
+    return `<div class="svc-card" style="--svc-color:${cfg.color};animation-delay:${i*0.05}s">
+      <div class="svc-header">
+        <div><div class="svc-name">${cfg.name}</div><div class="svc-type">CIS ${s.service}</div></div>
+        <span class="svc-icon">${cfg.icon}</span>
+      </div>
+      <div class="svc-score" style="color:${cfg.color}">${s.score}%</div>
+      <div class="svc-sub">${s.passed} / ${s.total} passing</div>
+      <div class="svc-bar"><div class="svc-bar-fill" style="width:0%" data-w="${s.score}"></div></div>
+      <div class="svc-stats">
+        <div><div class="svc-stat-val pa">${s.passed}</div><div class="svc-stat-lbl">Pass</div></div>
+        <div><div class="svc-stat-val fa">${s.failed}</div><div class="svc-stat-lbl">Fail</div></div>
+        <div><div class="svc-stat-val">${s.total}</div><div class="svc-stat-lbl">Total</div></div>
+      </div>
+    </div>`;
+  }).join('');
+  setTimeout(()=>{ document.querySelectorAll('.svc-bar-fill').forEach(b=>b.style.width=b.dataset.w+'%'); },120);
+
+  // Filters
+  const filterDefs = [
+    {label:'All',type:'all',val:'all'},
+    {label:'CloudWatch',type:'service',val:'cloudwatch'},
+    {label:'S3',type:'service',val:'s3'},
+    {label:'IAM',type:'service',val:'iam'},
+    {label:'KMS',type:'service',val:'kms'},
+    {label:'Critical',type:'sev',val:'CRITICAL'},
+    {label:'High',type:'sev',val:'HIGH'},
+    {label:'Medium',type:'sev',val:'MEDIUM'},
+    {label:'Low',type:'sev',val:'LOW'},
+    {label:'Fail only',type:'result',val:'FAIL'},
+    {label:'Pass only',type:'result',val:'PASS'},
+  ];
+  document.getElementById('filters').innerHTML = filterDefs.map(f =>
+    `<button class="fbtn${f.type==='all'?' on':''}" onclick="applyFilter(this,'${f.type}','${f.val}')">${f.label}</button>`
+  ).join('');
+
+  // Findings
+  document.getElementById('find-count').textContent = allFindings.length;
+  renderFindings(allFindings);
+
+  document.getElementById('loading-state').style.display='none';
+  document.getElementById('dashboard-content').style.display='block';
+}
+
+function renderFindings(list) {
+  document.getElementById('findings-body').innerHTML = list.map(f => {
+    const svc = f.service||'';
+    const svcKey = svc.toLowerCase();
+    const cfg = SVC_CFG[svc] || {cls:'rb-other'};
+    const title = (f.title||f.check_id||'').substring(0,82) + ((f.title||'').length>82?'…':'');
+    const rem = (f.remediation||'').substring(0,105) + ((f.remediation||'').length>105?'…':'');
+    const isFail = f.result==='FAIL';
+    return `<div class="tbl-row" data-service="${svcKey}" data-sev="${f.severity}" data-result="${f.result}">
+      <div class="check-id">${f.check_id||'—'}</div>
+      <div><span class="rbadge ${cfg.cls}">${svc}</span></div>
+      <div><span class="sevbadge sev-${f.severity}">${(f.severity||'').charAt(0)+(f.severity||'').slice(1).toLowerCase()}</span></div>
+      <div><div class="find-title">${title}</div><div class="find-rem">${rem}</div></div>
+      <div>${isFail
+        ? '<span class="res-fail"><span class="rdot rdot-fa"></span>FAIL</span>'
+        : '<span class="res-pass"><span class="rdot rdot-pa"></span>PASS</span>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function applyFilter(btn, type, val) {
+  document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  activeFilter = {type,val};
+  const filtered = type==='all' ? allFindings : allFindings.filter(f => {
+    if(type==='service') return (f.service||'').toLowerCase()===val;
+    if(type==='sev')     return f.severity===val;
+    if(type==='result')  return f.result===val;
+    return true;
+  });
+  document.getElementById('find-count').textContent = filtered.length;
+  renderFindings(filtered);
+}
+
+loadData();
+</script>
+</body>
+</html>

@@ -11,7 +11,4 @@ class CloudWatch13Check(CloudWatchBaseCheck):
         "($.eventName = DeleteRouteTable) || ($.eventName = DeleteRoute) || "
         "($.eventName = DisassociateRouteTable) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects route table changes "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for route table changes via a CloudTrail metric filter and notify via SNS."

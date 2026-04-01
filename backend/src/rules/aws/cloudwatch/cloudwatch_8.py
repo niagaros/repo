@@ -13,8 +13,4 @@ class CloudWatch8Check(CloudWatchBaseCheck):
         "($.eventName = DeleteBucketCors) || ($.eventName = DeleteBucketLifecycle) || "
         "($.eventName = DeleteBucketReplication)) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects S3 bucket policy changes "
-        "(PutBucketAcl, PutBucketPolicy, DeleteBucketPolicy, etc.) "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for S3 bucket policy changes via a CloudTrail metric filter and notify via SNS."

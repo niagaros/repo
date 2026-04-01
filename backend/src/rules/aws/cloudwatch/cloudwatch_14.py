@@ -12,8 +12,4 @@ class CloudWatch14Check(CloudWatchBaseCheck):
         "($.eventName = DetachClassicLinkVpc) || ($.eventName = DisableVpcClassicLink) || "
         "($.eventName = EnableVpcClassicLink) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects VPC changes "
-        "(create, delete, modify VPCs and VPC peering connections) "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for VPC changes via a CloudTrail metric filter and notify via SNS."
