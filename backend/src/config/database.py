@@ -172,6 +172,18 @@ class Database:
             """, (function_name,))
         self.conn.commit()
 
+    def get_resource_regions(self, cloud_account_id: str, resource_type: str) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT region
+                FROM resources
+                WHERE cloud_account_id = %s
+                AND resource_type = %s
+                AND region IS NOT NULL
+            """, (cloud_account_id, resource_type))
+            rows = cur.fetchall()
+        return [r[0] for r in rows]
+
     # ── utils ──────────────────────────────────────────────────────
 
     def close(self):

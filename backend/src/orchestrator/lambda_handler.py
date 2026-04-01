@@ -40,50 +40,66 @@ def lambda_handler(event, context):
                 break
 
             for scanner in scanners:
-                triggered  = False
-                last_error = None
 
-                for attempt in range(MAX_RETRIES):
+                # Get regions for this resource type from the resources table
+                regions = db.get_resource_regions(account["id"], scanner["resource_type"])
+
+                # If nothing found yet fall back to platform region
+                if not regions:
+                    regions = [REGION]
+
+                # IAM is global — use platform region for the API calls
+                if regions == ["global"]:
+                    regions = [REGION]
+
+                for region in regions:
+                    triggered  = False
+                    last_error = None
+
+                    for attempt in range(MAX_RETRIES):
+                        try:
+                            client.invoke(
+                                FunctionName   = scanner["function_name"],
+                                InvocationType = "Event",
+                                Payload        = json.dumps({
+                                    "cloud_account_id": account["id"],
+                                    "role_arn":         account["role_arn"],
+                                    "external_id":      account["external_id"],
+                                    "region":           region,
+                                }),
+                            )
+                            triggered = True
+                            logger.info(f"Orchestrator: triggered {scanner['function_name']} for account {account['id']} in region {region} (attempt {attempt + 1})")
+                            break
+
+                        except Exception as e:
+                            last_error = str(e)
+                            logger.warning(f"Orchestrator: attempt {attempt + 1} failed for {scanner['function_name']} in region {region} — {e}")
+                            if attempt < MAX_RETRIES - 1:
+                                time.sleep(2 ** attempt)
+
                     try:
-                        client.invoke(
-                            FunctionName   = scanner["function_name"],
-                            InvocationType = "Event",
-                            Payload        = json.dumps({
-                                "cloud_account_id": account["id"],
-                                "role_arn":         account["role_arn"],
-                                "external_id":      account["external_id"],
-                            }),
-                        )
-                        triggered = True
-                        logger.info(f"Orchestrator: triggered {scanner['function_name']} for account {account['id']} (attempt {attempt + 1})")
-                        break
-
+                        if triggered:
+                            db.record_scanner_triggered(scanner["function_name"])
+                            results.append({
+                                "account_id":    account["id"],
+                                "scanner":       scanner["function_name"],
+                                "resource_type": scanner["resource_type"],
+                                "region":        region,
+                                "status":        "triggered",
+                            })
+                        else:
+                            db.record_scanner_failed(scanner["function_name"], last_error)
+                            results.append({
+                                "account_id":    account["id"],
+                                "scanner":       scanner["function_name"],
+                                "resource_type": scanner["resource_type"],
+                                "region":        region,
+                                "status":        "failed",
+                                "error":         last_error,
+                            })
                     except Exception as e:
-                        last_error = str(e)
-                        logger.warning(f"Orchestrator: attempt {attempt + 1} failed for {scanner['function_name']} — {e}")
-                        if attempt < MAX_RETRIES - 1:
-                            time.sleep(2 ** attempt)
-
-                try:
-                    if triggered:
-                        db.record_scanner_triggered(scanner["function_name"])
-                        results.append({
-                            "account_id":    account["id"],
-                            "scanner":       scanner["function_name"],
-                            "resource_type": scanner["resource_type"],
-                            "status":        "triggered",
-                        })
-                    else:
-                        db.record_scanner_failed(scanner["function_name"], last_error)
-                        results.append({
-                            "account_id":    account["id"],
-                            "scanner":       scanner["function_name"],
-                            "resource_type": scanner["resource_type"],
-                            "status":        "failed",
-                            "error":         last_error,
-                        })
-                except Exception as e:
-                    logger.error(f"Orchestrator: failed to update scanner record — {e}")
+                        logger.error(f"Orchestrator: failed to update scanner record — {e}")
 
         triggered_count = len([r for r in results if r["status"] == "triggered"])
         failed_count    = len([r for r in results if r["status"] == "failed"])
