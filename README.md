@@ -135,7 +135,7 @@ This MVP lays the foundation for:
    - **Post-Processor** – Normalizes results and assigns severity  
 
 4. **Results Storage**  
-   - **DynamoDB** – Structured findings and metadata  
+   - **RDS postgresql** – Structured findings and metadata  
    - **Amazon S3** – Raw scan data and historical reports  
 
 5. **CI/CD & Source Control (GitHub + Amplify)**  
@@ -180,7 +180,7 @@ Starting with S3 allows Niagaros to:
 - Amazon Web Services (AWS)  
 - Amplify Hosting  
 - API Gateway  
-- DynamoDB  
+- RDS Postgresql
 - Amazon S3  
 - Amazon Cognito  
 
@@ -194,19 +194,97 @@ Starting with S3 allows Niagaros to:
 
 ---
 
-## Development Status
-
-This project is currently in **active development** as part of the Niagaros CSPM pilot for **Domits**.
-
-### Planned MVP Deliverables
-
-- [ ] S3 configuration collector  
-- [ ] Core rule engine  
-- [ ] Risk scoring model  
-- [ ] Standards and compliance mapper  
-- [ ] CLI / API output formatter  
-- [ ] Setup and deployment documentation  
-- [ ] Validation in Domits AWS environment  
+### Adding a new service
+ 
+The engine auto-discovers collectors and rules at runtime. To add a new service:
+ 
+1. Create `backend/src/collectors/aws/<service>/collector.py` — inherits `BaseCollector`, implements `collect()`
+2. Create rule files under `backend/src/rules/cis/<service>/` — one file per CIS control
+3. Deploy the new Lambda function
+4. Insert a row in the `scanners` table
+5. No changes to the engine or orchestrator needed
+ 
+---
+ 
+## Getting Started
+ 
+### Prerequisites
+ 
+- AWS CLI with SSO profile `niagaros-cspm` configured
+- Python 3.9
+- PowerShell (for deployment scripts)
+- Access to CSPM platform account `225989360315` in `eu-west-1`
+ 
+See `docs/onboarding.md` for full setup instructions.
+ 
+### Login
+ 
+```powershell
+aws sso login --profile niagaros-cspm
+$env:AWS_PROFILE = "niagaros-cspm"
+```
+ 
+### Deploy the orchestrator
+ 
+```powershell
+cd backend
+Copy-Item -Recurse src/orchestrator package/ -Force
+Copy-Item -Recurse src/config package/ -Force
+cd package
+Compress-Archive -Path * -DestinationPath ../cspm-orchestrator.zip -Force
+cd ..
+aws lambda update-function-code --function-name cspm_orchestrator --region eu-west-1 --zip-file fileb://cspm-orchestrator.zip
+```
+ 
+### Deploy the S3 scanner
+ 
+```powershell
+Copy-Item -Recurse src/api package/ -Force
+Copy-Item -Recurse src/collectors package/ -Force
+Copy-Item -Recurse src/config package/ -Force
+Copy-Item -Recurse src/engine package/ -Force
+Copy-Item -Recurse src/postprocess package/ -Force
+Copy-Item -Recurse src/rules package/ -Force
+Copy-Item -Recurse src/standards package/ -Force
+cd package
+Compress-Archive -Path * -DestinationPath ../cspm-scanner.zip -Force
+cd ..
+aws lambda update-function-code --function-name cis_s3_scanner --region eu-west-1 --zip-file fileb://cspm-scanner.zip
+```
+ 
+### Invoke the orchestrator
+ 
+```powershell
+'{}' | Out-File -FilePath orchestrator-payload.json -Encoding utf8
+aws lambda invoke `
+    --function-name cspm_orchestrator `
+    --region eu-west-1 `
+    --payload fileb://orchestrator-payload.json `
+    orchestrator-response.json ; Get-Content orchestrator-response.json
+```
+ 
+### Run tests
+ 
+```bash
+cd backend
+npm test
+```
+ 
+---
+ 
+## Contributing Guidelines
+ 
+1. Branch from `main`:
+```bash
+git checkout -b feature/<short-description>
+```
+ 
+2. Keep PRs small and focused — one feature or fix per PR
+3. Follow existing patterns — use `BaseCollector` and `BaseCheck` for all new collectors and rules
+4. Add unit tests for any new collector or rule
+5. Open a PR against `main` — describe what changed and link related issues
+ 
+Security-sensitive contributions (new rules, IAM changes, compliance mappings) are reviewed more strictly before merge.
 
 ---
 
