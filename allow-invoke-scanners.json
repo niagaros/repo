@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowInvokeAnyScannerLambda",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:eu-west-1:225989360315:function:*scanner*"
+    },
+    {
+      "Sid": "AllowInvokeAnyScannerLambdaVersionsAliases",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:eu-west-1:225989360315:function:*scanner*:*"
+    }
+  ]
+}
