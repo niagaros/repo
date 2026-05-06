@@ -82,45 +82,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
 .spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#ef4444;border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* ── SCAN OVERLAY ─────────────────────────────────── */
-#scan-overlay{position:fixed;inset:0;background:rgba(13,15,20,.92);z-index:8000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:32px;backdrop-filter:blur(4px)}
-#scan-overlay.active{display:flex;animation:fadeIn .3s ease}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-
-.radar-wrap{position:relative;width:160px;height:160px;flex-shrink:0}
-.radar-circle{position:absolute;border-radius:50%;border:1px solid rgba(239,68,68,.25)}
-.radar-circle:nth-child(1){inset:0}
-.radar-circle:nth-child(2){inset:20px}
-.radar-circle:nth-child(3){inset:40px}
-.radar-circle:nth-child(4){inset:60px}
-.radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(239,68,68,0) 60%,rgba(239,68,68,.5) 100%);animation:sweep 2s linear infinite}
-@keyframes sweep{to{transform:rotate(360deg)}}
-.radar-dot{position:absolute;width:6px;height:6px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;top:50%;left:50%;transform:translate(-50%,-50%)}
-.radar-ping{position:absolute;inset:0;border-radius:50%;border:2px solid #ef4444;animation:ping 2s ease-out infinite;opacity:0}
-.radar-ping:nth-child(6){animation-delay:.6s}
-.radar-ping:nth-child(7){animation-delay:1.2s}
-@keyframes ping{0%{inset:60px;opacity:.8}100%{inset:-10px;opacity:0}}
-
-.scan-info{text-align:center}
-.scan-title{font-size:18px;font-weight:700;color:#fff;margin-bottom:6px}
-.scan-sub{font-size:13px;color:#6b7280}
-
-.scan-steps{display:flex;flex-direction:column;gap:10px;width:320px}
-.scan-step{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:9px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);transition:all .3s}
-.scan-step.ss-active{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25)}
-.scan-step.ss-done{background:rgba(16,185,129,.06);border-color:rgba(16,185,129,.2)}
-.ss-ico{width:22px;height:22px;border-radius:50%;border:2px solid #374151;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;transition:all .3s}
-.ss-active .ss-ico{border-color:#ef4444;border-top-color:transparent;animation:spin .7s linear infinite}
-.ss-done .ss-ico{background:#10b981;border-color:#10b981;color:#fff;font-size:11px;animation:none}
-.ss-txt{font-size:13px;color:#6b7280;transition:color .3s}
-.ss-active .ss-txt{color:#e5e7eb;font-weight:600}
-.ss-done .ss-txt{color:#9ca3af}
-
-.scan-prog-wrap{width:320px}
-.scan-prog-bar{height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
-.scan-prog-fill{height:100%;background:linear-gradient(90deg,#ef4444,#f97316);border-radius:2px;width:0%;transition:width .6s ease}
-.scan-prog-lbl{font-size:11px;color:#4b5563;margin-top:6px;text-align:right}
 .err-box{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px;color:#ef4444;font-size:13px;text-align:center;max-width:440px}
 .section-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .section-title{font-size:15px;font-weight:700;color:#111827}
@@ -188,29 +149,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .sc-c{background:#fef2f2;color:#ef4444} .sc-h{background:#fff7ed;color:#f97316}
 .sc-m{background:#fffbeb;color:#f59e0b} .sc-l{background:#eff6ff;color:#3b82f6}
 
-/* ── ISSUES OVERVIEW ─────────────────────────────── */
-.iss-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
-.iss-ov-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px}
-.iss-ov-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:12px}
-.iss-ov-split{display:flex;gap:16px}
-.iss-ov-item{flex:1}
-.iss-ov-n{font-size:28px;font-weight:800;line-height:1;margin-bottom:2px}
-.iss-ov-l{font-size:11px;color:#6b7280}
-.iss-sev-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.iss-sev-row:last-child{margin-bottom:0}
-.iss-sev-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.iss-sev-lbl{font-size:12px;color:#374151;flex:1}
-.iss-sev-n{font-size:13px;font-weight:700}
-.iss-sev-bar-wrap{flex:2;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden}
-.iss-sev-bar{height:100%;border-radius:3px;transition:width .8s ease}
-.iss-cat-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6}
-.iss-cat-row:last-child{border-bottom:none}
-.iss-cat-ico{font-size:16px;width:28px;text-align:center;flex-shrink:0}
-.iss-cat-info{flex:1}
-.iss-cat-name{font-size:12px;font-weight:600;color:#111827}
-.iss-cat-sub{font-size:11px;color:#9ca3af}
-.iss-cat-cnt{font-size:14px;font-weight:700;flex-shrink:0}
-
 /* ── FINDINGS TABLE ───────────────────────────────── */
 .f-toolbar{display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap}
 .f-title{font-size:15px;font-weight:700;margin-right:auto}
@@ -236,26 +174,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .st-p{background:#f0fdf4;border:1px solid #a7f3d0;color:#10b981;font-size:11px;font-weight:600;padding:3px 10px;border-radius:5px;white-space:nowrap}
 .btn-fix{background:#ef4444;color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .12s}
 .btn-fix:hover{background:#dc2626}
-/* ── REMEDIATION DRAWER ──────────────────────────────── */
-#fix-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:8999;display:none;backdrop-filter:blur(2px)}
-#fix-overlay.open{display:block}
-#fix-drawer{position:fixed;top:0;right:0;width:440px;height:100vh;background:#fff;box-shadow:-8px 0 40px rgba(0,0,0,.15);z-index:9000;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
-#fix-drawer.open{transform:translateX(0)}
-.fix-hdr{padding:20px 24px;border-bottom:1px solid #f3f4f6;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.fix-hdr-left{display:flex;flex-direction:column;gap:6px;min-width:0}
-.fix-close{width:30px;height:30px;border:none;background:#f3f4f6;border-radius:6px;cursor:pointer;font-size:18px;color:#6b7280;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
-.fix-close:hover{background:#e5e7eb}
-.fix-body{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:20px}
-.fix-sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:8px}
-.fix-resource-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;font-family:monospace;font-size:12px;color:#374151;word-break:break-all;line-height:1.5}
-.fix-step{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f3f4f6}
-.fix-step:last-child{border-bottom:none}
-.fix-step-num{width:22px;height:22px;border-radius:50%;background:#ef4444;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
-.fix-step-txt{font-size:13px;color:#374151;line-height:1.55}
-.fix-remediation{font-size:13px;color:#374151;line-height:1.65;white-space:pre-wrap}
-.fix-ftr{padding:16px 24px;border-top:1px solid #f3f4f6;display:flex;flex-direction:column;gap:10px}
-.btn-aws{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;text-decoration:none;transition:background .12s}
-.btn-aws:hover{background:#f9fafb}
 .pager{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;border-top:1px solid #f3f4f6;font-size:12px;color:#6b7280}
 .rows-s{border:1px solid #e5e7eb;padding:3px 7px;border-radius:5px;font-size:12px;font-family:'Inter',sans-serif;margin-left:5px;outline:none}
 .pg-btns{display:flex;gap:3px}
@@ -302,31 +220,12 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .inv-stat-n{font-size:24px;font-weight:800;margin-bottom:2px}
 .inv-stat-l{font-size:11px;color:#6b7280;font-weight:500}
 .inv-table{background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}
-.inv-toolbar{display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap}
-.inv-search{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e5e7eb;padding:7px 11px;border-radius:8px;flex:1;min-width:160px;max-width:260px}
-.inv-search input{border:none;outline:none;font-size:12px;color:#374151;width:100%;font-family:'Inter',sans-serif;background:transparent}
-.inv-sel{background:#fff;border:1px solid #e5e7eb;padding:7px 11px;border-radius:8px;font-size:12px;color:#374151;font-family:'Inter',sans-serif;outline:none;cursor:pointer}
-.badge-new{background:#dbeafe;color:#1d4ed8;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle;text-transform:uppercase;letter-spacing:.03em}
-.inv-type-hdr{display:flex;align-items:center;gap:10px;padding:10px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;cursor:pointer;user-select:none}
-.inv-type-hdr:hover{background:#f3f4f6}
-.inv-type-ico{font-size:15px}
-.inv-type-cnt{margin-left:auto;font-size:11px;font-weight:600;color:#9ca3af}
-.inv-type-chevron{font-size:11px;transition:transform .2s;color:#9ca3af;margin-left:6px}
-.inv-type-chevron.open{transform:rotate(180deg)}
-.inv-thead{display:grid;grid-template-columns:1fr 150px 130px 100px 110px;padding:10px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
-.inv-row{display:grid;grid-template-columns:1fr 150px 130px 100px 110px;padding:12px 18px;border-bottom:1px solid #f9fafb;align-items:center;transition:background .1s;cursor:pointer}
+.inv-thead{display:grid;grid-template-columns:1fr 120px 140px 100px 110px;padding:10px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
+.inv-row{display:grid;grid-template-columns:1fr 120px 140px 100px 110px;padding:12px 18px;border-bottom:1px solid #f9fafb;align-items:center;transition:background .1s}
 .inv-row:last-child{border-bottom:none}
 .inv-row:hover{background:#fafafa}
-.inv-detail{background:#f9fafb;border-left:3px solid #e5e7eb;border-bottom:1px solid #e5e7eb;padding:14px 18px 14px 32px;display:none}
-.inv-detail.open{display:block;animation:up .18s ease both}
-.inv-detail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
-.inv-detail-item{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px}
-.inv-detail-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin-bottom:4px}
-.inv-detail-val{font-size:14px;font-weight:700;color:#111827}
-.inv-finding-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:12px;min-width:0}
-.inv-finding-row:last-child{border-bottom:none}
 .inv-name{font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.inv-id{font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inv-id{font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px}
 .svc-tag{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:600}
 .tag-cw{background:#eff6ff;color:#3b82f6} .tag-s3{background:#f0fdf4;color:#10b981}
 .tag-iam{background:#fffbeb;color:#f59e0b} .tag-kms{background:#fff7ed;color:#f97316}
@@ -379,27 +278,65 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .acct-item-id{font-size:10px;font-family:monospace;color:#9ca3af;flex-shrink:0}
 .acct-dot{width:7px;height:7px;border-radius:50%;background:#10b981;flex-shrink:0}
 
-/* ── SCAN TOAST ───────────────────────────────────── */
-#scan-toast{position:fixed;bottom:24px;right:24px;z-index:9999;width:300px;background:#0d0f14;border:1px solid #1a1f2e;border-radius:14px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.45);flex-direction:column;gap:11px;display:none}
-#scan-toast.t-show{display:flex;animation:toastIn .35s cubic-bezier(.34,1.4,.64,1)}
-@keyframes toastIn{from{transform:translateX(115%);opacity:0}to{transform:translateX(0);opacity:1}}
-@keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(115%)}}
-#scan-toast.t-hide{animation:toastOut .3s ease forwards}
-.toast-hdr{display:flex;align-items:center;justify-content:space-between}
-.toast-title{font-size:13px;font-weight:700;color:#fff}
-.toast-close{color:#4b5563;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:4px;transition:color .12s}
+/* ── FIX MODAL ─────────────────────────────────────── */
+#fix-modal{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:24px}
+#fix-modal.open{display:flex}
+#fix-box{background:#12151d;border:1px solid #1e2433;border-radius:16px;padding:32px;max-width:580px;width:100%;position:relative;box-shadow:0 24px 48px rgba(0,0,0,.5)}
+#fix-close{position:absolute;top:14px;right:16px;background:none;border:none;color:#475569;font-size:22px;cursor:pointer;line-height:1;padding:4px}
+#fix-close:hover{color:#94a3b8}
+
+/* ── SCAN OVERLAY ─────────────────────────────────── */
+#scan-toast{position:fixed;inset:0;z-index:9999;background:rgba(4,6,12,.88);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;flex-direction:column;gap:32px}
+#scan-toast.t-show{display:flex;animation:fadeIn .3s ease}
+#scan-toast.t-hide{animation:fadeOut .3s ease forwards}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+
+/* Radar */
+.radar-wrap{position:relative;width:200px;height:200px}
+.radar-ring{position:absolute;border-radius:50%;border:1px solid rgba(239,68,68,.15)}
+.radar-ring:nth-child(1){inset:0}
+.radar-ring:nth-child(2){inset:25px}
+.radar-ring:nth-child(3){inset:50px}
+.radar-ring:nth-child(4){inset:75px}
+.radar-cross{position:absolute;inset:0}
+.radar-cross::before,.radar-cross::after{content:'';position:absolute;background:rgba(239,68,68,.12)}
+.radar-cross::before{top:50%;left:0;right:0;height:1px;transform:translateY(-50%)}
+.radar-cross::after{left:50%;top:0;bottom:0;width:1px;transform:translateX(-50%)}
+.radar-sweep{position:absolute;inset:0;border-radius:50%;animation:sweep 2s linear infinite;transform-origin:center}
+@keyframes sweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.radar-sweep::after{content:'';position:absolute;top:0;left:50%;width:50%;height:50%;transform-origin:bottom left;background:conic-gradient(from 0deg,transparent 0deg,rgba(239,68,68,.0) 0deg,rgba(239,68,68,.35) 60deg,transparent 60deg)}
+.radar-dot{position:absolute;width:8px;height:8px;background:#ef4444;border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);box-shadow:0 0 10px #ef4444}
+.radar-blip{position:absolute;width:5px;height:5px;border-radius:50%;background:#10b981;box-shadow:0 0 6px #10b981;animation:blip 2s ease-in-out infinite}
+@keyframes blip{0%,100%{opacity:0}50%{opacity:1}}
+
+/* Steps */
+.scan-steps{display:flex;flex-direction:column;gap:10px;min-width:220px}
+.toast-step{display:flex;align-items:center;gap:12px;font-size:13px;color:#374151;transition:color .3s;font-family:'Inter',sans-serif}
+.toast-step.t-active{color:#e5e7eb}
+.toast-step.t-done{color:#6b7280}
+.t-ico{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;border:2px solid #1f2937;transition:all .3s}
+.t-ico.t-spin{border-color:#1f2937;border-top-color:#ef4444;animation:spin .75s linear infinite}
+.t-ico.t-check{background:#10b981;border-color:#10b981;color:#fff;font-size:11px}
+.toast-bar-wrap{width:200px;height:2px;background:#1a1f2e;border-radius:2px}
+.toast-bar{height:100%;background:linear-gradient(90deg,#ef4444,#f97316);border-radius:2px;width:0%;transition:width .8s ease}
+.toast-close{position:fixed;top:24px;right:28px;color:#4b5563;cursor:pointer;font-size:24px;line-height:1;transition:color .12s}
 .toast-close:hover{color:#9ca3af}
-.toast-step{display:flex;align-items:center;gap:10px;font-size:12.5px;color:#4b5563;transition:color .3s}
-.toast-step.t-active{color:#d1d5db}
-.toast-step.t-done{color:#e5e7eb}
-.t-ico{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;border:2px solid #1f2937;transition:all .3s}
-.t-ico.t-spin{border-top-color:#ef4444;animation:spin .75s linear infinite}
-.t-ico.t-check{background:#10b981;border-color:#10b981;color:#fff;font-size:10px}
-.toast-bar-wrap{height:3px;background:#1a1f2e;border-radius:2px}
-.toast-bar{height:100%;background:linear-gradient(90deg,#ef4444,#f97316);border-radius:2px;width:0%;transition:width .6s ease}
 </style>
 </head>
 <body>
+
+<!-- FIX MODAL -->
+<div id="fix-modal" onclick="if(event.target===this)closeFix()">
+  <div id="fix-box">
+    <button id="fix-close" onclick="closeFix()">×</button>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#ef4444;margin-bottom:8px" id="fix-checkid"></div>
+    <h3 style="color:#f1f5f9;margin:0 0 6px;font-size:16px;font-weight:700;line-height:1.4" id="fix-title"></h3>
+    <div style="font-size:12px;color:#475569;margin-bottom:20px" id="fix-resource"></div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Remediation</div>
+    <div id="fix-remediation" style="font-size:13px;color:#cbd5e1;line-height:1.75;background:#0d0f14;border:1px solid #1e2433;border-radius:10px;padding:16px 18px;white-space:pre-wrap"></div>
+  </div>
+</div>
 
 <!-- SIDEBAR -->
 <aside class="sb" id="sb">
@@ -431,19 +368,19 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <span class="da" id="drop-arrow">▾</span>
     </div>
     <div class="drop-items" id="drop-items">
-      <div class="di on" onclick="location.href='cis_benchmark.html'">
+      <div class="di on" onclick="navTo('cis_benchmark.html')">
         <span class="di-dot" style="background:#3b82f6"></span>CIS Benchmark
       </div>
-      <div class="di" onclick="location.href='iso27001.html'">
+      <div class="di" onclick="navTo('iso27001.html')">
         <span class="di-dot" style="background:#10b981"></span>ISO 27001:2022
       </div>
-      <div class="di" onclick="location.href='nist_csf.html'">
+      <div class="di" onclick="navTo('nist_csf.html')">
         <span class="di-dot" style="background:#8b5cf6"></span>NIST CSF v2.0
       </div>
-      <div class="di" onclick="location.href='gdpr.html'">
+      <div class="di" onclick="navTo('gdpr.html')">
         <span class="di-dot" style="background:#f59e0b"></span>GDPR
       </div>
-      <div class="di" onclick="location.href='soc2.html'">
+      <div class="di" onclick="navTo('soc2.html')">
         <span class="di-dot" style="background:#ec4899"></span>SOC 2
       </div>
     </div>
@@ -459,7 +396,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="ni-item"><span class="ni">🔔</span><span class="nt">Alerts</span></div>
   </nav>
   <div class="sb-footer">
-    <div class="ni-item"><span class="ni">⚙</span><span class="nt">Settings</span></div>
+    <div class="ni-item" onclick="location.href='/settings'"><span class="ni">⚙</span><span class="nt">Settings</span></div>
     <div class="ni-item"><span class="ni">❓</span><span class="nt">Help & Support</span></div>
     <div class="col-btn" onclick="toggleSb()">
       <span class="col-ico" id="col-ico">‹</span>
@@ -485,7 +422,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <div class="tp-scan-info"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
       <button class="btn-primary" id="btn-scan" onclick="triggerScan()">↻ Scan Now</button>
       <div class="btn-icon">🔔</div>
-      <div class="avatar">DN</div>
+      <div class="avatar" onclick="logout()" title="Uitloggen" style="cursor:pointer">DN</div>
     </div>
   </header>
 
@@ -496,6 +433,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <div id="v-load" class="spin-wrap">
         <div class="spinner"></div><span>Loading security data…</span>
       </div>
+
 
       <!-- ── DASHBOARD ── -->
       <div id="v-dashboard" hidden>
@@ -527,27 +465,9 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
           <div class="section-note" id="inv-count">— assets</div>
         </div>
         <div class="inv-stats mb20" id="inv-stats"></div>
-        <div class="inv-toolbar">
-          <div class="inv-search"><span style="color:#9ca3af">🔍</span>
-            <input type="text" id="inv-q" placeholder="Search assets…" oninput="renderInv()">
-          </div>
-          <select class="inv-sel" id="inv-type" onchange="renderInv()">
-            <option value="">All Types</option>
-            <option value="Cloud Infrastructure">Cloud Infrastructure</option>
-            <option value="Identity">Identity</option>
-            <option value="Monitoring">Monitoring</option>
-            <option value="Cryptography">Cryptography</option>
-          </select>
-          <select class="inv-sel" id="inv-status" onchange="renderInv()">
-            <option value="">All Status</option>
-            <option value="open">Has Issues</option>
-            <option value="pass">Passing</option>
-            <option value="new">New Assets</option>
-          </select>
-        </div>
         <div class="inv-table">
           <div class="inv-thead">
-            <div>Resource</div><div>Type</div><div>Service</div><div>Severity</div><div>Status</div>
+            <div>Resource</div><div>Service</div><div>Framework</div><div>Severity</div><div>Status</div>
           </div>
           <div id="inv-body"></div>
         </div>
@@ -555,43 +475,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 
       <!-- ── ISSUES ── -->
       <div id="v-issues" hidden>
-
-        <!-- Overview row -->
-        <div class="iss-overview">
-
-          <!-- Open vs Resolved -->
-          <div class="iss-ov-card">
-            <div class="iss-ov-title">Open vs Resolved</div>
-            <div class="iss-ov-split">
-              <div class="iss-ov-item">
-                <div class="iss-ov-n" style="color:#ef4444" id="iss-open">—</div>
-                <div class="iss-ov-l">Open</div>
-              </div>
-              <div class="iss-ov-item">
-                <div class="iss-ov-n" style="color:#10b981" id="iss-resolved">—</div>
-                <div class="iss-ov-l">Resolved</div>
-              </div>
-              <div class="iss-ov-item">
-                <div class="iss-ov-n" style="color:#6b7280" id="iss-total-ov">—</div>
-                <div class="iss-ov-l">Total</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Severity breakdown -->
-          <div class="iss-ov-card">
-            <div class="iss-ov-title">By Severity</div>
-            <div id="iss-sev-bars"></div>
-          </div>
-
-          <!-- Top categories -->
-          <div class="iss-ov-card">
-            <div class="iss-ov-title">Top Issue Categories</div>
-            <div id="iss-categories"></div>
-          </div>
-
-        </div>
-
         <div class="f-toolbar">
           <div class="f-title">Issues</div>
           <span class="f-cnt" id="f-cnt">—</span>
@@ -718,68 +601,24 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
   </div>
 </div>
 
-<!-- REMEDIATION DRAWER -->
-<div id="fix-overlay" onclick="closeFix()"></div>
-<div id="fix-drawer">
-  <div class="fix-hdr">
-    <div class="fix-hdr-left">
-      <div id="fix-sev"></div>
-      <div id="fix-title" style="font-size:15px;font-weight:700;color:#111827;line-height:1.4;margin-top:2px"></div>
-      <div id="fix-check-id" style="font-size:12px;color:#9ca3af;font-family:monospace;margin-top:2px"></div>
-    </div>
-    <button class="fix-close" onclick="closeFix()">×</button>
-  </div>
-  <div class="fix-body">
-    <div>
-      <div class="fix-sec-title">Resource</div>
-      <div class="fix-resource-box" id="fix-resource"></div>
-    </div>
-    <div>
-      <div class="fix-sec-title">Framework</div>
-      <div id="fix-framework" style="font-size:13px;color:#374151"></div>
-    </div>
-    <div>
-      <div class="fix-sec-title">Remediation Steps</div>
-      <div id="fix-steps-wrap"></div>
-    </div>
-  </div>
-  <div class="fix-ftr">
-    <a id="fix-aws-link" class="btn-aws" href="#" target="_blank" rel="noopener">
-      🔗 &nbsp;Open in AWS Console
-    </a>
-  </div>
-</div>
-
 <!-- SCAN OVERLAY -->
-<div id="scan-overlay">
+<div id="scan-toast">
+  <span class="toast-close" onclick="closeToast()">×</span>
+  <!-- Radar -->
   <div class="radar-wrap">
-    <div class="radar-circle"></div>
-    <div class="radar-circle"></div>
-    <div class="radar-circle"></div>
-    <div class="radar-circle"></div>
+    <div class="radar-ring"></div>
+    <div class="radar-ring"></div>
+    <div class="radar-ring"></div>
+    <div class="radar-ring"></div>
+    <div class="radar-cross"></div>
     <div class="radar-sweep"></div>
-    <div class="radar-ping"></div>
-    <div class="radar-ping"></div>
+    <div class="radar-blip" style="top:30%;left:62%;animation-delay:.4s"></div>
+    <div class="radar-blip" style="top:58%;left:28%;animation-delay:1.1s"></div>
+    <div class="radar-blip" style="top:72%;left:65%;animation-delay:.8s"></div>
     <div class="radar-dot"></div>
   </div>
-  <div class="scan-info">
-    <div class="scan-title" id="ov-title">Scanning your environment…</div>
-    <div class="scan-sub" id="ov-sub">Niagaros CSPM is analysing your AWS resources</div>
-  </div>
-  <div class="scan-steps" id="ov-steps"></div>
-  <div class="scan-prog-wrap">
-    <div class="scan-prog-bar"><div class="scan-prog-fill" id="ov-prog"></div></div>
-    <div class="scan-prog-lbl" id="ov-prog-lbl">0%</div>
-  </div>
-</div>
-
-<!-- SCAN TOAST -->
-<div id="scan-toast">
-  <div class="toast-hdr">
-    <span class="toast-title">⚡ Security Scan</span>
-    <span class="toast-close" onclick="closeToast()">×</span>
-  </div>
-  <div id="toast-steps"></div>
+  <!-- Steps -->
+  <div class="scan-steps" id="toast-steps"></div>
   <div class="toast-bar-wrap"><div class="toast-bar" id="toast-bar"></div></div>
 </div>
 
@@ -794,6 +633,7 @@ function toggleAcctDd(){
   const dd=document.getElementById('acct-dd');
   dd.classList.toggle('open');
 }
+function navTo(page){location.href=page+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'');}
 function closeAcctDd(){
   document.getElementById('acct-dd').classList.remove('open');
 }
@@ -846,12 +686,12 @@ function show(v,el){
     dashboard:'Security Dashboard',inventory:'Inventory',issues:'Issues',
     graph:'Security Graph',policies:'Policies',reports:'Reports',projects:'Projects'
   }[v]||v;
-  if(v==='issues'){renderIssuesOverview();renderPg();}
+  if(v==='issues') renderPg();
   if(v==='inventory') renderInv();
 }
 
 // ── Scan toast ────────────────────────────────────────
-const TOAST_STEPS = ['Scan triggered','Scanners running…','Collecting findings…','Refreshing dashboard…'];
+const TOAST_STEPS = ['Scan triggered','Scanners running…','Compliance mapping…','Refreshing dashboard…'];
 function renderToastSteps(done, active){
   document.getElementById('toast-steps').innerHTML = TOAST_STEPS.map((s,i)=>{
     const d=done.includes(i), a=active.includes(i);
@@ -868,96 +708,12 @@ function closeToast(){
   setTimeout(()=>{el.classList.remove('t-show','t-hide');el.style.display='none';},300);
 }
 
-// ── Scan overlay helpers ──────────────────────────────
-const OV_STEPS = [
-  {label:'Trigger scan',       sub:'Connecting to orchestrator…'},
-  {label:'Collecting resources',sub:'IAM, S3, KMS, CloudWatch…'},
-  {label:'Running checks',     sub:'CIS, ISO 27001, NIST, GDPR, SOC2…'},
-  {label:'Saving findings',    sub:'Writing results to database…'},
-  {label:'Refreshing dashboard',sub:'Loading your updated posture…'},
-];
-
-function ovSetSteps(done, active){
-  document.getElementById('ov-steps').innerHTML = OV_STEPS.map((s,i)=>{
-    const isDone=done.includes(i), isActive=active.includes(i);
-    return `<div class="scan-step${isDone?' ss-done':isActive?' ss-active':''}">
-      <div class="ss-ico">${isDone?'✓':''}</div>
-      <div class="ss-txt">${s.label}${isActive?`<div style="font-size:11px;color:#6b7280;margin-top:2px">${s.sub}</div>`:''}</div>
-    </div>`;
-  }).join('');
-  const pct = Math.round((done.length / OV_STEPS.length) * 100);
-  document.getElementById('ov-prog').style.width = pct + '%';
-  document.getElementById('ov-prog-lbl').textContent = pct + '%';
-}
-
-function ovShow(title, sub){
-  document.getElementById('ov-title').textContent = title||'Scanning…';
-  document.getElementById('ov-sub').textContent   = sub||'';
-  document.getElementById('scan-overlay').classList.add('active');
-}
-function ovHide(){
-  const el = document.getElementById('scan-overlay');
-  el.style.animation = 'fadeIn .25s ease reverse';
-  setTimeout(()=>{el.classList.remove('active');el.style.animation='';},250);
-}
-
-// ── Remediation drawer ────────────────────────────────
-function awsConsoleUrl(f){
-  const region='eu-west-1';
-  const rid=f.resource_id||'';
-  const svc=(f.service||'').toLowerCase();
-  if(svc==='iam'){
-    if(rid.includes(':user/'))   return `https://console.aws.amazon.com/iam/home#/users/${encodeURIComponent(rid.split(':user/')[1])}`;
-    if(rid.includes(':role/'))   return `https://console.aws.amazon.com/iam/home#/roles/${encodeURIComponent(rid.split(':role/')[1])}`;
-    if(rid.includes(':policy/')) return `https://console.aws.amazon.com/iam/home#/policies/${encodeURIComponent(rid)}`;
-    return `https://console.aws.amazon.com/iam/home?region=${region}`;
-  }
-  if(svc==='s3'){
-    const bucket=f.resource_name||rid;
-    return `https://s3.console.aws.amazon.com/s3/buckets/${encodeURIComponent(bucket)}?region=${region}`;
-  }
-  if(svc==='kms'){
-    const keyId=rid.split('/').pop()||rid;
-    return `https://console.aws.amazon.com/kms/home?region=${region}#/kms/keys/${encodeURIComponent(keyId)}`;
-  }
-  if(svc==='cloudwatch'){
-    return `https://console.aws.amazon.com/cloudwatch/home?region=${region}#alarmsV2:`;
-  }
-  if(svc==='cognito'){
-    return `https://console.aws.amazon.com/cognito/v2/home?region=${region}`;
-  }
-  return `https://console.aws.amazon.com/home?region=${region}`;
-}
-
-function openFix(idx){
-  const f=filtF[idx];
-  if(!f) return;
-  const sevColor={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
-  const sev=f.severity||'LOW';
-  const col=sevColor[sev]||'#6b7280';
-  document.getElementById('fix-sev').innerHTML=
-    `<span style="background:${col}1a;color:${col};border:1px solid ${col}33;border-radius:5px;padding:2px 9px;font-size:11px;font-weight:700">${sev}</span>`;
-  document.getElementById('fix-title').textContent=f.title||f.check_id||'';
-  document.getElementById('fix-check-id').textContent=f.check_id||'';
-  document.getElementById('fix-resource').textContent=(f.resource_id||f.resource_name||'—');
-  document.getElementById('fix-framework').textContent=f.framework||f.service||'—';
-
-  const rem=f.remediation||'Raadpleeg de AWS documentatie voor herstelstappen.';
-  const lines=rem.split(/\n+/).map(l=>l.trim()).filter(Boolean);
-  document.getElementById('fix-steps-wrap').innerHTML = lines.length>1
-    ? lines.map((l,i)=>`<div class="fix-step"><div class="fix-step-num">${i+1}</div><div class="fix-step-txt">${escH(l.replace(/^\d+[\.\)]\s*/,''))}</div></div>`).join('')
-    : `<div class="fix-remediation">${escH(rem)}</div>`;
-
-  document.getElementById('fix-aws-link').href=awsConsoleUrl(f);
-  document.getElementById('fix-overlay').classList.add('open');
-  document.getElementById('fix-drawer').classList.add('open');
-  document.body.style.overflow='hidden';
-}
-
-function closeFix(){
-  document.getElementById('fix-overlay').classList.remove('open');
-  document.getElementById('fix-drawer').classList.remove('open');
-  document.body.style.overflow='';
+// ── Logout ────────────────────────────────────────────
+function logout(){
+  if(!confirm('Are you sure you want to sign out?')) return;
+  localStorage.clear();
+  sessionStorage.clear();
+  window.location.href = '/';
 }
 
 // ── Trigger scan ─────────────────────────────────────
@@ -965,33 +721,88 @@ async function triggerScan(){
   const btn = document.getElementById('btn-scan');
   btn.disabled = true;
   btn.textContent = '⏳ Scanning…';
+  const toast = document.getElementById('scan-toast');
+  toast.classList.remove('t-show','t-hide');
+  toast.style.display='none';
+  void toast.offsetHeight;
+  toast.style.display='';
+  toast.classList.add('t-show');
+  renderToastSteps([], [0]);
 
-  ovShow('Scanning your environment…','Niagaros CSPM is analysing your AWS resources');
-  ovSetSteps([], [0]);
+  // Snapshot last_scan_at before triggering so we know when a new scan completes
+  const scanStartedAt = Date.now();
+  const prevScanAt = (document.getElementById('last-scan').textContent||'').replace('Last scan: ','').trim();
 
   try {
-    await fetch(TRIGGER_API, { method: 'POST' });
-    ovSetSteps([0], [1]);
-    await new Promise(r=>setTimeout(r, 5000));
-    ovSetSteps([0,1], [2]);
-    await new Promise(r=>setTimeout(r, 8000));
-    ovSetSteps([0,1,2], [3]);
-    await new Promise(r=>setTimeout(r, 2000));
-    ovSetSteps([0,1,2,3], [4]);
-    await loadData();
-    ovSetSteps([0,1,2,3,4], []);
-    document.getElementById('ov-title').textContent = '✓ Scan complete';
-    document.getElementById('ov-sub').textContent   = 'Dashboard updated with latest findings';
-    await new Promise(r=>setTimeout(r, 1800));
-    ovHide();
+    const _tok=localStorage.getItem('niagaros_token')||'';
+    await fetch(TRIGGER_API + (currentAccountId ? '?account_id='+encodeURIComponent(currentAccountId) : ''), {
+      method: 'POST', headers: _tok ? {Authorization:'Bearer '+_tok} : {}
+    });
+    renderToastSteps([0], [1]);
+
+    // Poll every 10s; close only when total findings count is stable for 2 consecutive
+    // polls AND at least 60s have passed (avoids closing on early partial scanner writes)
+    const MAX_WAIT_MS = 9 * 60 * 1000; // 9 min max
+    const MIN_WAIT_MS = 60 * 1000;     // wait at least 60s before considering stable
+    let lastCount = -1;
+    let stableRounds = 0;
+    let lastData = null;
+    let done = false;
+
+    while (!done && (Date.now() - scanStartedAt) < MAX_WAIT_MS) {
+      await new Promise(r => setTimeout(r, 10000));
+      try {
+        const url = currentAccountId ? API+'?account_id='+encodeURIComponent(currentAccountId) : API;
+        const r = await fetch(url, { headers: _tok ? {Authorization:'Bearer '+_tok} : {} });
+        const d = await r.json();
+        lastData = d;
+        const count = (d.total && d.total.total) || 0;
+        const elapsed = Date.now() - scanStartedAt;
+
+        // Update toast step based on elapsed time
+        if (elapsed > 120000) renderToastSteps([0,1], [2]); // ~2 min: compliance mapping
+
+        if (elapsed >= MIN_WAIT_MS && count > 0 && count === lastCount) {
+          stableRounds++;
+          if (stableRounds >= 2) {
+            // Count unchanged for 20s straight → scan done
+            done = true;
+          }
+        } else {
+          stableRounds = 0;
+        }
+        lastCount = count;
+      } catch(_) { /* keep polling */ }
+    }
+
+    renderToastSteps([0,1,2], [3]);
+    await new Promise(r => setTimeout(r, 600));
+    if (lastData) render(lastData); else await loadData(false);
+    renderToastSteps([0,1,2,3], []);
+
     btn.disabled = false;
     btn.textContent = '↻ Scan Now';
+    setTimeout(closeToast, 2000);
   } catch(e) {
-    ovHide();
     btn.disabled = false;
     btn.textContent = '↻ Scan Now';
-    alert('Scan failed: ' + e.message);
+    closeToast();
+    alert('Failed to trigger scan: ' + e.message);
   }
+}
+
+// ── Fix modal ────────────────────────────────────────
+function showFix(idx){
+  const f=filtF[idx];
+  if(!f)return;
+  document.getElementById('fix-checkid').textContent=f.check_id||'';
+  document.getElementById('fix-title').textContent=f.title||f.check_id||'';
+  document.getElementById('fix-resource').textContent=f.resource_name?'Resource: '+f.resource_name:'';
+  document.getElementById('fix-remediation').textContent=f.remediation||'No remediation guidance available for this check.';
+  document.getElementById('fix-modal').classList.add('open');
+}
+function closeFix(){
+  document.getElementById('fix-modal').classList.remove('open');
 }
 
 // ── PDF export ───────────────────────────────────────
@@ -1016,16 +827,17 @@ function generatePDF(type){
   const sc={'CRITICAL':'#ef4444','HIGH':'#f97316','MEDIUM':'#f59e0b','LOW':'#3b82f6'};
   const rows = findings.map(f=>`
     <tr>
-      <td style="color:${sc[f.severity]||'#6b7280'};font-weight:700">${f.severity}</td>
-      <td style="font-family:monospace;font-size:11px">${f.check_id||''}</td>
-      <td>${(f.title||f.check_id||'').substring(0,80)}</td>
+      <td style="color:${sc[f.severity]||'#6b7280'};font-weight:700;white-space:nowrap">${f.severity}</td>
+      <td style="font-family:monospace;font-size:11px;white-space:nowrap">${f.check_id||''}</td>
+      <td>${(f.title||f.check_id||'').substring(0,70)}</td>
       <td style="font-size:11px;color:#6b7280">${f.resource_name||'—'}</td>
-      <td style="color:${f.result==='PASS'?'#10b981':'#ef4444'};font-weight:700">${f.result}</td>
+      <td style="color:${f.result==='PASS'?'#10b981':'#ef4444'};font-weight:700;white-space:nowrap">${f.result}</td>
+      <td style="font-size:11px;color:#374151;line-height:1.45">${(f.remediation||'—').substring(0,200)}</td>
     </tr>`).join('');
   const S='</';
   const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+def.title+'</title>'
     +'<style>'
-    +'body{font-family:Arial,sans-serif;margin:40px;color:#111;font-size:13px}'
+    +'body{font-family:Arial,sans-serif;margin:40px;color:#111;font-size:12px}'
     +'h1{font-size:22px;margin:0 0 4px}'
     +'.sub{color:#6b7280;margin-bottom:6px}'
     +'.meta-row{display:flex;gap:24px;margin:20px 0;padding:16px;background:#f9fafb;border-radius:8px;flex-wrap:wrap}'
@@ -1034,7 +846,7 @@ function generatePDF(type){
     +'.val.g{color:#10b981}.val.r{color:#ef4444}.val.b{color:#3b82f6}'
     +'table{width:100%;border-collapse:collapse;margin-top:4px}'
     +'th{background:#f3f4f6;padding:8px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;border-bottom:2px solid #e5e7eb}'
-    +'td{padding:8px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}'
+    +'td{padding:7px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top;line-height:1.45}'
     +'tr:nth-child(even) td{background:#fafafa}'
     +'.footer{margin-top:28px;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px}'
     +'@media print{body{margin:20px}}'
@@ -1049,8 +861,8 @@ function generatePDF(type){
     +'<div class="meta-item"><div class="lbl">Account'+S+'div><div class="val" style="font-size:14px;padding-top:6px">'+account+S+'div>'+S+'div>'
     +'<div class="meta-item"><div class="lbl">Generated'+S+'div><div class="val" style="font-size:13px;padding-top:7px">'+now+S+'div>'+S+'div>'
     +S+'div>'
-    +'<table><thead><tr><th>Severity'+S+'th><th>Check ID'+S+'th><th>Description'+S+'th><th>Resource'+S+'th><th>Status'+S+'th>'+S+'tr>'+S+'thead>'
-    +'<tbody>'+(rows||'<tr><td colspan="5" style="text-align:center;padding:24px;color:#9ca3af">No findings for this report.'+S+'td>'+S+'tr>')+S+'tbody>'+S+'table>'
+    +'<table><thead><tr><th>Severity'+S+'th><th>Check ID'+S+'th><th>Description'+S+'th><th>Resource'+S+'th><th>Status'+S+'th><th>Remediation'+S+'th>'+S+'tr>'+S+'thead>'
+    +'<tbody>'+(rows||'<tr><td colspan="6" style="text-align:center;padding:24px;color:#9ca3af">No findings for this report.'+S+'td>'+S+'tr>')+S+'tbody>'+S+'table>'
     +'<div class="footer">Generated by Niagaros CSPM Platform \xB7 '+now+' \xB7 niagaros.io'+S+'div>'
     +S+'body>'+S+'html>';
   const win=window.open('','_blank');
@@ -1068,12 +880,15 @@ async function loadData(){
   document.getElementById('rp').hidden=true;
   try{
     const url=currentAccountId ? API+'?account_id='+encodeURIComponent(currentAccountId) : API;
-    const r=await fetch(url), d=await r.json();
+    const token=localStorage.getItem('niagaros_token')||'';
+    const r=await fetch(url,{headers:token?{Authorization:'Bearer '+token}:{}}), d=await r.json();
+    if(r.status===401){location.href='/';return;}
     render(d);
   }catch(e){
     document.getElementById('v-load').innerHTML='<div class="err-box">'+e.message+'</div>';
   }
 }
+
 
 // ── Render ───────────────────────────────────────────
 function render(d){
@@ -1142,11 +957,11 @@ function render(d){
   const gdpr=svcs.find(s=>s.service==='GDPR')||{score:0,passed:0,failed:0};
   const soc2=svcs.find(s=>s.service==='SOC2')||{score:0,passed:0,failed:0};
   const fws=[
-    {name:'CIS AWS',   sub:'CIS AWS Foundations',    sc:cisScore,     p:cisP,          f:cisT-cisP,       clr:'#3b82f6', go:"location.href='cis_benchmark.html'"},
-    {name:'ISO 27001', sub:'ISO 27001:2022 Annex A', sc:iso.score||0, p:iso.passed||0, f:iso.failed||0,   clr:'#10b981', go:"location.href='iso27001.html'"},
-    {name:'NIST CSF',  sub:'NIST CSF v2.0',          sc:nist.score||0,p:nist.passed||0,f:nist.failed||0,  clr:'#8b5cf6', go:"location.href='nist_csf.html'"},
-    {name:'GDPR',      sub:'EU General Data Protection Regulation', sc:gdpr.score||0, p:gdpr.passed||0, f:gdpr.failed||0, clr:'#f59e0b', go:"location.href='gdpr.html'"},
-    {name:'SOC 2',     sub:'Service Organization Control 2',        sc:soc2.score||0, p:soc2.passed||0, f:soc2.failed||0, clr:'#ec4899', go:"location.href='soc2.html'"},
+    {name:'CIS AWS',   sub:'CIS AWS Foundations',    sc:cisScore,     p:cisP,          f:cisT-cisP,       clr:'#3b82f6', go:"navTo('cis_benchmark.html')"},
+    {name:'ISO 27001', sub:'ISO 27001:2022 Annex A', sc:iso.score||0, p:iso.passed||0, f:iso.failed||0,   clr:'#10b981', go:"navTo('iso27001.html')"},
+    {name:'NIST CSF',  sub:'NIST CSF v2.0',          sc:nist.score||0,p:nist.passed||0,f:nist.failed||0,  clr:'#8b5cf6', go:"navTo('nist_csf.html')"},
+    {name:'GDPR',      sub:'EU General Data Protection Regulation', sc:gdpr.score||0, p:gdpr.passed||0, f:gdpr.failed||0, clr:'#f59e0b', go:"navTo('gdpr.html')"},
+    {name:'SOC 2',     sub:'Service Organization Control 2',        sc:soc2.score||0, p:soc2.passed||0, f:soc2.failed||0, clr:'#ec4899', go:"navTo('soc2.html')"},
   ];
   document.getElementById('comp-grid').innerHTML=fws.map(fw=>{
     const [st,sc]=fw.sc>=75?['On Track','badge-ok']:fw.sc>=50?['At Risk','badge-warn']:['Critical','badge-risk'];
@@ -1293,133 +1108,30 @@ function render(d){
   show(view, document.getElementById('ni-'+view));
 }
 
-const INV_TYPE_MAP={S3:'Cloud Infrastructure',IAM:'Identity',CloudWatch:'Monitoring',KMS:'Cryptography'};
-const INV_TYPE_ICO={'Cloud Infrastructure':'🪣','Identity':'🔑','Monitoring':'📊','Cryptography':'🔐'};
-let invNewSet=new Set();
-
-const INV_TYPE_MAP_LC={s3:'Cloud Infrastructure',iam:'Identity',cloudwatch:'Monitoring',kms:'Cryptography'};
-
-function buildInvItems(){
-  const sevOrder=['CRITICAL','HIGH','MEDIUM','LOW'];
-  const unique={};
-  allF.forEach(f=>{
-    const k=f.resource_id||f.resource_name||(f.service?`[${f.service}] Account-Level`:null); if(!k) return;
-    const svcLc=(f.service||'').toLowerCase();
-    const type=INV_TYPE_MAP_LC[svcLc]||'Cloud Infrastructure';
-    if(!unique[k]) unique[k]={id:k,name:f.resource_name||k,svc:f.service||'',
-      type,fws:new Set(),sev:'LOW',fail:false,findings:[]};
-    unique[k].findings.push(f);
-    unique[k].fws.add(f.framework||f.service||'CIS');
-    if(f.result==='FAIL') unique[k].fail=true;
-    if(sevOrder.indexOf(f.severity)<sevOrder.indexOf(unique[k].sev)) unique[k].sev=f.severity;
-  });
-  return Object.values(unique).map(i=>({...i,fw:Array.from(i.fws).join(', ')}));
-}
-
-function detectNewInvAssets(items){
-  try{
-    const prev=new Set(JSON.parse(localStorage.getItem('niagaros_inv_ids')||'[]'));
-    invNewSet=prev.size>0?new Set(items.filter(i=>!prev.has(i.id)).map(i=>i.id)):new Set();
-    localStorage.setItem('niagaros_inv_ids',JSON.stringify(items.map(i=>i.id)));
-  }catch(e){invNewSet=new Set();}
-}
-
-function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-
 function renderInv(){
-  const allItems=buildInvItems();
-  detectNewInvAssets(allItems);
-
-  document.getElementById('inv-count').textContent=allItems.length+' assets';
-  const svcCnt={S3:0,IAM:0,CloudWatch:0,KMS:0};
-  allItems.forEach(i=>{if(svcCnt[i.svc]!==undefined)svcCnt[i.svc]++;});
-  document.getElementById('inv-stats').innerHTML=[
-    {l:'Total Assets',n:allItems.length,c:'#111827'},
-    {l:'New This Scan',n:invNewSet.size,c:'#1d4ed8'},
-    {l:'S3 Buckets',n:svcCnt.S3,c:'#10b981'},
-    {l:'IAM Identities',n:svcCnt.IAM,c:'#f59e0b'},
-  ].map(s=>`<div class="inv-stat"><div class="inv-stat-n" style="color:${s.c}">${s.n}</div><div class="inv-stat-l">${s.l}</div></div>`).join('');
-
-  // Filters
-  const q=(document.getElementById('inv-q')||{value:''}).value.toLowerCase();
-  const typeF=(document.getElementById('inv-type')||{value:''}).value;
-  const statusF=(document.getElementById('inv-status')||{value:''}).value;
-  let items=[...allItems];
-  if(q) items=items.filter(i=>i.name.toLowerCase().includes(q)||i.svc.toLowerCase().includes(q)||i.type.toLowerCase().includes(q));
-  if(typeF) items=items.filter(i=>i.type===typeF);
-  if(statusF==='open') items=items.filter(i=>i.fail);
-  if(statusF==='pass') items=items.filter(i=>!i.fail);
-  if(statusF==='new') items=items.filter(i=>invNewSet.has(i.id));
-
-  if(!items.length){
-    document.getElementById('inv-body').innerHTML='<div style="padding:36px;text-align:center;color:#9ca3af;font-size:13px">No assets match the current filters.</div>';
-    return;
-  }
-
-  // Group by type
-  const groups={};
-  items.forEach(i=>{if(!groups[i.type])groups[i.type]=[];groups[i.type].push(i);});
-
-  const sevK={CRITICAL:'CR',HIGH:'HI',MEDIUM:'ME',LOW:'LO'};
-  const tagCls={S3:'tag-s3',IAM:'tag-iam',CloudWatch:'tag-cw',KMS:'tag-kms'};
-  let idx=0, html='';
-
-  Object.entries(groups).forEach(([type,gitems])=>{
-    const gk=type.replace(/\s+/g,'_');
-    html+=`<div class="inv-type-hdr" onclick="toggleInvGroup('${gk}')">
-      <span class="inv-type-ico">${INV_TYPE_ICO[type]||'📦'}</span>
-      <span>${type}</span>
-      <span class="inv-type-cnt">${gitems.length} asset${gitems.length!==1?'s':''}</span>
-      <span class="inv-type-chevron open" id="chv-${gk}">▾</span>
-    </div>
-    <div id="grp-${gk}">`;
-    gitems.forEach(i=>{
-      const n=idx++; const sk=sevK[i.sev]||'LO';
-      const isNew=invNewSet.has(i.id);
-      const fCount=i.findings.filter(f=>f.result==='FAIL').length;
-      const shortId=i.id.length>44?i.id.substring(0,44)+'…':i.id;
-      html+=`<div class="inv-row" onclick="toggleInvDetail(${n})">
-        <div>
-          <div class="inv-name">${escH(i.name)}${isNew?'<span class="badge-new">New</span>':''}</div>
-          <div class="inv-id">${escH(shortId)}</div>
-        </div>
-        <div style="font-size:12px;color:#6b7280">${type}</div>
-        <div><span class="svc-tag ${tagCls[i.svc]||'tag-cw'}">${i.svc||'—'}</span></div>
-        <div><span class="sev-pill p-${sk}"><span class="sd d-${sk}"></span>${i.sev.charAt(0)+i.sev.slice(1).toLowerCase()}</span></div>
-        <div>${i.fail?`<span class="st-o">Open (${fCount})</span>`:'<span class="st-p">Pass</span>'}</div>
-      </div>
-      <div class="inv-detail" id="inv-det-${n}">
-        <div class="inv-detail-grid">
-          <div class="inv-detail-item"><div class="inv-detail-label">Total Checks</div><div class="inv-detail-val">${i.findings.length}</div></div>
-          <div class="inv-detail-item"><div class="inv-detail-label">Failing</div><div class="inv-detail-val" style="color:#ef4444">${fCount}</div></div>
-          <div class="inv-detail-item"><div class="inv-detail-label">Framework</div><div class="inv-detail-val">${escH(i.fw)}</div></div>
-        </div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin-bottom:8px">Findings</div>
-        ${i.findings.slice(0,5).map(f=>`
-          <div class="inv-finding-row">
-            <span class="sev-pill p-${sevK[f.severity]||'LO'}" style="padding:2px 7px;font-size:10px;flex-shrink:0"><span class="sd d-${sevK[f.severity]||'LO'}"></span>${f.severity.charAt(0)+f.severity.slice(1).toLowerCase()}</span>
-            <span style="flex:1;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(f.title||f.check_id||'—')}</span>
-            <span style="color:${f.result==='PASS'?'#10b981':'#ef4444'};font-weight:600;flex-shrink:0;margin-left:8px">${f.result}</span>
-          </div>`).join('')}
-        ${i.findings.length>5?`<div style="font-size:11px;color:#9ca3af;padding-top:8px">+${i.findings.length-5} more findings</div>`:''}
-      </div>`;
-    });
-    html+='</div>';
+  const unique={}; allF.forEach(f=>{
+    const k=f.resource_id||f.resource_name;
+    if(!unique[k]) unique[k]={name:f.resource_name||'Unknown',svc:f.service||'',fw:f.framework||'CIS',sev:f.severity||'LOW',fail:f.result==='FAIL'};
+    else if(f.result==='FAIL') unique[k].fail=true;
   });
-
-  document.getElementById('inv-body').innerHTML=html;
-}
-
-function toggleInvGroup(gk){
-  const body=document.getElementById('grp-'+gk),chv=document.getElementById('chv-'+gk);
-  if(!body)return;
-  const collapsed=body.style.display==='none';
-  body.style.display=collapsed?'':'none';
-  if(chv)chv.classList.toggle('open',collapsed);
-}
-function toggleInvDetail(n){
-  const det=document.getElementById('inv-det-'+n);
-  if(det)det.classList.toggle('open');
+  const items=Object.values(unique);
+  document.getElementById('inv-count').textContent=items.length+' assets';
+  const svcCount={S3:0,IAM:0,CloudWatch:0,KMS:0};
+  items.forEach(i=>{ if(svcCount[i.svc]!==undefined) svcCount[i.svc]++; });
+  document.getElementById('inv-stats').innerHTML=[
+    {l:'Total Assets',n:items.length,c:'#111827'},{l:'S3 Buckets',n:svcCount.S3,c:'#10b981'},
+    {l:'IAM Identities',n:svcCount.IAM,c:'#f59e0b'},{l:'KMS Keys',n:svcCount.KMS,c:'#f97316'},
+  ].map(s=>`<div class="inv-stat"><div class="inv-stat-n" style="color:${s.c}">${s.n}</div><div class="inv-stat-l">${s.l}</div></div>`).join('');
+  const tagCls={S3:'tag-s3',IAM:'tag-iam',CloudWatch:'tag-cw',KMS:'tag-kms'};
+  const sdots={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
+  document.getElementById('inv-body').innerHTML=items.slice(0,50).map(i=>`
+    <div class="inv-row">
+      <div><div class="inv-name">${i.name}</div></div>
+      <div><span class="svc-tag ${tagCls[i.svc]||'tag-cw'}">${i.svc}</span></div>
+      <div style="font-size:12px;color:#6b7280">${i.fw}</div>
+      <div><span class="sev-pill p-${i.sev.substring(0,2)}"><span class="sd d-${i.sev.substring(0,2)}"></span>${i.sev.charAt(0)+i.sev.slice(1).toLowerCase()}</span></div>
+      <div>${i.fail?'<span class="st-o">Open</span>':'<span class="st-p">Pass</span>'}</div>
+    </div>`).join('');
 }
 
 // ── Nav helpers ──────────────────────────────────────
@@ -1434,59 +1146,6 @@ function goSvc(s){
   svcF=s; document.getElementById('f-sev').value='';
   document.getElementById('f-res').value=''; document.getElementById('f-q').value='';
   applyF(); show('issues',document.getElementById('ni-issues'));
-}
-
-// ── Issues overview ──────────────────────────────────
-function renderIssuesOverview(){
-  const open   = allF.filter(f=>f.result==='FAIL').length;
-  const resolved = allF.filter(f=>f.result==='PASS').length;
-  const total  = allF.length;
-  document.getElementById('iss-open').textContent     = open;
-  document.getElementById('iss-resolved').textContent = resolved;
-  document.getElementById('iss-total-ov').textContent = total;
-
-  // Severity bars (open issues only)
-  const sevs=[
-    {k:'CRITICAL',c:'#ef4444',l:'Critical'},
-    {k:'HIGH',    c:'#f97316',l:'High'},
-    {k:'MEDIUM',  c:'#f59e0b',l:'Medium'},
-    {k:'LOW',     c:'#3b82f6',l:'Low'},
-  ];
-  const openF = allF.filter(f=>f.result==='FAIL');
-  const maxSev = Math.max(...sevs.map(s=>openF.filter(f=>f.severity===s.k).length), 1);
-  document.getElementById('iss-sev-bars').innerHTML = sevs.map(s=>{
-    const n = openF.filter(f=>f.severity===s.k).length;
-    const pct = Math.round(n/maxSev*100);
-    return `<div class="iss-sev-row">
-      <div class="iss-sev-dot" style="background:${s.c}"></div>
-      <div class="iss-sev-lbl">${s.l}</div>
-      <div class="iss-sev-bar-wrap"><div class="iss-sev-bar" style="background:${s.c};width:${pct}%"></div></div>
-      <div class="iss-sev-n" style="color:${s.c}">${n}</div>
-    </div>`;
-  }).join('');
-
-  // Top categories
-  const cats=[
-    {ico:'⚙',name:'Misconfigurations',sub:'S3, CloudWatch, KMS',
-      filter:f=>['S3','CloudWatch','KMS'].includes(f.service)&&f.result==='FAIL'},
-    {ico:'🔑',name:'Access Anomalies',sub:'IAM controls',
-      filter:f=>f.service==='IAM'&&f.result==='FAIL'},
-    {ico:'🛡',name:'Compliance Gaps',sub:'ISO, NIST, GDPR, SOC2',
-      filter:f=>['ISO27001','NIST','GDPR','SOC2'].includes(f.service)&&f.result==='FAIL'},
-    {ico:'⭕',name:'Critical Findings',sub:'All critical severity',
-      filter:f=>f.severity==='CRITICAL'&&f.result==='FAIL'},
-  ];
-  document.getElementById('iss-categories').innerHTML = cats.map(c=>{
-    const n = allF.filter(c.filter).length;
-    return `<div class="iss-cat-row">
-      <div class="iss-cat-ico">${c.ico}</div>
-      <div class="iss-cat-info">
-        <div class="iss-cat-name">${c.name}</div>
-        <div class="iss-cat-sub">${c.sub}</div>
-      </div>
-      <div class="iss-cat-cnt" style="color:${n>0?'#ef4444':'#10b981'}">${n}</div>
-    </div>`;
-  }).join('');
 }
 
 // ── Filters ──────────────────────────────────────────
@@ -1523,7 +1182,7 @@ function renderPg(){
       <div><span class="res-chip">${res}</span></div>
       <div style="font-size:12px;color:#374151">1 resource</div>
       <div>${fail?'<span class="st-o">Open</span>':'<span class="st-p">Pass</span>'}</div>
-      <div>${fail?`<button class="btn-fix" onclick="openFix(${start+i})">🔧 Fix</button>`:''}</div>
+      <div>${fail?`<button class="btn-fix" onclick="showFix(${start+i})">🔧 Fix</button>`:''}</div>
     </div>`;
   }).join('')||'<div style="padding:36px;text-align:center;color:#9ca3af;font-size:13px">No findings match the current filters.</div>';
   const pages=Math.ceil(tot/rows)||1;

@@ -1,4 +1,7 @@
 {
-  "REACT_APP_API_BASE_URL": "https://zlm0sbtl66.execute-api.eu-west-1.amazonaws.com",
-  "REACT_APP_REGION": "eu-west-1"
+  "REACT_APP_API_BASE_URL": "https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default",
+  "REACT_APP_REGION": "eu-west-1",
+  "COGNITO_USER_POOL_ID": "eu-west-1_mHQf9RNTc",
+  "COGNITO_CLIENT_ID": "55e12uo3ktbnh9d7sgbm3h4r0p",
+  "GITHUB_CLIENT_ID": "Ov23liUVymdUREAd5ZoN"
 }

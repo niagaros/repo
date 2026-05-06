@@ -114,13 +114,13 @@ class Database:
     def get_active_accounts(self) -> list:
         with self.conn.cursor() as cur:
             cur.execute("""
-                SELECT id, role_arn, external_id
+                SELECT id, role_arn, external_id, COALESCE(region, 'eu-west-1')
                 FROM cloud_accounts
                 WHERE status = 'active'
             """)
             rows = cur.fetchall()
         return [
-            {"id": str(r[0]), "role_arn": r[1], "external_id": r[2]}
+            {"id": str(r[0]), "role_arn": r[1], "external_id": r[2], "region": r[3]}
             for r in rows
         ]
 
@@ -171,6 +171,15 @@ class Database:
                 WHERE function_name = %s
             """, (function_name,))
         self.conn.commit()
+
+    def touch_scan_at(self, cloud_account_id: str):
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE cloud_accounts SET last_scan_at = NOW() WHERE id = %s",
+                (cloud_account_id,),
+            )
+        self.conn.commit()
+        logger.info(f"Database: last_scan_at updated for {cloud_account_id}")
 
     # ── utils ──────────────────────────────────────────────────────
 

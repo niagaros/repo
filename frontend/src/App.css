@@ -1,38 +1,83 @@
-.App {
-  text-align: center;
+/* Global resets & font smoothing */
+*, *::before, *::after {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #0d0f14;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+/* Amplify Authenticator overrides */
+[data-amplify-authenticator] {
+  --amplify-components-authenticator-router-background-color: transparent;
+  --amplify-components-authenticator-router-border-width: 0;
+  --amplify-components-authenticator-router-box-shadow: none;
+  --amplify-colors-background-primary: #0d0f14;
+  --amplify-colors-background-secondary: #12151d;
+  --amplify-colors-border-primary: #1e2433;
+  --amplify-colors-font-primary: #f1f5f9;
+  --amplify-colors-font-secondary: #94a3b8;
+  --amplify-colors-font-interactive: #ef4444;
+  --amplify-colors-brand-primary-60: #ef4444;
+  --amplify-colors-brand-primary-80: #dc2626;
+  --amplify-colors-brand-primary-90: #b91c1c;
+  --amplify-colors-brand-primary-100: #991b1b;
+  width: 100%;
+  max-width: 400px;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+[data-amplify-authenticator] [data-amplify-form] {
+  background: #0d0f14 !important;
 }
 
-.App-link {
-  color: #61dafb;
+/* Input field styling */
+[data-amplify-authenticator] input {
+  background: #0a0c12 !important;
+  border-color: #1e2433 !important;
+  color: #f1f5f9 !important;
+  border-radius: 8px !important;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+[data-amplify-authenticator] input:focus {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.12) !important;
+}
+
+/* Button styling */
+[data-amplify-authenticator] button[type="submit"] {
+  background: #ef4444 !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  transition: background 0.15s ease !important;
+}
+
+[data-amplify-authenticator] button[type="submit"]:hover {
+  background: #dc2626 !important;
+}
+
+/* Tab / nav styling */
+[data-amplify-authenticator] [role="tab"][aria-selected="true"] {
+  color: #ef4444 !important;
+  border-bottom-color: #ef4444 !important;
+}
+
+[data-amplify-authenticator] [role="tab"] {
+  color: #475569 !important;
+}
+
+/* Label styling */
+[data-amplify-authenticator] label {
+  color: #94a3b8 !important;
+  font-size: 13px !important;
+}
+
+/* Anchor / link styling */
+[data-amplify-authenticator] a {
+  color: #ef4444 !important;
 }
