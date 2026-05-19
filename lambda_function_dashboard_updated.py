@@ -44,23 +44,23 @@ def lambda_handler(event, context):
         with conn.cursor() as cur:
 
             # ── Resolve account ────────────────────────────────────────────────
-            # Fetch all active accounts for the switcher
             cur.execute("""
-                SELECT id, role_arn, aws_account_id,
-                       COALESCE(name, aws_account_id::text, id::text) AS display_name
+                SELECT id, role_arn, account_name, account_id
                 FROM cloud_accounts
                 WHERE status = 'active'
                 ORDER BY created_at
             """)
             accounts = [
-                {"id": str(r[0]), "role_arn": r[1],
-                 "aws_account_id": str(r[2]) if r[2] else None,
-                 "name": r[3]}
+                {
+                    "id":         str(r[0]),
+                    "role_arn":   r[1],
+                    "name":       r[2] or (str(r[0])[:8] + "…"),
+                    "account_id": r[3] or "",
+                }
                 for r in cur.fetchall()
             ]
             data["accounts"] = accounts
 
-            # Use requested account_id or fall back to first active account
             if account_id and any(a["id"] == account_id for a in accounts):
                 acct_id = account_id
             elif accounts:
@@ -69,8 +69,8 @@ def lambda_handler(event, context):
                 acct_id = None
 
             data["account_id"] = acct_id
-            acct = next((a for a in accounts if a["id"] == acct_id), {})
-            data["account_name"] = acct.get("name") or acct.get("aws_account_id") or ""
+            selected = next((a for a in accounts if a["id"] == acct_id), None)
+            data["account_name"] = selected["name"] if selected else ""
 
             if not acct_id:
                 conn.close()

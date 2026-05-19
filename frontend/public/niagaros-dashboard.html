@@ -167,6 +167,17 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .p-HI{background:#fff7ed;color:#f97316} .d-HI{background:#f97316}
 .p-ME{background:#fffbeb;color:#f59e0b} .d-ME{background:#f59e0b}
 .p-LO{background:#eff6ff;color:#3b82f6} .d-LO{background:#3b82f6}
+.bi-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:800;letter-spacing:.04em;margin-left:4px;vertical-align:middle}
+.bi-H{background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5}
+.bi-M{background:#fff7ed;color:#c2410c;border:1px solid #fdba74}
+.bi-L{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+.bi-btn{padding:6px 14px;border-radius:7px;border:1px solid #e5e7eb;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#374151;transition:all .15s;letter-spacing:.02em}
+.bi-btn.active-H{background:#fef2f2;color:#b91c1c;border-color:#fca5a5}
+.bi-btn.active-M{background:#fff7ed;color:#c2410c;border-color:#fdba74}
+.bi-btn.active-L{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+.bi-btn.active-all{background:#f3f4f6;color:#111827;border-color:#d1d5db}
+.bi-filter-group{display:flex;align-items:center;gap:5px;margin-bottom:10px;flex-wrap:wrap}
+.bi-filter-label{font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-right:4px}
 .f-desc{font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .f-id{font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px}
 .res-chip{background:#f3f4f6;border:1px solid #e5e7eb;padding:4px 9px;border-radius:6px;font-size:11px;font-family:monospace;color:#374151;display:inline-block;max-width:148px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -510,6 +521,14 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 
       <!-- ── ISSUES ── -->
       <div id="v-issues" hidden>
+        <div class="bi-filter-group">
+          <span class="bi-filter-label">Business Impact</span>
+          <button class="bi-btn active-all" id="bi-all"  onclick="setBiF('all')">All</button>
+          <button class="bi-btn" id="bi-H" onclick="setBiF('H')">HBI <span style="font-size:9px;font-weight:600;opacity:.7">High</span></button>
+          <button class="bi-btn" id="bi-M" onclick="setBiF('M')">MBI <span style="font-size:9px;font-weight:600;opacity:.7">Medium</span></button>
+          <button class="bi-btn" id="bi-L" onclick="setBiF('L')">LBI <span style="font-size:9px;font-weight:600;opacity:.7">Low</span></button>
+          <span id="bi-counts" style="font-size:11px;color:#9ca3af;margin-left:6px"></span>
+        </div>
         <div class="f-toolbar">
           <div class="f-title">Issues</div>
           <span class="f-cnt" id="f-cnt">—</span>
@@ -689,7 +708,24 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 <script>
 const API         = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
 const TRIGGER_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trigger-orchestrator';
-let allF=[], filtF=[], pg=1, svcF='';
+let allF=[], filtF=[], pg=1, svcF='', biF='all';
+
+function getBI(sev){
+  if(sev==='CRITICAL') return 'H';
+  if(sev==='HIGH')     return 'M';
+  return 'L';
+}
+const BI_LABEL={H:'HBI',M:'MBI',L:'LBI'};
+
+function setBiF(level){
+  biF=level;
+  ['all','H','M','L'].forEach(k=>{
+    const btn=document.getElementById('bi-'+k);
+    if(!btn)return;
+    btn.className='bi-btn'+(k===level?' active-'+level:'');
+  });
+  pg=1; applyF();
+}
 let currentAccountId=null, allAccounts=[];
 
 // ── Account switcher ─────────────────────────────────
@@ -962,6 +998,7 @@ function render(d){
   const tot=d.total||{}, score=tot.score||0, passed=tot.passed||0, total=tot.total||0;
   const failed=total-passed, bySev=d.by_severity||{}, svcs=d.services||[];
   allF=d.findings||[]; filtF=[...allF];
+  biF='all';
   lastCrossCompliance=d.cross_compliance||null;
 
   // Update accounts list + switcher
@@ -1281,6 +1318,7 @@ function applyF(){
   const res=document.getElementById('f-res').value;
   const sv=document.getElementById('f-svc').value||svcF;
   filtF=allF.filter(f=>{
+    if(biF!=='all'&&getBI(f.severity)!==biF)return false;
     if(sev&&f.severity!==sev)return false;
     if(res&&f.result!==res)return false;
     if(sv==='cis'&&['ISO27001','NIST','GDPR','SOC2'].includes(f.service))return false;
@@ -1288,6 +1326,15 @@ function applyF(){
     if(q){const h=[(f.title||''),(f.check_id||''),(f.resource_name||'')].join(' ').toLowerCase();if(!h.includes(q))return false;}
     return true;
   });
+  // Update BI counts
+  const el=document.getElementById('bi-counts');
+  if(el){
+    const fails=allF.filter(f=>f.result==='FAIL');
+    const hc=fails.filter(f=>getBI(f.severity)==='H').length;
+    const mc=fails.filter(f=>getBI(f.severity)==='M').length;
+    const lc=fails.filter(f=>getBI(f.severity)==='L').length;
+    el.innerHTML=`<span style="color:#b91c1c;font-weight:700">${hc} HBI</span> · <span style="color:#c2410c;font-weight:700">${mc} MBI</span> · <span style="color:#1d4ed8;font-weight:700">${lc} LBI</span> open`;
+  }
   pg=1; renderPg();
 }
 
@@ -1300,10 +1347,11 @@ function renderPg(){
   const sevK={CRITICAL:'CR',HIGH:'HI',MEDIUM:'ME',LOW:'LO'};
   document.getElementById('f-body').innerHTML=page.map((f,i)=>{
     const sk=sevK[f.severity]||'LO', fail=f.result==='FAIL';
+    const bi=getBI(f.severity);
     const title=(f.title||f.check_id||'').substring(0,58)+((f.title||'').length>58?'…':'');
     const res=(f.resource_name||'—').substring(0,22)+((f.resource_name||'').length>22?'…':'');
     return `<div class="f-row">
-      <div><span class="sev-pill p-${sk}"><span class="sd d-${sk}"></span>${(f.severity||'LOW').charAt(0)+(f.severity||'LOW').slice(1).toLowerCase()}</span></div>
+      <div><span class="sev-pill p-${sk}"><span class="sd d-${sk}"></span>${(f.severity||'LOW').charAt(0)+(f.severity||'LOW').slice(1).toLowerCase()}</span><span class="bi-badge bi-${bi}">${BI_LABEL[bi]}</span></div>
       <div><div class="f-desc">${title}</div><div class="f-id">${f.check_id||''}</div></div>
       <div><span class="res-chip">${res}</span></div>
       <div style="font-size:12px;color:#374151">1 resource</div>
