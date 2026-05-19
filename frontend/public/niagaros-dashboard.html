@@ -337,17 +337,25 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 /* ── CROSS-COMPLIANCE HEATMAP ─────────────────────────── */
 #v-heatmap{color:#e2e8f0}
 .hm-outer{background:#0d1117;border-radius:16px;padding:28px 28px 24px;border:1px solid #1e2d3d}
-.hm-header{text-align:center;margin-bottom:24px}
+.hm-header{text-align:center;margin-bottom:20px}
 .hm-main-title{font-size:20px;font-weight:800;color:#f1f5f9;letter-spacing:.01em;margin-bottom:4px}
 .hm-main-sub{font-size:12px;color:#475569;letter-spacing:.04em;text-transform:uppercase}
-.hm-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-.hm-toggle{background:#1e2d3d;border:1px solid #2d4057;color:#94a3b8;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s}
+.hm-filter-bar{display:flex;align-items:center;gap:7px;margin-bottom:14px;flex-wrap:wrap}
+.hm-search{display:flex;align-items:center;gap:6px;background:#111827;border:1px solid #1e2d3d;padding:6px 12px;border-radius:8px;min-width:180px}
+.hm-search input{border:none;outline:none;background:transparent;color:#cbd5e1;font-size:12px;font-family:'Inter',sans-serif;width:100%}
+.hm-search input::placeholder{color:#334155}
+.hm-bi-btn{padding:5px 13px;border-radius:6px;border:1px solid #1e2d3d;font-size:11px;font-weight:700;cursor:pointer;background:#111827;color:#475569;transition:all .15s;letter-spacing:.03em}
+.hm-bi-btn.hm-bi-active{background:#ef4444;color:#fff;border-color:#ef4444}
+.hm-sel{background:#111827;border:1px solid #1e2d3d;padding:5px 10px;border-radius:7px;font-size:12px;color:#94a3b8;font-family:'Inter',sans-serif;outline:none;cursor:pointer}
+.hm-toggle{background:#1e2d3d;border:1px solid #2d4057;color:#94a3b8;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;margin-left:auto}
 .hm-toggle.on{background:#ef4444;color:#fff;border-color:#ef4444}
-.hm-wrap{overflow-x:auto}
-.hm-table{width:100%;border-collapse:separate;border-spacing:4px;min-width:540px}
+.hm-body-wrap{display:flex;align-items:stretch;gap:10px}
+.hm-wrap{overflow-x:auto;flex:1}
+.hm-table{width:100%;border-collapse:separate;border-spacing:4px;min-width:400px}
 .hm-th{padding:8px 6px;font-size:11px;font-weight:700;color:#94a3b8;text-align:center;white-space:nowrap;background:transparent;letter-spacing:.04em}
-.hm-th.row-hdr{text-align:left;min-width:180px;color:#64748b}
+.hm-th.row-hdr{text-align:left;min-width:160px;color:#64748b}
 .hm-td-label{padding:6px 8px 6px 2px;font-size:12.5px;font-weight:500;color:#cbd5e1;white-space:nowrap;vertical-align:middle}
+.hm-td-label .hm-bi-tag{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:middle;letter-spacing:.04em}
 .hm-td{padding:2px;text-align:center;vertical-align:middle}
 .hm-cell{border-radius:7px;padding:12px 8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;min-width:68px;min-height:46px;transition:transform .12s,filter .12s;cursor:default;position:relative}
 .hm-cell:hover{transform:scale(1.06);filter:brightness(1.15);z-index:2}
@@ -358,10 +366,13 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .hm-cell.hm-risk{background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff}
 .hm-cell.hm-none{background:#1e2d3d;color:#334155}
 .hm-cell .hm-pct{font-size:13px;font-weight:800;letter-spacing:-.01em}
+.hm-scale{display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0 4px 4px;min-width:26px}
+.hm-scale-bar{width:12px;flex:1;border-radius:6px;background:linear-gradient(to bottom,#22c55e,#84cc16,#eab308,#f97316,#ef4444);min-height:160px}
+.hm-scale-lbl{font-size:10px;color:#334155;font-weight:600}
 .hm-legend{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:18px;flex-wrap:wrap}
 .hm-lg{display:flex;align-items:center;gap:6px;font-size:11px;color:#64748b;font-weight:500}
 .hm-lg-dot{width:14px;height:10px;border-radius:3px;flex-shrink:0}
-.hm-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:20px}
+.hm-summary{display:grid;gap:8px;margin-top:20px}
 .hm-sum-card{background:#111827;border:1px solid #1e2d3d;border-radius:10px;padding:12px;text-align:center}
 .hm-sum-n{font-size:20px;font-weight:800;margin-bottom:3px}
 .hm-sum-l{font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
@@ -629,15 +640,32 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
             <div class="hm-main-title">Cross-Compliance Heatmap</div>
             <div class="hm-main-sub">Similarity &amp; Overlap Analysis</div>
           </div>
-          <div class="hm-toolbar">
-            <div style="font-size:12px;color:#64748b">Security domains × compliance frameworks</div>
+          <div class="hm-filter-bar">
+            <div class="hm-search">
+              <span style="color:#334155;font-size:13px">🔍</span>
+              <input type="text" id="hm-q" placeholder="Search domain…" oninput="renderHeatmap()">
+            </div>
+            <button class="hm-bi-btn hm-bi-active" id="hm-bi-all" onclick="setHmBi('all')">All</button>
+            <button class="hm-bi-btn" id="hm-bi-H" onclick="setHmBi('H')">HBI</button>
+            <button class="hm-bi-btn" id="hm-bi-M" onclick="setHmBi('M')">MBI</button>
+            <button class="hm-bi-btn" id="hm-bi-L" onclick="setHmBi('L')">LBI</button>
+            <select class="hm-sel" id="hm-fw-filter" onchange="renderHeatmap()">
+              <option value="">All Frameworks</option>
+            </select>
             <button class="hm-toggle" id="hm-pct-btn" onclick="toggleHmPct()">Show %</button>
           </div>
-          <div class="hm-wrap">
-            <table class="hm-table" id="hm-table">
-              <thead id="hm-thead"></thead>
-              <tbody id="hm-tbody"></tbody>
-            </table>
+          <div class="hm-body-wrap">
+            <div class="hm-wrap">
+              <table class="hm-table" id="hm-table">
+                <thead id="hm-thead"></thead>
+                <tbody id="hm-tbody"></tbody>
+              </table>
+            </div>
+            <div class="hm-scale">
+              <div class="hm-scale-lbl">100</div>
+              <div class="hm-scale-bar"></div>
+              <div class="hm-scale-lbl">0</div>
+            </div>
           </div>
           <div class="hm-summary" id="hm-summary"></div>
           <div class="hm-legend">
@@ -1214,8 +1242,7 @@ function render(d){
 }
 
 // ── Cross-Compliance Heatmap ─────────────────────────────────────────────────
-const FW_COLORS={cis:'#3b82f6',iso:'#10b981',nist:'#8b5cf6',gdpr:'#f59e0b',soc2:'#ec4899'};
-const DOMAIN_ICONS={iam:'🔑',storage:'🪣',logging:'📊',encryption:'🔐',appsec:'⚙'};
+let hmBiF='all';
 
 function hmCellClass(score){
   if(score===null||score===undefined) return 'hm-none';
@@ -1226,41 +1253,96 @@ function hmCellClass(score){
   return 'hm-risk';
 }
 
+function hmDomainBi(scores){
+  const vals=scores.filter(s=>s!=null).map(s=>s.score);
+  if(!vals.length) return 'L';
+  const avg=vals.reduce((a,v)=>a+v,0)/vals.length;
+  if(avg<40) return 'H';
+  if(avg<70) return 'M';
+  return 'L';
+}
+
+function setHmBi(level){
+  hmBiF=level;
+  ['all','H','M','L'].forEach(k=>{
+    const b=document.getElementById('hm-bi-'+k);
+    if(b) b.className='hm-bi-btn'+(k===level?' hm-bi-active':'');
+  });
+  renderHeatmap();
+}
+
 function renderHeatmap(){
   const cc=lastCrossCompliance;
   if(!cc||!cc.domains||!cc.frameworks){
     document.getElementById('hm-tbody').innerHTML='<tr><td colspan="99" style="text-align:center;padding:40px;color:#9ca3af;font-size:13px">No compliance data yet — run a scan first.</td></tr>';
     return;
   }
-  const fws=cc.frameworks;
 
-  // Header row
+  // ── Populate framework dropdown dynamically from data ──────────────────────
+  const fwSel=document.getElementById('hm-fw-filter');
+  if(fwSel&&fwSel.options.length<=1){
+    cc.frameworks.forEach(f=>{
+      const o=document.createElement('option');
+      o.value=f.id; o.textContent=f.label;
+      fwSel.appendChild(o);
+    });
+  }
+  const fwFilter=fwSel?fwSel.value:'';
+
+  // ── Apply framework filter ─────────────────────────────────────────────────
+  const fws=fwFilter
+    ? cc.frameworks.filter(f=>f.id===fwFilter)
+    : cc.frameworks;
+  const fwIdxMap={};
+  cc.frameworks.forEach((f,i)=>fwIdxMap[f.id]=i);
+
+  // ── Apply search + BI filter on domains ───────────────────────────────────
+  const q=(document.getElementById('hm-q')||{}).value||'';
+  const ql=q.toLowerCase();
+  const domains=cc.domains.filter(row=>{
+    if(ql&&!row.label.toLowerCase().includes(ql)) return false;
+    if(hmBiF!=='all'&&hmDomainBi(row.scores)!==hmBiF) return false;
+    return true;
+  });
+
+  const biLabel={H:'HBI',M:'MBI',L:'LBI'};
+  const biStyle={H:'background:#fef2f2;color:#b91c1c',M:'background:#fff7ed;color:#c2410c',L:'background:#eff6ff;color:#1d4ed8'};
+
+  // ── Header row ─────────────────────────────────────────────────────────────
   document.getElementById('hm-thead').innerHTML=
-    '<tr>'
-    +'<th class="hm-th row-hdr">Security Domain</th>'
-    +fws.map(f=>`<th class="hm-th"><span class="hm-fw-dot" style="background:${FW_COLORS[f.id]||'#6b7280'}"></span> ${f.label}</th>`).join('')
+    '<tr><th class="hm-th row-hdr">Security Domain</th>'
+    +fws.map(f=>`<th class="hm-th">${f.label}</th>`).join('')
     +'</tr>';
 
-  // Body rows
-  document.getElementById('hm-tbody').innerHTML=cc.domains.map(row=>{
-    const cells=row.scores.map(s=>{
-      const sc=s?Math.round(s.score):null;
-      const cls=hmCellClass(sc);
-      const inner=hmShowPct&&sc!==null
-        ? `<span class="hm-pct">${sc}%</span>`
-        : `<span class="hm-dot"></span>`;
-      const tooltip=s?`title="${sc}% — ${s.passed}/${s.total} passing"`:'title="No data"';
-      return `<td class="hm-td"><div class="hm-cell ${cls}" ${tooltip}>${inner}</div></td>`;
+  // ── Body rows ──────────────────────────────────────────────────────────────
+  if(!domains.length){
+    document.getElementById('hm-tbody').innerHTML='<tr><td colspan="99" style="text-align:center;padding:32px;color:#475569;font-size:13px">No domains match the current filter.</td></tr>';
+  } else {
+    document.getElementById('hm-tbody').innerHTML=domains.map(row=>{
+      const bi=hmDomainBi(row.scores);
+      const biTag=`<span class="hm-bi-tag" style="${biStyle[bi]}">${biLabel[bi]}</span>`;
+      const cells=fws.map(f=>{
+        const s=row.scores[fwIdxMap[f.id]];
+        const sc=s?Math.round(s.score):null;
+        const cls=hmCellClass(sc);
+        const inner=hmShowPct&&sc!==null?`<span class="hm-pct">${sc}%</span>`:`<span class="hm-dot"></span>`;
+        const tip=s?`title="${sc}% — ${s.passed}/${s.total} passing"`:'title="No data"';
+        return `<td class="hm-td"><div class="hm-cell ${cls}" ${tip}>${inner}</div></td>`;
+      }).join('');
+      return `<tr><td class="hm-td-label">${row.label}${biTag}</td>${cells}</tr>`;
     }).join('');
-    return `<tr><td class="hm-td-label">${row.label}</td>${cells}</tr>`;
-  }).join('');
+  }
 
-  // Summary bar — avg score per framework
-  document.getElementById('hm-summary').innerHTML=fws.map((f,fi)=>{
-    const scores=cc.domains.map(d=>d.scores[fi]).filter(s=>s!=null);
-    const avg=scores.length?Math.round(scores.reduce((a,s)=>a+s.score,0)/scores.length):null;
+  // ── Summary cards — avg per visible framework ──────────────────────────────
+  const sumEl=document.getElementById('hm-summary');
+  sumEl.style.gridTemplateColumns=`repeat(${fws.length},1fr)`;
+  sumEl.innerHTML=fws.map(f=>{
+    const fi=fwIdxMap[f.id];
+    const vals=domains.map(d=>d.scores[fi]).filter(s=>s!=null);
+    const avg=vals.length?Math.round(vals.reduce((a,s)=>a+s.score,0)/vals.length):null;
     const cls=avg!==null?hmCellClass(avg):'hm-none';
-    return `<div class="hm-sum-card"><div class="hm-sum-n" style="color:${FW_COLORS[f.id]||'#111'}">${avg!==null?avg+'%':'—'}</div><div class="hm-sum-l">${f.label}</div></div>`;
+    const col=avg===null?'#334155':avg>=80?'#22c55e':avg>=60?'#84cc16':avg>=40?'#eab308':avg>=20?'#f97316':'#ef4444';
+    return `<div class="hm-sum-card"><div class="hm-sum-n" style="color:${col}">${avg!==null?avg+'%':'—'}</div><div class="hm-sum-l">${f.label}</div></div>`;
   }).join('');
 }
 
