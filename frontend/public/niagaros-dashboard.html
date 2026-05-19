@@ -322,6 +322,37 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .toast-bar{height:100%;background:linear-gradient(90deg,#ef4444,#f97316);border-radius:2px;width:0%;transition:width .8s ease}
 .toast-close{position:fixed;top:24px;right:28px;color:#4b5563;cursor:pointer;font-size:24px;line-height:1;transition:color .12s}
 .toast-close:hover{color:#9ca3af}
+
+/* ── CROSS-COMPLIANCE HEATMAP ─────────────────────────── */
+.hm-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.hm-title{font-size:15px;font-weight:700;color:#111827;margin-right:auto}
+.hm-toggle{background:#fff;border:1px solid #e5e7eb;color:#374151;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s}
+.hm-toggle.on{background:#ef4444;color:#fff;border-color:#ef4444}
+.hm-legend{display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+.hm-lg{display:flex;align-items:center;gap:5px;font-size:11px;color:#6b7280;font-weight:500}
+.hm-lg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.hm-wrap{overflow-x:auto;border-radius:12px;border:1px solid #e5e7eb}
+.hm-table{width:100%;border-collapse:collapse;min-width:540px}
+.hm-th{padding:11px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap}
+.hm-th.row-hdr{text-align:left;min-width:160px}
+.hm-td-label{padding:13px 14px;font-size:13px;font-weight:600;color:#111827;background:#fff;border-bottom:1px solid #f3f4f6;white-space:nowrap;vertical-align:middle}
+.hm-td{padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;vertical-align:middle;cursor:default;transition:filter .15s}
+.hm-td:last-child{border-right:none}
+.hm-cell{border-radius:8px;padding:14px 10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;min-width:72px;min-height:52px;transition:transform .1s,box-shadow .1s;cursor:default;position:relative}
+.hm-cell:hover{transform:scale(1.04);box-shadow:0 3px 12px rgba(0,0,0,.1);z-index:1}
+.hm-cell.hm-high{background:#dcfce7;color:#15803d}
+.hm-cell.hm-med{background:#fef9c3;color:#854d0e}
+.hm-cell.hm-low{background:#ffedd5;color:#c2410c}
+.hm-cell.hm-risk{background:#fee2e2;color:#b91c1c}
+.hm-cell.hm-none{background:#f3f4f6;color:#9ca3af}
+.hm-cell .hm-pct{font-size:14px;font-weight:800}
+.hm-cell .hm-dot{width:10px;height:10px;border-radius:50%;background:currentColor;opacity:.7}
+.hm-fw-badge{display:inline-flex;align-items:center;gap:5px}
+.hm-fw-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.hm-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:16px}
+.hm-sum-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;text-align:center}
+.hm-sum-n{font-size:22px;font-weight:800;margin-bottom:2px}
+.hm-sum-l{font-size:11px;color:#6b7280;font-weight:500}
 </style>
 </head>
 <body>
@@ -368,6 +399,9 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <span class="da" id="drop-arrow">▾</span>
     </div>
     <div class="drop-items" id="drop-items">
+      <div class="di" id="ni-heatmap" onclick="show('heatmap',this)">
+        <span class="di-dot" style="background:#ef4444"></span>Cross-Compliance Heatmap
+      </div>
       <div class="di on" onclick="navTo('cis_benchmark.html')">
         <span class="di-dot" style="background:#3b82f6"></span>CIS Benchmark
       </div>
@@ -568,6 +602,28 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <div class="proj-grid" id="proj-grid"></div>
       </div>
 
+      <!-- ── HEATMAP ── -->
+      <div id="v-heatmap" hidden>
+        <div class="hm-toolbar">
+          <div class="hm-title">Cross-Compliance Heatmap</div>
+          <button class="hm-toggle" id="hm-pct-btn" onclick="toggleHmPct()">Show %</button>
+        </div>
+        <div class="hm-legend">
+          <div class="hm-lg"><div class="hm-lg-dot" style="background:#dcfce7;border:1px solid #86efac"></div>High (&gt;80%)</div>
+          <div class="hm-lg"><div class="hm-lg-dot" style="background:#fef9c3;border:1px solid #fde047"></div>Medium (60–80%)</div>
+          <div class="hm-lg"><div class="hm-lg-dot" style="background:#ffedd5;border:1px solid #fdba74"></div>Low (40–60%)</div>
+          <div class="hm-lg"><div class="hm-lg-dot" style="background:#fee2e2;border:1px solid #fca5a5"></div>At Risk (&lt;40%)</div>
+          <div class="hm-lg"><div class="hm-lg-dot" style="background:#f3f4f6;border:1px solid #e5e7eb"></div>No Data</div>
+        </div>
+        <div class="hm-wrap">
+          <table class="hm-table" id="hm-table">
+            <thead id="hm-thead"></thead>
+            <tbody id="hm-tbody"></tbody>
+          </table>
+        </div>
+        <div class="hm-summary" id="hm-summary"></div>
+      </div>
+
     </div><!-- /content -->
 
     <!-- RIGHT PANEL -->
@@ -665,8 +721,9 @@ function toggleDrop(){
   d.classList.toggle('open'); a.classList.toggle('open');
 }
 
-const VIEWS=['dashboard','inventory','issues','graph','policies','reports','projects'];
-const NAV_IDS={dashboard:'ni-dash',inventory:'ni-inv',issues:'ni-issues',graph:'ni-graph',policies:'ni-pol',reports:'ni-rep',projects:'ni-proj'};
+const VIEWS=['dashboard','inventory','issues','graph','policies','reports','projects','heatmap'];
+const NAV_IDS={dashboard:'ni-dash',inventory:'ni-inv',issues:'ni-issues',graph:'ni-graph',policies:'ni-pol',reports:'ni-rep',projects:'ni-proj',heatmap:'ni-heatmap'};
+let hmShowPct=false, lastCrossCompliance=null;
 function getHashView(){
   const hash = window.location.hash.slice(1);
   return VIEWS.includes(hash) ? hash : 'dashboard';
@@ -684,10 +741,12 @@ function show(v,el){
   document.getElementById('rp').hidden = v!=='dashboard';
   document.getElementById('tp-title').textContent = {
     dashboard:'Security Dashboard',inventory:'Inventory',issues:'Issues',
-    graph:'Security Graph',policies:'Policies',reports:'Reports',projects:'Projects'
+    graph:'Security Graph',policies:'Policies',reports:'Reports',projects:'Projects',
+    heatmap:'Cross-Compliance Heatmap'
   }[v]||v;
   if(v==='issues') renderPg();
   if(v==='inventory') renderInv();
+  if(v==='heatmap') renderHeatmap();
 }
 
 // ── Scan toast ────────────────────────────────────────
@@ -895,6 +954,7 @@ function render(d){
   const tot=d.total||{}, score=tot.score||0, passed=tot.passed||0, total=tot.total||0;
   const failed=total-passed, bySev=d.by_severity||{}, svcs=d.services||[];
   allF=d.findings||[]; filtF=[...allF];
+  lastCrossCompliance=d.cross_compliance||null;
 
   // Update accounts list + switcher
   if(d.accounts&&d.accounts.length) allAccounts=d.accounts;
@@ -1106,6 +1166,64 @@ function render(d){
   document.getElementById('v-load').style.display='none';
   const view = getHashView();
   show(view, document.getElementById('ni-'+view));
+}
+
+// ── Cross-Compliance Heatmap ─────────────────────────────────────────────────
+const FW_COLORS={cis:'#3b82f6',iso:'#10b981',nist:'#8b5cf6',gdpr:'#f59e0b',soc2:'#ec4899'};
+const DOMAIN_ICONS={iam:'🔑',storage:'🪣',logging:'📊',encryption:'🔐',appsec:'⚙'};
+
+function hmCellClass(score){
+  if(score===null||score===undefined) return 'hm-none';
+  if(score>=80) return 'hm-high';
+  if(score>=60) return 'hm-med';
+  if(score>=40) return 'hm-low';
+  return 'hm-risk';
+}
+
+function renderHeatmap(){
+  const cc=lastCrossCompliance;
+  if(!cc||!cc.domains||!cc.frameworks){
+    document.getElementById('hm-tbody').innerHTML='<tr><td colspan="99" style="text-align:center;padding:40px;color:#9ca3af;font-size:13px">No compliance data yet — run a scan first.</td></tr>';
+    return;
+  }
+  const fws=cc.frameworks;
+
+  // Header row
+  document.getElementById('hm-thead').innerHTML=
+    '<tr>'
+    +'<th class="hm-th row-hdr">Security Domain</th>'
+    +fws.map(f=>`<th class="hm-th"><span class="hm-fw-dot" style="background:${FW_COLORS[f.id]||'#6b7280'}"></span> ${f.label}</th>`).join('')
+    +'</tr>';
+
+  // Body rows
+  document.getElementById('hm-tbody').innerHTML=cc.domains.map(row=>{
+    const icon=DOMAIN_ICONS[row.id]||'▪';
+    const cells=row.scores.map(s=>{
+      const sc=s?Math.round(s.score):null;
+      const cls=hmCellClass(sc);
+      const inner=hmShowPct&&sc!==null
+        ? `<span class="hm-pct">${sc}%</span>`
+        : `<span class="hm-dot"></span>`;
+      const tooltip=s?`title="${sc}% — ${s.passed}/${s.total} passing"`:'title="No data"';
+      return `<td class="hm-td"><div class="hm-cell ${cls}" ${tooltip}>${inner}</div></td>`;
+    }).join('');
+    return `<tr><td class="hm-td-label">${icon} ${row.label}</td>${cells}</tr>`;
+  }).join('');
+
+  // Summary bar — avg score per framework
+  document.getElementById('hm-summary').innerHTML=fws.map((f,fi)=>{
+    const scores=cc.domains.map(d=>d.scores[fi]).filter(s=>s!=null);
+    const avg=scores.length?Math.round(scores.reduce((a,s)=>a+s.score,0)/scores.length):null;
+    const cls=avg!==null?hmCellClass(avg):'hm-none';
+    return `<div class="hm-sum-card"><div class="hm-sum-n" style="color:${FW_COLORS[f.id]||'#111'}">${avg!==null?avg+'%':'—'}</div><div class="hm-sum-l">${f.label}</div></div>`;
+  }).join('');
+}
+
+function toggleHmPct(){
+  hmShowPct=!hmShowPct;
+  const btn=document.getElementById('hm-pct-btn');
+  if(btn){btn.textContent=hmShowPct?'Hide %':'Show %';btn.classList.toggle('on',hmShowPct);}
+  renderHeatmap();
 }
 
 function renderInv(){
