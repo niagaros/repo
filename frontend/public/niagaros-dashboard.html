@@ -324,35 +324,36 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .toast-close:hover{color:#9ca3af}
 
 /* ── CROSS-COMPLIANCE HEATMAP ─────────────────────────── */
-.hm-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
-.hm-title{font-size:15px;font-weight:700;color:#111827;margin-right:auto}
-.hm-toggle{background:#fff;border:1px solid #e5e7eb;color:#374151;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s}
+#v-heatmap{color:#e2e8f0}
+.hm-outer{background:#0d1117;border-radius:16px;padding:28px 28px 24px;border:1px solid #1e2d3d}
+.hm-header{text-align:center;margin-bottom:24px}
+.hm-main-title{font-size:20px;font-weight:800;color:#f1f5f9;letter-spacing:.01em;margin-bottom:4px}
+.hm-main-sub{font-size:12px;color:#475569;letter-spacing:.04em;text-transform:uppercase}
+.hm-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.hm-toggle{background:#1e2d3d;border:1px solid #2d4057;color:#94a3b8;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s}
 .hm-toggle.on{background:#ef4444;color:#fff;border-color:#ef4444}
-.hm-legend{display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap}
-.hm-lg{display:flex;align-items:center;gap:5px;font-size:11px;color:#6b7280;font-weight:500}
-.hm-lg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
-.hm-wrap{overflow-x:auto;border-radius:12px;border:1px solid #e5e7eb}
-.hm-table{width:100%;border-collapse:collapse;min-width:540px}
-.hm-th{padding:11px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap}
-.hm-th.row-hdr{text-align:left;min-width:160px}
-.hm-td-label{padding:13px 14px;font-size:13px;font-weight:600;color:#111827;background:#fff;border-bottom:1px solid #f3f4f6;white-space:nowrap;vertical-align:middle}
-.hm-td{padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;vertical-align:middle;cursor:default;transition:filter .15s}
-.hm-td:last-child{border-right:none}
-.hm-cell{border-radius:8px;padding:14px 10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;min-width:72px;min-height:52px;transition:transform .1s,box-shadow .1s;cursor:default;position:relative}
-.hm-cell:hover{transform:scale(1.04);box-shadow:0 3px 12px rgba(0,0,0,.1);z-index:1}
-.hm-cell.hm-high{background:#dcfce7;color:#15803d}
-.hm-cell.hm-med{background:#fef9c3;color:#854d0e}
-.hm-cell.hm-low{background:#ffedd5;color:#c2410c}
-.hm-cell.hm-risk{background:#fee2e2;color:#b91c1c}
-.hm-cell.hm-none{background:#f3f4f6;color:#9ca3af}
-.hm-cell .hm-pct{font-size:14px;font-weight:800}
-.hm-cell .hm-dot{width:10px;height:10px;border-radius:50%;background:currentColor;opacity:.7}
-.hm-fw-badge{display:inline-flex;align-items:center;gap:5px}
-.hm-fw-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-.hm-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:16px}
-.hm-sum-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;text-align:center}
-.hm-sum-n{font-size:22px;font-weight:800;margin-bottom:2px}
-.hm-sum-l{font-size:11px;color:#6b7280;font-weight:500}
+.hm-wrap{overflow-x:auto}
+.hm-table{width:100%;border-collapse:separate;border-spacing:4px;min-width:540px}
+.hm-th{padding:8px 6px;font-size:11px;font-weight:700;color:#94a3b8;text-align:center;white-space:nowrap;background:transparent;letter-spacing:.04em}
+.hm-th.row-hdr{text-align:left;min-width:180px;color:#64748b}
+.hm-td-label{padding:6px 8px 6px 2px;font-size:12.5px;font-weight:500;color:#cbd5e1;white-space:nowrap;vertical-align:middle}
+.hm-td{padding:2px;text-align:center;vertical-align:middle}
+.hm-cell{border-radius:7px;padding:12px 8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;min-width:68px;min-height:46px;transition:transform .12s,filter .12s;cursor:default;position:relative}
+.hm-cell:hover{transform:scale(1.06);filter:brightness(1.15);z-index:2}
+.hm-cell.hm-high{background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff}
+.hm-cell.hm-medh{background:linear-gradient(135deg,#65a30d,#84cc16);color:#fff}
+.hm-cell.hm-med{background:linear-gradient(135deg,#ca8a04,#eab308);color:#fff}
+.hm-cell.hm-low{background:linear-gradient(135deg,#c2410c,#f97316);color:#fff}
+.hm-cell.hm-risk{background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff}
+.hm-cell.hm-none{background:#1e2d3d;color:#334155}
+.hm-cell .hm-pct{font-size:13px;font-weight:800;letter-spacing:-.01em}
+.hm-legend{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:18px;flex-wrap:wrap}
+.hm-lg{display:flex;align-items:center;gap:6px;font-size:11px;color:#64748b;font-weight:500}
+.hm-lg-dot{width:14px;height:10px;border-radius:3px;flex-shrink:0}
+.hm-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:20px}
+.hm-sum-card{background:#111827;border:1px solid #1e2d3d;border-radius:10px;padding:12px;text-align:center}
+.hm-sum-n{font-size:20px;font-weight:800;margin-bottom:3px}
+.hm-sum-l{font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 </style>
 </head>
 <body>
@@ -604,24 +605,31 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 
       <!-- ── HEATMAP ── -->
       <div id="v-heatmap" hidden>
-        <div class="hm-toolbar">
-          <div class="hm-title">Cross-Compliance Heatmap</div>
-          <button class="hm-toggle" id="hm-pct-btn" onclick="toggleHmPct()">Show %</button>
+        <div class="hm-outer">
+          <div class="hm-header">
+            <div class="hm-main-title">Cross-Compliance Heatmap</div>
+            <div class="hm-main-sub">Similarity &amp; Overlap Analysis</div>
+          </div>
+          <div class="hm-toolbar">
+            <div style="font-size:12px;color:#64748b">Security domains × compliance frameworks</div>
+            <button class="hm-toggle" id="hm-pct-btn" onclick="toggleHmPct()">Show %</button>
+          </div>
+          <div class="hm-wrap">
+            <table class="hm-table" id="hm-table">
+              <thead id="hm-thead"></thead>
+              <tbody id="hm-tbody"></tbody>
+            </table>
+          </div>
+          <div class="hm-summary" id="hm-summary"></div>
+          <div class="hm-legend">
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#16a34a,#22c55e)"></div>High (&gt;80%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#65a30d,#84cc16)"></div>Good (60–80%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#ca8a04,#eab308)"></div>Medium (40–60%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#c2410c,#f97316)"></div>Low (20–40%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#b91c1c,#ef4444)"></div>At Risk (&lt;20%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:#1e2d3d;border:1px solid #2d4057"></div>No Data</div>
+          </div>
         </div>
-        <div class="hm-legend">
-          <div class="hm-lg"><div class="hm-lg-dot" style="background:#dcfce7;border:1px solid #86efac"></div>High (&gt;80%)</div>
-          <div class="hm-lg"><div class="hm-lg-dot" style="background:#fef9c3;border:1px solid #fde047"></div>Medium (60–80%)</div>
-          <div class="hm-lg"><div class="hm-lg-dot" style="background:#ffedd5;border:1px solid #fdba74"></div>Low (40–60%)</div>
-          <div class="hm-lg"><div class="hm-lg-dot" style="background:#fee2e2;border:1px solid #fca5a5"></div>At Risk (&lt;40%)</div>
-          <div class="hm-lg"><div class="hm-lg-dot" style="background:#f3f4f6;border:1px solid #e5e7eb"></div>No Data</div>
-        </div>
-        <div class="hm-wrap">
-          <table class="hm-table" id="hm-table">
-            <thead id="hm-thead"></thead>
-            <tbody id="hm-tbody"></tbody>
-          </table>
-        </div>
-        <div class="hm-summary" id="hm-summary"></div>
       </div>
 
     </div><!-- /content -->
@@ -1175,8 +1183,9 @@ const DOMAIN_ICONS={iam:'🔑',storage:'🪣',logging:'📊',encryption:'🔐',a
 function hmCellClass(score){
   if(score===null||score===undefined) return 'hm-none';
   if(score>=80) return 'hm-high';
-  if(score>=60) return 'hm-med';
-  if(score>=40) return 'hm-low';
+  if(score>=60) return 'hm-medh';
+  if(score>=40) return 'hm-med';
+  if(score>=20) return 'hm-low';
   return 'hm-risk';
 }
 
@@ -1197,7 +1206,6 @@ function renderHeatmap(){
 
   // Body rows
   document.getElementById('hm-tbody').innerHTML=cc.domains.map(row=>{
-    const icon=DOMAIN_ICONS[row.id]||'▪';
     const cells=row.scores.map(s=>{
       const sc=s?Math.round(s.score):null;
       const cls=hmCellClass(sc);
@@ -1207,7 +1215,7 @@ function renderHeatmap(){
       const tooltip=s?`title="${sc}% — ${s.passed}/${s.total} passing"`:'title="No data"';
       return `<td class="hm-td"><div class="hm-cell ${cls}" ${tooltip}>${inner}</div></td>`;
     }).join('');
-    return `<tr><td class="hm-td-label">${icon} ${row.label}</td>${cells}</tr>`;
+    return `<tr><td class="hm-td-label">${row.label}</td>${cells}</tr>`;
   }).join('');
 
   // Summary bar — avg score per framework
