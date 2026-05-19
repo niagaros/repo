@@ -16,6 +16,33 @@ interface Plan {
   addons?: string[];
   ctaLabel: string;
   ctaVariant: "primary" | "ghost" | "outline";
+  stripePriceIdMonthly?: string;
+  stripePriceIdYearly?: string;
+}
+
+function getApiBase(): string {
+  return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
+}
+
+// ── Stripe checkout functie ───────────────────────────────────────────────────
+async function startStripeCheckout(priceId: string) {
+  try {
+    const res = await fetch(`${getApiBase()}/stripe-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        price_id: priceId,
+        success_url: `${window.location.origin}/settings/plans?success=true`,
+        cancel_url: `${window.location.origin}/settings/plans`,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { url } = await res.json();
+    window.location.href = url;
+  } catch (err) {
+    console.error("Stripe fout:", err);
+    alert("Betaling kon niet worden gestart. Probeer opnieuw.");
+  }
 }
 
 // ── Plan data ─────────────────────────────────────────────────────────────────
@@ -53,6 +80,8 @@ const PLANS: Plan[] = [
     yearlyPrice: "€5,000",
     yearlyNote: "Save ~15%",
     badge: "Popular",
+    stripePriceIdMonthly: "price_1SxU4HLy43KeN4RtiSed5Z9N",
+    stripePriceIdYearly: "price_1SxU4HLy43KeN4RtiSed5Z9N",
     features: [
       { label: "CSPM",               included: true  },
       { label: "Single-Cloud",       included: true  },
@@ -66,7 +95,7 @@ const PLANS: Plan[] = [
       { label: "1:1 Onboarding",     included: true  },
       { label: "Premium Support",    included: false },
     ],
-    ctaLabel: "Get Quote",
+    ctaLabel: "Subscribe",
     ctaVariant: "primary",
   },
   {
@@ -132,6 +161,7 @@ const PLANS: Plan[] = [
 // ── Sub-components ────────────────────────────────────────────────────────────
 function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly" }) {
   const [hovered, setHovered] = useState(false);
+  const [loading, setLoading] = useState(false);
   const isCurrent = !!plan.current;
 
   const ctaStyle: React.CSSProperties =
@@ -140,6 +170,26 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly"
       : plan.ctaVariant === "outline"
       ? { background: "transparent", color: "#ef4444", border: "1px solid #ef4444" }
       : { background: "#1e2433", color: "#6b7280", border: "1px solid #1e2433", cursor: "default" };
+
+  const handleClick = async () => {
+    if (isCurrent || loading) return;
+
+    if (plan.id === "essentials" && plan.stripePriceIdMonthly) {
+      const priceId = billing === "monthly"
+        ? plan.stripePriceIdMonthly
+        : (plan.stripePriceIdYearly || plan.stripePriceIdMonthly);
+      setLoading(true);
+      await startStripeCheckout(priceId);
+      setLoading(false);
+      return;
+    }
+
+    const subject = encodeURIComponent(`Quote Request – Niagaros ${plan.name} Plan`);
+    const body = encodeURIComponent(
+      `Hello Niagaros team,\n\nI'm interested in the ${plan.name} plan (${plan.monthlyPrice}/month).\nPlease send me more information.\n\nName: \nCompany: \nEmail: \n\nKind regards`
+    );
+    window.open(`mailto:teamniagaros@gmail.com?subject=${subject}&body=${body}`, "_blank");
+  };
 
   return (
     <div
@@ -153,7 +203,6 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly"
         transition: "all 0.15s", position: "relative",
       }}
     >
-      {/* Current plan indicator */}
       {isCurrent && (
         <div style={{
           position: "absolute", top: -1, left: 20, right: 20,
@@ -161,7 +210,6 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly"
         }} />
       )}
 
-      {/* Badge */}
       {plan.badge && (
         <div style={{
           position: "absolute", top: 16, right: 16,
@@ -173,11 +221,9 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly"
         </div>
       )}
 
-      {/* Plan name */}
       <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9", marginBottom: 6 }}>{plan.name}</div>
       <div style={{ fontSize: 12, color: "#4e627a", lineHeight: 1.5, marginBottom: 20, minHeight: 36 }}>{plan.subtitle}</div>
 
-      {/* Price */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
           <span style={{ fontSize: 28, fontWeight: 800, color: "#f1f5f9" }}>
@@ -190,25 +236,16 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly"
         {(billing === "yearly" && plan.yearlyNote) && (
           <div style={{ fontSize: 11, color: "#16a34a", marginTop: 2 }}>✓ {plan.yearlyNote}</div>
         )}
-        {plan.id !== "developer" && (
-          <div style={{ fontSize: 10.5, color: "#374151", marginTop: 4 }}>
-            Incl. 10 users · fair-use policies apply
-          </div>
-        )}
-        {plan.id === "developer" && (
-          <div style={{ fontSize: 10.5, color: "#374151", marginTop: 4 }}>
-            Incl. 1 user · fair-use policies apply
-          </div>
-        )}
+        <div style={{ fontSize: 10.5, color: "#374151", marginTop: 4 }}>
+          {plan.id === "developer" ? "Incl. 1 user · fair-use policies apply" : "Incl. 10 users · fair-use policies apply"}
+        </div>
       </div>
 
-      {/* Features */}
       <div style={{ flex: 1, marginBottom: 20 }}>
         {plan.features.map(f => (
           <div key={f.label} style={{
             display: "flex", alignItems: "center", gap: 8,
-            padding: "5px 0", borderBottom: "1px solid #1a2030",
-            fontSize: 12.5,
+            padding: "5px 0", borderBottom: "1px solid #1a2030", fontSize: 12.5,
           }}>
             <span style={{ color: f.included ? "#16a34a" : "#374151", fontSize: 13, flexShrink: 0 }}>
               {f.included ? "✓" : "✕"}
@@ -217,7 +254,6 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly"
           </div>
         ))}
 
-        {/* Add-ons */}
         {plan.addons && plan.addons.length > 0 && (
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
@@ -233,26 +269,29 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: "monthly" | "yearly"
         )}
       </div>
 
-      {/* CTA */}
       <button
-        disabled={isCurrent}
-        onClick={() => {
-          if (isCurrent) return;
-          const subject = encodeURIComponent(`Quote Request – Niagaros ${plan.name} Plan`);
-          const body = encodeURIComponent(
-            `Hello Niagaros team,\n\nI'm interested in the ${plan.name} plan (${plan.monthlyPrice}/month).\nPlease send me more information.\n\nName: \nCompany: \nEmail: \n\nKind regards`
-          );
-          window.open(`mailto:teamniagaros@gmail.com?subject=${subject}&body=${body}`, "_blank");
-        }}
+        disabled={isCurrent || loading}
+        onClick={handleClick}
         style={{
           ...ctaStyle, borderRadius: 8, padding: "10px 0",
-          fontSize: 13, fontWeight: 600, cursor: isCurrent ? "default" : "pointer",
+          fontSize: 13, fontWeight: 600,
+          cursor: isCurrent || loading ? "default" : "pointer",
           transition: "opacity 0.15s", width: "100%",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
         }}
-        onMouseEnter={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.opacity = "0.85"; }}
+        onMouseEnter={e => { if (!isCurrent && !loading) (e.currentTarget as HTMLElement).style.opacity = "0.85"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = "1"; }}
       >
-        {isCurrent ? "✓ Current plan" : plan.ctaLabel}
+        {loading ? (
+          <>
+            <span style={{
+              width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)",
+              borderTopColor: "#fff", borderRadius: "50%",
+              display: "inline-block", animation: "spin 0.7s linear infinite",
+            }} />
+            Even wachten...
+          </>
+        ) : isCurrent ? "✓ Current plan" : plan.ctaLabel}
       </button>
     </div>
   );
@@ -276,7 +315,8 @@ export default function Plans() {
       breadcrumb="Rate Plans"
       email={email}
     >
-      {/* Billing toggle */}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 28, background: "#111827", border: "1px solid #1e2433", borderRadius: 8, padding: 4, width: "fit-content" }}>
         {(["monthly", "yearly"] as const).map(b => (
           <button
@@ -295,14 +335,12 @@ export default function Plans() {
         ))}
       </div>
 
-      {/* Plan cards grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14, marginBottom: 36 }}>
         {PLANS.map(plan => (
           <PlanCard key={plan.id} plan={plan} billing={billing} />
         ))}
       </div>
 
-      {/* Info footer */}
       <div style={{
         background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.12)",
         borderRadius: 10, padding: "16px 20px",
