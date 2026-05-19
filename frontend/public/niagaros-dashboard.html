@@ -556,10 +556,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
           </select>
           <select class="f-sel" id="f-svc" onchange="applyF()">
             <option value="">All Services</option>
-            <option value="s3">S3</option><option value="iam">IAM</option>
-            <option value="cloudwatch">CloudWatch</option><option value="kms">KMS</option>
-            <option value="iso27001">ISO 27001</option><option value="nist">NIST CSF</option>
-            <option value="gdpr">GDPR</option><option value="soc2">SOC 2</option>
           </select>
         </div>
         <div class="f-table">
@@ -1026,8 +1022,27 @@ function render(d){
   const tot=d.total||{}, score=tot.score||0, passed=tot.passed||0, total=tot.total||0;
   const failed=total-passed, bySev=d.by_severity||{}, svcs=d.services||[];
   allF=d.findings||[]; filtF=[...allF];
-  biF='all';
+  biF='all'; hmBiF='all';
   lastCrossCompliance=d.cross_compliance||null;
+
+  // ── Populate service dropdown dynamically ──────────────────────────────────
+  const svcSel=document.getElementById('f-svc');
+  if(svcSel){
+    const current=svcSel.value;
+    svcSel.innerHTML='<option value="">All Services</option>';
+    const seen=new Set();
+    allF.forEach(f=>{ if(f.service) seen.add(f.service); });
+    [...seen].sort().forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s.toLowerCase(); o.textContent=s;
+      svcSel.appendChild(o);
+    });
+    svcSel.value=current;
+  }
+
+  // ── Reset heatmap framework dropdown ──────────────────────────────────────
+  const fwSel=document.getElementById('hm-fw-filter');
+  if(fwSel){ fwSel.innerHTML='<option value="">All Frameworks</option>'; }
 
   // Update accounts list + switcher
   if(d.accounts&&d.accounts.length) allAccounts=d.accounts;
@@ -1403,8 +1418,7 @@ function applyF(){
     if(biF!=='all'&&getBI(f.severity)!==biF)return false;
     if(sev&&f.severity!==sev)return false;
     if(res&&f.result!==res)return false;
-    if(sv==='cis'&&['ISO27001','NIST','GDPR','SOC2'].includes(f.service))return false;
-    else if(sv&&sv!=='cis'&&(f.service||'').toLowerCase()!==sv)return false;
+    if(sv&&(f.service||'').toLowerCase()!==sv)return false;
     if(q){const h=[(f.title||''),(f.check_id||''),(f.resource_name||'')].join(' ').toLowerCase();if(!h.includes(q))return false;}
     return true;
   });
