@@ -1,14 +1,40 @@
-# Niagaros CNAPP (Cloud-Native Application Protection Platform)
+<div align="center">
 
-> A unified cloud security platform focused on identifying, analyzing, and prioritizing misconfigurations across cloud-native environments.
+# Niagaros CNAPP
+
+### Cloud-Native Application Protection Platform
+
+**Scan your AWS environment and GitHub organisations for misconfigurations and compliance gaps — on demand, no agents required.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![AWS](https://img.shields.io/badge/Cloud-AWS-orange?logo=amazonaws&logoColor=white)](https://aws.amazon.com)
+[![GitHub](https://img.shields.io/badge/Source-GitHub-black?logo=github)](https://github.com)
+[![Frameworks](https://img.shields.io/badge/Compliance%20Frameworks-13-purple)](https://niagaros.com/frameworks/)
+[![Status](https://img.shields.io/badge/Status-Active%20Development-brightgreen)]()
+
+</div>
 
 ---
 
-![Niagaros — Cloud security, automated.](docs/Images/homepage.png)
+<div align="center">
 
----
+### Platform
 
-![Niagaros — Security Dashboard](docs/Images/dashboard.png)
+*Sign in to your account to start scanning*
+
+</div>
+
+<img src="docs/Images/homepage.png" alt="Niagaros — Cloud security, automated." width="100%"/>
+
+<div align="center">
+
+### Security Dashboard
+
+*Live compliance tracking across 13 frameworks — Critical · High · Medium · Low severity breakdown*
+
+</div>
+
+<img src="docs/Images/dashboard.png" alt="Niagaros — Security Dashboard" width="100%"/>
 
 ---
 
