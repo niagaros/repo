@@ -1,7 +1,6 @@
 # Niagaros CNAPP (Cloud-Native Application Protection Platform)
 
-> A unified cloud security platform focused on identifying, analyzing, and prioritizing misconfigurations across cloud-native environments.  
-> Actively developed and validated in collaboration with **Domits** as the first pilot customer.
+> A unified cloud security platform focused on identifying, analyzing, and prioritizing misconfigurations across cloud-native environments.
 
 ---
 
@@ -54,7 +53,7 @@
 
 ## Project Overview
 
-Modern cloud environments introduce a wide range of security risks, especially when configurations are inconsistent or not continuously monitored. **Domits currently lacks clear visibility into whether their AWS resources and GitHub organisations are securely configured.**
+Modern cloud environments introduce a wide range of security risks, especially when configurations are inconsistent or not continuously monitored. Organizations often lack clear visibility into whether their AWS resources and GitHub organisations are securely configured.
 
 Niagaros provides a targeted CSPM solution that:
 
@@ -154,7 +153,7 @@ This MVP lays the foundation for:
 
 ## Development Status
 
-Active development — Niagaros CSPM pilot for **Domits**.
+Niagaros is in active development.
 
 - [x] S3 collector + 8 CIS rules
 - [x] IAM collector + CIS checks
@@ -171,7 +170,7 @@ Active development — Niagaros CSPM pilot for **Domits**.
 - [ ] Azure / GCP full implementation
 - [ ] Automated remediation
 - [ ] Alerting integrations (Slack, SIEM)
-- [ ] Validation in Domits AWS environment
+- [ ] Production validation with pilot customer
 
 ---
 
@@ -197,7 +196,7 @@ For custom pricing: **info@niagaros.com**
 
 - **`docs/internal`** — Product vision, roadmap, architecture decisions, security models
 - **`docs/public`** — Security rules, CSPM methodology, compliance mappings
-- **`docs/partner`** — Domits onboarding guides, integration steps, permissions setup
+- **`docs/partner`** — Partner onboarding guides, integration steps, permissions setup
 
 ---
 
