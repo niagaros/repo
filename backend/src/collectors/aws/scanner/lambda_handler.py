@@ -31,18 +31,12 @@ CHECKS = [
     CloudWatch13Check, CloudWatch14Check,
 ]
 
-CLOUD_ACCOUNT_ID = os.environ.get(
-    "CLOUD_ACCOUNT_ID",
-    "846e9e1b-c011-43ef-a38c-4762cc9b0f5a"
-)
-
-
-def _assume_role(role_arn: str, region: str) -> boto3.Session:
+def _assume_role(role_arn: str, external_id: str, region: str) -> boto3.Session:
     sts = boto3.client("sts", region_name="eu-west-1")
     creds = sts.assume_role(
         RoleArn=role_arn,
         RoleSessionName="cloudwatch-cis-scanner",
-        ExternalId=os.environ.get("EXTERNAL_ID"),
+        ExternalId=external_id,
     )["Credentials"]
 
     return boto3.Session(
@@ -54,10 +48,12 @@ def _assume_role(role_arn: str, region: str) -> boto3.Session:
 
 
 def handler(event, context):
-    region = event.get("region", os.environ.get("AWS_REGION", "eu-north-1"))
-    role_arn = os.environ.get("ASSUME_ROLE_ARN")
+    region = event.get("region", os.environ.get("AWS_REGION", "eu-west-1"))
+    role_arn = event.get("role_arn") or os.environ.get("ASSUME_ROLE_ARN")
+    external_id = event.get("external_id") or os.environ.get("EXTERNAL_ID", "")
+    cloud_account_id = event.get("cloud_account_id") or os.environ.get("CLOUD_ACCOUNT_ID", "")
 
-    session = _assume_role(role_arn, region) if role_arn else None
+    session = _assume_role(role_arn, external_id, region) if role_arn else None
 
     # 1. Collect
     logger.info("Starting CloudWatch collection for region=%s", region)
@@ -82,7 +78,7 @@ def handler(event, context):
         db_stats = save_scan_results(
             snapshot=snapshot,
             results=results,
-            cloud_account_id=CLOUD_ACCOUNT_ID,
+            cloud_account_id=cloud_account_id,
         )
         logger.info("DB write complete: %s", db_stats)
     except Exception as e:

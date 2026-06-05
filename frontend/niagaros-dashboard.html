@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Security Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:flex;font-size:14px}
+
+/* ── SIDEBAR ─────────────────────────────────────── */
+.sb{width:220px;background:#0d0f14;display:flex;flex-direction:column;height:100vh;flex-shrink:0;transition:width .22s ease;overflow:hidden}
+.sb.col{width:54px}
+.sb.col .sb-logo-text,.sb.col .ni,.sb.col .nb,.sb.col .da,.sb.col .nl{display:none}
+.sb.col .ni-item{justify-content:center;padding:9px 0;margin:1px 6px}
+.sb.col .drop-items{display:none!important}
+
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e;flex-shrink:0}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff;white-space:nowrap}
+
+.sb-nav{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px 0}
+.nl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#374151;padding:12px 14px 4px;white-space:nowrap}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px;transition:all .12s;white-space:nowrap;position:relative}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e1428;color:#fff}
+.ni-item.on .ni{color:#ef4444}
+.ni{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.nt{flex:1;overflow:hidden;text-overflow:ellipsis}
+.nb{background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:auto;flex-shrink:0}
+.da{margin-left:auto;font-size:11px;transition:transform .2s;flex-shrink:0;color:#6b7280}
+.da.open{transform:rotate(180deg)}
+
+/* Compliance dropdown */
+.drop-items{overflow:hidden;max-height:0;transition:max-height .28s ease}
+.drop-items.open{max-height:300px}
+.di{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 40px;font-size:12px;font-weight:500;color:#6b7280;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .12s;white-space:nowrap}
+.di:hover{background:#161b27;color:#e5e7eb}
+.di.on{color:#ef4444;font-weight:600}
+.di-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:#374151;transition:background .12s}
+.di.on .di-dot{background:#ef4444}
+
+.sb-footer{border-top:1px solid #1a1f2e;padding:6px 0;flex-shrink:0}
+.col-btn{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12px;color:#6b7280;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .12s;white-space:nowrap}
+.col-btn:hover{background:#161b27;color:#e5e7eb}
+.col-ico{font-size:13px;transition:transform .22s}
+.sb.col .col-ico{transform:rotate(180deg)}
+.sb.col .col-btn{justify-content:center;padding:9px 0}
+
+/* ── MAIN ─────────────────────────────────────────── */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+
+/* Topbar */
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 22px;gap:10px;flex-shrink:0}
+.tp-title{font-size:15px;font-weight:700;color:#111827;margin-right:4px;white-space:nowrap}
+.tp-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer;white-space:nowrap}
+.tp-chip:hover{background:#f3f4f6}
+.tp-right{display:flex;align-items:center;gap:9px;margin-left:auto}
+.tp-scan-info{font-size:12px;color:#6b7280;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.tp-dot{width:7px;height:7px;background:#10b981;border-radius:50%;animation:blink 2s infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,.4)}60%{opacity:.6;box-shadow:0 0 0 5px rgba(16,185,129,0)}}
+.btn-primary{background:#ef4444;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:5px;transition:background .12s;white-space:nowrap}
+.btn-primary:hover{background:#dc2626}
+.btn-icon{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;font-size:14px;transition:background .12s}
+.btn-icon:hover{background:#f9fafb}
+.avatar{width:34px;height:34px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0}
+
+/* Body split */
+.body-wrap{flex:1;display:flex;min-height:0;overflow:hidden}
+.content{flex:1;overflow-y:auto;padding:20px 22px}
+
+/* Right panel */
+.rp{width:224px;flex-shrink:0;background:#fff;border-left:1px solid #e5e7eb;overflow-y:auto;padding:16px 14px}
+.rp[hidden]{display:none!important}
+
+/* ── UTILS ────────────────────────────────────────── */
+[hidden]{display:none!important}
+@keyframes up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.anim{animation:up .28s ease both}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#ef4444;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── SCAN OVERLAY ─────────────────────────────────── */
+#scan-overlay{position:fixed;inset:0;background:rgba(13,15,20,.92);z-index:8000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:32px;backdrop-filter:blur(4px)}
+#scan-overlay.active{display:flex;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+.radar-wrap{position:relative;width:160px;height:160px;flex-shrink:0}
+.radar-circle{position:absolute;border-radius:50%;border:1px solid rgba(239,68,68,.25)}
+.radar-circle:nth-child(1){inset:0}
+.radar-circle:nth-child(2){inset:20px}
+.radar-circle:nth-child(3){inset:40px}
+.radar-circle:nth-child(4){inset:60px}
+.radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(239,68,68,0) 60%,rgba(239,68,68,.5) 100%);animation:sweep 2s linear infinite}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.radar-dot{position:absolute;width:6px;height:6px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;top:50%;left:50%;transform:translate(-50%,-50%)}
+.radar-ping{position:absolute;inset:0;border-radius:50%;border:2px solid #ef4444;animation:ping 2s ease-out infinite;opacity:0}
+.radar-ping:nth-child(6){animation-delay:.6s}
+.radar-ping:nth-child(7){animation-delay:1.2s}
+@keyframes ping{0%{inset:60px;opacity:.8}100%{inset:-10px;opacity:0}}
+
+.scan-info{text-align:center}
+.scan-title{font-size:18px;font-weight:700;color:#fff;margin-bottom:6px}
+.scan-sub{font-size:13px;color:#6b7280}
+
+.scan-steps{display:flex;flex-direction:column;gap:10px;width:320px}
+.scan-step{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:9px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);transition:all .3s}
+.scan-step.ss-active{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25)}
+.scan-step.ss-done{background:rgba(16,185,129,.06);border-color:rgba(16,185,129,.2)}
+.ss-ico{width:22px;height:22px;border-radius:50%;border:2px solid #374151;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;transition:all .3s}
+.ss-active .ss-ico{border-color:#ef4444;border-top-color:transparent;animation:spin .7s linear infinite}
+.ss-done .ss-ico{background:#10b981;border-color:#10b981;color:#fff;font-size:11px;animation:none}
+.ss-txt{font-size:13px;color:#6b7280;transition:color .3s}
+.ss-active .ss-txt{color:#e5e7eb;font-weight:600}
+.ss-done .ss-txt{color:#9ca3af}
+
+.scan-prog-wrap{width:320px}
+.scan-prog-bar{height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
+.scan-prog-fill{height:100%;background:linear-gradient(90deg,#ef4444,#f97316);border-radius:2px;width:0%;transition:width .6s ease}
+.scan-prog-lbl{font-size:11px;color:#4b5563;margin-top:6px;text-align:right}
+.err-box{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px;color:#ef4444;font-size:13px;text-align:center;max-width:440px}
+.section-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-title{font-size:15px;font-weight:700;color:#111827}
+.section-note{font-size:12px;color:#9ca3af}
+.section-link{font-size:12px;color:#ef4444;cursor:pointer;font-weight:500}
+.section-link:hover{text-decoration:underline}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px}
+.mb16{margin-bottom:16px}
+.mb20{margin-bottom:20px}
+
+/* ── SUMMARY BAR ─────────────────────────────────── */
+.sum-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.sum-stat{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:box-shadow .15s,transform .12s}
+.sum-stat:hover{box-shadow:0 4px 16px rgba(0,0,0,.08);transform:translateY(-1px)}
+.sum-stat-ico{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.sum-stat-body{min-width:0}
+.sum-stat-n{font-size:26px;font-weight:800;line-height:1;margin-bottom:2px}
+.sum-stat-l{font-size:11px;color:#6b7280;font-weight:500;white-space:nowrap}
+
+/* ── OVERVIEW CARDS ───────────────────────────────── */
+.ov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.ov-card{padding:16px 18px;cursor:pointer;transition:box-shadow .15s,transform .12s}
+.ov-card:hover{box-shadow:0 4px 18px rgba(0,0,0,.09);transform:translateY(-1px)}
+.ov-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.ov-ico{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.ico-cr{background:#fef2f2} .ico-hi{background:#fff7ed} .ico-me{background:#fffbeb} .ico-lo{background:#eff6ff}
+.ov-num{font-size:32px;font-weight:800;line-height:1;margin-bottom:3px}
+.num-cr{color:#ef4444} .num-hi{color:#f97316} .num-me{color:#f59e0b} .num-lo{color:#3b82f6}
+.ov-lbl{font-size:12px;color:#6b7280;margin-bottom:11px}
+.ov-bar{height:3px;background:#f3f4f6;border-radius:2px;overflow:hidden}
+.ov-bar-f{height:100%;border-radius:2px;width:0;transition:width 1.1s ease}
+.bar-cr{background:#ef4444} .bar-hi{background:#f97316} .bar-me{background:#f59e0b} .bar-lo{background:#3b82f6}
+
+/* ── COMPLIANCE CARDS ─────────────────────────────── */
+.comp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:18px}
+.comp-card{border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.comp-card:hover{box-shadow:0 3px 14px rgba(0,0,0,.08);border-color:#d1d5db}
+.cc-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+.cc-name{font-size:13px;font-weight:700;color:#111827}
+.cc-sub{font-size:11px;color:#9ca3af;margin-top:2px}
+.cc-pct{font-size:20px;font-weight:800;color:#111827;flex-shrink:0}
+.cc-bar{height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden;margin-bottom:10px}
+.cc-bar-f{height:100%;border-radius:3px;width:0;transition:width 1.1s ease}
+.cc-foot{display:flex;align-items:center;justify-content:space-between}
+.cc-counts{display:flex;gap:12px;font-size:11px;color:#6b7280}
+.cc-pass{color:#10b981;font-weight:600} .cc-fail{color:#ef4444;font-weight:600}
+.badge-ok{background:#f0fdf4;color:#10b981;font-size:10px;font-weight:700;padding:2px 9px;border-radius:4px}
+.badge-risk{background:#fef2f2;color:#ef4444;font-size:10px;font-weight:700;padding:2px 9px;border-radius:4px}
+.badge-warn{background:#fffbeb;color:#f59e0b;font-size:10px;font-weight:700;padding:2px 9px;border-radius:4px}
+
+/* ── RESOURCE CARDS ───────────────────────────────── */
+.res-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.res-card{padding:16px 18px;cursor:pointer;transition:box-shadow .15s,transform .12s}
+.res-card:hover{box-shadow:0 4px 18px rgba(0,0,0,.09);transform:translateY(-1px)}
+.res-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.res-ico{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px}
+.res-count{font-size:28px;font-weight:800;margin-bottom:2px}
+.res-name{font-size:13px;font-weight:600;color:#374151;margin-bottom:2px}
+.res-open{font-size:11px;color:#9ca3af;margin-bottom:10px}
+.sev-strip{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;display:flex;gap:1px;margin-bottom:10px}
+.ss-c{background:#ef4444;transition:width 1s ease} .ss-h{background:#f97316;transition:width 1s ease}
+.ss-m{background:#f59e0b;transition:width 1s ease} .ss-l{background:#3b82f6;transition:width 1s ease}
+.sev-chips{display:flex;gap:4px;flex-wrap:wrap}
+.sc{padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700}
+.sc-c{background:#fef2f2;color:#ef4444} .sc-h{background:#fff7ed;color:#f97316}
+.sc-m{background:#fffbeb;color:#f59e0b} .sc-l{background:#eff6ff;color:#3b82f6}
+
+/* ── ISSUES OVERVIEW ─────────────────────────────── */
+.iss-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.iss-ov-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px}
+.iss-ov-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:12px}
+.iss-ov-split{display:flex;gap:16px}
+.iss-ov-item{flex:1}
+.iss-ov-n{font-size:28px;font-weight:800;line-height:1;margin-bottom:2px}
+.iss-ov-l{font-size:11px;color:#6b7280}
+.iss-sev-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.iss-sev-row:last-child{margin-bottom:0}
+.iss-sev-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.iss-sev-lbl{font-size:12px;color:#374151;flex:1}
+.iss-sev-n{font-size:13px;font-weight:700}
+.iss-sev-bar-wrap{flex:2;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden}
+.iss-sev-bar{height:100%;border-radius:3px;transition:width .8s ease}
+.iss-cat-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6}
+.iss-cat-row:last-child{border-bottom:none}
+.iss-cat-ico{font-size:16px;width:28px;text-align:center;flex-shrink:0}
+.iss-cat-info{flex:1}
+.iss-cat-name{font-size:12px;font-weight:600;color:#111827}
+.iss-cat-sub{font-size:11px;color:#9ca3af}
+.iss-cat-cnt{font-size:14px;font-weight:700;flex-shrink:0}
+
+/* ── FINDINGS TABLE ───────────────────────────────── */
+.f-toolbar{display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+.f-title{font-size:15px;font-weight:700;margin-right:auto}
+.f-cnt{font-size:12px;font-weight:600;background:#f3f4f6;border:1px solid #e5e7eb;padding:3px 12px;border-radius:20px;color:#374151}
+.f-search{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e5e7eb;padding:7px 11px;border-radius:8px;width:190px}
+.f-search input{border:none;outline:none;font-size:12px;color:#374151;width:100%;font-family:'Inter',sans-serif;background:transparent}
+.f-sel{background:#fff;border:1px solid #e5e7eb;padding:7px 11px;border-radius:8px;font-size:12px;color:#374151;font-family:'Inter',sans-serif;outline:none;cursor:pointer}
+.f-table{background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}
+.f-thead{display:grid;grid-template-columns:100px 1fr 155px 120px 105px 80px;padding:10px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
+.f-row{display:grid;grid-template-columns:100px 1fr 155px 120px 105px 80px;padding:12px 18px;border-bottom:1px solid #f9fafb;align-items:center;transition:background .1s;cursor:default}
+.f-row:last-child{border-bottom:none}
+.f-row:hover{background:#fafafa}
+.sev-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700}
+.sd{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.p-CR{background:#fef2f2;color:#ef4444} .d-CR{background:#ef4444}
+.p-HI{background:#fff7ed;color:#f97316} .d-HI{background:#f97316}
+.p-ME{background:#fffbeb;color:#f59e0b} .d-ME{background:#f59e0b}
+.p-LO{background:#eff6ff;color:#3b82f6} .d-LO{background:#3b82f6}
+.f-desc{font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f-id{font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px}
+.res-chip{background:#f3f4f6;border:1px solid #e5e7eb;padding:4px 9px;border-radius:6px;font-size:11px;font-family:monospace;color:#374151;display:inline-block;max-width:148px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-o{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151;font-size:11px;font-weight:600;padding:3px 10px;border-radius:5px;white-space:nowrap}
+.st-p{background:#f0fdf4;border:1px solid #a7f3d0;color:#10b981;font-size:11px;font-weight:600;padding:3px 10px;border-radius:5px;white-space:nowrap}
+.btn-fix{background:#ef4444;color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .12s}
+.btn-fix:hover{background:#dc2626}
+/* ── REMEDIATION DRAWER ──────────────────────────────── */
+#fix-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:8999;display:none;backdrop-filter:blur(2px)}
+#fix-overlay.open{display:block}
+#fix-drawer{position:fixed;top:0;right:0;width:440px;height:100vh;background:#fff;box-shadow:-8px 0 40px rgba(0,0,0,.15);z-index:9000;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+#fix-drawer.open{transform:translateX(0)}
+.fix-hdr{padding:20px 24px;border-bottom:1px solid #f3f4f6;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.fix-hdr-left{display:flex;flex-direction:column;gap:6px;min-width:0}
+.fix-close{width:30px;height:30px;border:none;background:#f3f4f6;border-radius:6px;cursor:pointer;font-size:18px;color:#6b7280;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
+.fix-close:hover{background:#e5e7eb}
+.fix-body{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:20px}
+.fix-sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:8px}
+.fix-resource-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;font-family:monospace;font-size:12px;color:#374151;word-break:break-all;line-height:1.5}
+.fix-step{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f3f4f6}
+.fix-step:last-child{border-bottom:none}
+.fix-step-num{width:22px;height:22px;border-radius:50%;background:#ef4444;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.fix-step-txt{font-size:13px;color:#374151;line-height:1.55}
+.fix-remediation{font-size:13px;color:#374151;line-height:1.65;white-space:pre-wrap}
+.fix-ftr{padding:16px 24px;border-top:1px solid #f3f4f6;display:flex;flex-direction:column;gap:10px}
+.btn-aws{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;text-decoration:none;transition:background .12s}
+.btn-aws:hover{background:#f9fafb}
+.pager{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;border-top:1px solid #f3f4f6;font-size:12px;color:#6b7280}
+.rows-s{border:1px solid #e5e7eb;padding:3px 7px;border-radius:5px;font-size:12px;font-family:'Inter',sans-serif;margin-left:5px;outline:none}
+.pg-btns{display:flex;gap:3px}
+.pg{min-width:28px;height:28px;padding:0 5px;display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;border-radius:5px;font-size:12px;cursor:pointer;background:#fff;color:#374151;font-family:'Inter',sans-serif;transition:all .12s}
+.pg:hover:not([disabled]){background:#f3f4f6}
+.pg.on{background:#ef4444;color:#fff;border-color:#ef4444}
+.pg[disabled]{opacity:.3;cursor:default;pointer-events:none}
+
+/* ── RIGHT PANEL ──────────────────────────────────── */
+.rp-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.rp-title{font-size:13px;font-weight:700;color:#111827}
+.rp-status{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px}
+.gauge-wrap{display:flex;justify-content:center;margin-bottom:14px}
+.gauge-rel{position:relative;width:118px;height:118px}
+.gauge-rel svg{transform:rotate(-90deg)}
+.g-bg{fill:none;stroke:#f3f4f6;stroke-width:11}
+.g-fg{fill:none;stroke:#ef4444;stroke-width:11;stroke-linecap:round;stroke-dasharray:339;stroke-dashoffset:339;transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1)}
+.gauge-ctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge-n{font-size:24px;font-weight:800;color:#111827;line-height:1}
+.gauge-d{font-size:11px;color:#9ca3af;margin-top:1px}
+.rp-checks{text-align:center;font-size:12px;color:#6b7280;margin-bottom:14px}
+.rp-stats{display:flex;justify-content:space-around;padding:12px 0;border-top:1px solid #f3f4f6;border-bottom:1px solid #f3f4f6;margin-bottom:14px}
+.rp-s{text-align:center}
+.rp-sn{font-size:20px;font-weight:700}
+.rp-sn.g{color:#10b981} .rp-sn.r{color:#ef4444}
+.rp-sl{font-size:10px;color:#9ca3af;margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.rp-sev-ttl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:9px}
+.rp-sev-row{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.rp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.rp-lbl{flex:1;font-size:12px;color:#374151}
+.rp-cnt{font-size:13px;font-weight:700}
+
+/* ── PLACEHOLDER VIEWS ────────────────────────────── */
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:55vh;gap:12px;text-align:center}
+.ph-ico{font-size:48px;margin-bottom:4px}
+.ph-title{font-size:18px;font-weight:700;color:#111827}
+.ph-sub{font-size:13px;color:#9ca3af;max-width:360px;line-height:1.6}
+.ph-btn{background:#ef4444;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:4px;transition:background .12s}
+.ph-btn:hover{background:#dc2626}
+
+/* ── INVENTORY TABLE ──────────────────────────────── */
+.inv-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.inv-stat{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px}
+.inv-stat-n{font-size:24px;font-weight:800;margin-bottom:2px}
+.inv-stat-l{font-size:11px;color:#6b7280;font-weight:500}
+.inv-table{background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}
+.inv-toolbar{display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap}
+.inv-search{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e5e7eb;padding:7px 11px;border-radius:8px;flex:1;min-width:160px;max-width:260px}
+.inv-search input{border:none;outline:none;font-size:12px;color:#374151;width:100%;font-family:'Inter',sans-serif;background:transparent}
+.inv-sel{background:#fff;border:1px solid #e5e7eb;padding:7px 11px;border-radius:8px;font-size:12px;color:#374151;font-family:'Inter',sans-serif;outline:none;cursor:pointer}
+.badge-new{background:#dbeafe;color:#1d4ed8;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle;text-transform:uppercase;letter-spacing:.03em}
+.inv-type-hdr{display:flex;align-items:center;gap:10px;padding:10px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;cursor:pointer;user-select:none}
+.inv-type-hdr:hover{background:#f3f4f6}
+.inv-type-ico{font-size:15px}
+.inv-type-cnt{margin-left:auto;font-size:11px;font-weight:600;color:#9ca3af}
+.inv-type-chevron{font-size:11px;transition:transform .2s;color:#9ca3af;margin-left:6px}
+.inv-type-chevron.open{transform:rotate(180deg)}
+.inv-thead{display:grid;grid-template-columns:1fr 150px 130px 100px 110px;padding:10px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
+.inv-row{display:grid;grid-template-columns:1fr 150px 130px 100px 110px;padding:12px 18px;border-bottom:1px solid #f9fafb;align-items:center;transition:background .1s;cursor:pointer}
+.inv-row:last-child{border-bottom:none}
+.inv-row:hover{background:#fafafa}
+.inv-detail{background:#f9fafb;border-left:3px solid #e5e7eb;border-bottom:1px solid #e5e7eb;padding:14px 18px 14px 32px;display:none}
+.inv-detail.open{display:block;animation:up .18s ease both}
+.inv-detail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.inv-detail-item{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px}
+.inv-detail-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin-bottom:4px}
+.inv-detail-val{font-size:14px;font-weight:700;color:#111827}
+.inv-finding-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:12px;min-width:0}
+.inv-finding-row:last-child{border-bottom:none}
+.inv-name{font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inv-id{font-size:11px;color:#9ca3af;font-family:monospace;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.svc-tag{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:600}
+.tag-cw{background:#eff6ff;color:#3b82f6} .tag-s3{background:#f0fdf4;color:#10b981}
+.tag-iam{background:#fffbeb;color:#f59e0b} .tag-kms{background:#fff7ed;color:#f97316}
+
+/* ── SECURITY GRAPH ───────────────────────────────── */
+.graph-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+.graph-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px}
+.insight-list{display:flex;flex-direction:column;gap:10px}
+.insight-item{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa}
+.insight-ico{font-size:20px;flex-shrink:0}
+.insight-title{font-size:13px;font-weight:600;color:#111827;margin-bottom:2px}
+.insight-txt{font-size:12px;color:#6b7280;line-height:1.5}
+.risk-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-top:4px}
+
+/* ── REPORTS ──────────────────────────────────────── */
+.report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.report-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px}
+.rc-ico{font-size:28px;margin-bottom:10px}
+.rc-title{font-size:14px;font-weight:700;color:#111827;margin-bottom:4px}
+.rc-sub{font-size:12px;color:#6b7280;margin-bottom:14px;line-height:1.5}
+.rc-date{font-size:11px;color:#9ca3af;margin-bottom:12px}
+.rc-btns{display:flex;gap:7px}
+.btn-dl{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .12s}
+.btn-dl:hover{background:#e5e7eb}
+
+/* ── PROJECTS ─────────────────────────────────────── */
+.proj-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.proj-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px}
+.proj-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+.proj-name{font-size:14px;font-weight:700;color:#111827}
+.proj-pri{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px}
+.pri-hi{background:#fef2f2;color:#ef4444} .pri-me{background:#fffbeb;color:#f59e0b} .pri-lo{background:#f0fdf4;color:#10b981}
+.proj-desc{font-size:12px;color:#6b7280;margin-bottom:14px;line-height:1.5}
+.proj-bar-wrap{margin-bottom:8px}
+.proj-bar-lbl{display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:5px}
+.proj-bar{height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden}
+.proj-bar-f{height:100%;border-radius:3px;background:#ef4444;transition:width 1s ease}
+.proj-foot{display:flex;align-items:center;justify-content:space-between;padding-top:10px;border-top:1px solid #f3f4f6;font-size:11px;color:#6b7280}
+.track-ok{color:#10b981;font-weight:600} .track-risk{color:#f97316;font-weight:600}
+
+/* ── ACCOUNT DROPDOWN ─────────────────────────────── */
+.acct-wrap{position:relative}
+.acct-dd{position:absolute;top:calc(100% + 6px);left:0;min-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12);z-index:999;overflow:hidden;display:none}
+.acct-dd.open{display:block;animation:up .18s ease both}
+.acct-dd-hdr{padding:9px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;border-bottom:1px solid #f3f4f6}
+.acct-item{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:12.5px;font-weight:500;color:#374151;cursor:pointer;transition:background .1s}
+.acct-item:hover{background:#f9fafb}
+.acct-item.sel{background:#fef2f2;color:#ef4444;font-weight:600}
+.acct-item-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-item-id{font-size:10px;font-family:monospace;color:#9ca3af;flex-shrink:0}
+.acct-dot{width:7px;height:7px;border-radius:50%;background:#10b981;flex-shrink:0}
+
+/* ── SCAN TOAST ───────────────────────────────────── */
+#scan-toast{position:fixed;bottom:24px;right:24px;z-index:9999;width:300px;background:#0d0f14;border:1px solid #1a1f2e;border-radius:14px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.45);flex-direction:column;gap:11px;display:none}
+#scan-toast.t-show{display:flex;animation:toastIn .35s cubic-bezier(.34,1.4,.64,1)}
+@keyframes toastIn{from{transform:translateX(115%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(115%)}}
+#scan-toast.t-hide{animation:toastOut .3s ease forwards}
+.toast-hdr{display:flex;align-items:center;justify-content:space-between}
+.toast-title{font-size:13px;font-weight:700;color:#fff}
+.toast-close{color:#4b5563;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:4px;transition:color .12s}
+.toast-close:hover{color:#9ca3af}
+.toast-step{display:flex;align-items:center;gap:10px;font-size:12.5px;color:#4b5563;transition:color .3s}
+.toast-step.t-active{color:#d1d5db}
+.toast-step.t-done{color:#e5e7eb}
+.t-ico{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;border:2px solid #1f2937;transition:all .3s}
+.t-ico.t-spin{border-top-color:#ef4444;animation:spin .75s linear infinite}
+.t-ico.t-check{background:#10b981;border-color:#10b981;color:#fff;font-size:10px}
+.toast-bar-wrap{height:3px;background:#1a1f2e;border-radius:2px}
+.toast-bar{height:100%;background:linear-gradient(90deg,#ef4444,#f97316);border-radius:2px;width:0%;transition:width .6s ease}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sb" id="sb">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">🛡</div>
+    <div class="sb-logo-text">Niagaros</div>
+  </div>
+  <nav class="sb-nav">
+    <div class="ni-item on" id="ni-dash" onclick="show('dashboard',this)">
+      <span class="ni">⊞</span><span class="nt">Dashboard</span>
+    </div>
+    <div class="ni-item" id="ni-inv" onclick="show('inventory',this)">
+      <span class="ni">📦</span><span class="nt">Inventory</span>
+    </div>
+    <div class="ni-item" id="ni-issues" onclick="show('issues',this)">
+      <span class="ni">⚠</span><span class="nt">Issues</span>
+      <span class="nb" id="nav-count">—</span>
+    </div>
+    <div class="ni-item" id="ni-graph" onclick="show('graph',this)">
+      <span class="ni">🔗</span><span class="nt">Security Graph</span>
+    </div>
+    <div class="ni-item" id="ni-pol" onclick="show('policies',this)">
+      <span class="ni">📋</span><span class="nt">Policies</span>
+    </div>
+
+    <!-- Compliance dropdown -->
+    <div class="ni-item" id="ni-comp" onclick="toggleDrop()">
+      <span class="ni">✓</span><span class="nt">Compliance</span>
+      <span class="da" id="drop-arrow">▾</span>
+    </div>
+    <div class="drop-items" id="drop-items">
+      <div class="di on" onclick="location.href='cis_benchmark.html'">
+        <span class="di-dot" style="background:#3b82f6"></span>CIS Benchmark
+      </div>
+      <div class="di" onclick="location.href='iso27001.html'">
+        <span class="di-dot" style="background:#10b981"></span>ISO 27001:2022
+      </div>
+      <div class="di" onclick="location.href='nist_csf.html'">
+        <span class="di-dot" style="background:#8b5cf6"></span>NIST CSF v2.0
+      </div>
+      <div class="di" onclick="location.href='gdpr.html'">
+        <span class="di-dot" style="background:#f59e0b"></span>GDPR
+      </div>
+      <div class="di" onclick="location.href='soc2.html'">
+        <span class="di-dot" style="background:#ec4899"></span>SOC 2
+      </div>
+    </div>
+
+    <div class="ni-item" id="ni-rep" onclick="show('reports',this)">
+      <span class="ni">📊</span><span class="nt">Reports</span>
+    </div>
+    <div class="ni-item" id="ni-proj" onclick="show('projects',this)">
+      <span class="ni">🗂</span><span class="nt">Projects</span>
+    </div>
+    <div class="nl">Security</div>
+    <div class="ni-item"><span class="ni">🔑</span><span class="nt">IAM Analysis</span></div>
+    <div class="ni-item"><span class="ni">🔔</span><span class="nt">Alerts</span></div>
+  </nav>
+  <div class="sb-footer">
+    <div class="ni-item"><span class="ni">⚙</span><span class="nt">Settings</span></div>
+    <div class="ni-item"><span class="ni">❓</span><span class="nt">Help & Support</span></div>
+    <div class="col-btn" onclick="toggleSb()">
+      <span class="col-ico" id="col-ico">‹</span>
+      <span class="nt">Collapse</span>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <header class="topbar">
+    <div class="tp-title" id="tp-title">Security Dashboard</div>
+    <div class="tp-chip">☁ AWS ▾</div>
+    <div class="acct-wrap">
+      <div class="tp-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
+      <div class="acct-dd" id="acct-dd">
+        <div class="acct-dd-hdr">Switch Account</div>
+        <div id="acct-list"></div>
+      </div>
+    </div>
+    <div class="tp-chip">🌍 All Regions ▾</div>
+    <div class="tp-right">
+      <div class="tp-scan-info"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
+      <button class="btn-primary" id="btn-scan" onclick="triggerScan()">↻ Scan Now</button>
+      <div class="btn-icon">🔔</div>
+      <div class="avatar">DN</div>
+    </div>
+  </header>
+
+  <div class="body-wrap">
+    <div class="content" id="content">
+
+      <!-- Loading -->
+      <div id="v-load" class="spin-wrap">
+        <div class="spinner"></div><span>Loading security data…</span>
+      </div>
+
+      <!-- ── DASHBOARD ── -->
+      <div id="v-dashboard" hidden>
+        <div class="sum-bar" id="sum-bar"></div>
+
+        <div class="section-hdr mb20">
+          <div class="section-title">Overview</div>
+          <div class="section-note">Click a card to filter issues</div>
+        </div>
+        <div class="ov-grid mb20" id="ov-grid"></div>
+
+        <div class="section-hdr">
+          <div class="section-title">Compliance Tracking</div>
+          <div class="section-link" onclick="location.href='iso27001.html'">View All ↗</div>
+        </div>
+        <div class="card mb20"><div class="comp-grid" id="comp-grid"></div></div>
+
+        <div class="section-hdr">
+          <div class="section-title">Resource Categories</div>
+          <div class="section-note" id="res-total">—</div>
+        </div>
+        <div class="res-grid mb20" id="res-grid"></div>
+      </div>
+
+      <!-- ── INVENTORY ── -->
+      <div id="v-inventory" hidden>
+        <div class="section-hdr mb20">
+          <div class="section-title">Inventory</div>
+          <div class="section-note" id="inv-count">— assets</div>
+        </div>
+        <div class="inv-stats mb20" id="inv-stats"></div>
+        <div class="inv-toolbar">
+          <div class="inv-search"><span style="color:#9ca3af">🔍</span>
+            <input type="text" id="inv-q" placeholder="Search assets…" oninput="renderInv()">
+          </div>
+          <select class="inv-sel" id="inv-type" onchange="renderInv()">
+            <option value="">All Types</option>
+            <option value="Cloud Infrastructure">Cloud Infrastructure</option>
+            <option value="Identity">Identity</option>
+            <option value="Monitoring">Monitoring</option>
+            <option value="Cryptography">Cryptography</option>
+          </select>
+          <select class="inv-sel" id="inv-status" onchange="renderInv()">
+            <option value="">All Status</option>
+            <option value="open">Has Issues</option>
+            <option value="pass">Passing</option>
+            <option value="new">New Assets</option>
+          </select>
+        </div>
+        <div class="inv-table">
+          <div class="inv-thead">
+            <div>Resource</div><div>Type</div><div>Service</div><div>Severity</div><div>Status</div>
+          </div>
+          <div id="inv-body"></div>
+        </div>
+      </div>
+
+      <!-- ── ISSUES ── -->
+      <div id="v-issues" hidden>
+
+        <!-- Overview row -->
+        <div class="iss-overview">
+
+          <!-- Open vs Resolved -->
+          <div class="iss-ov-card">
+            <div class="iss-ov-title">Open vs Resolved</div>
+            <div class="iss-ov-split">
+              <div class="iss-ov-item">
+                <div class="iss-ov-n" style="color:#ef4444" id="iss-open">—</div>
+                <div class="iss-ov-l">Open</div>
+              </div>
+              <div class="iss-ov-item">
+                <div class="iss-ov-n" style="color:#10b981" id="iss-resolved">—</div>
+                <div class="iss-ov-l">Resolved</div>
+              </div>
+              <div class="iss-ov-item">
+                <div class="iss-ov-n" style="color:#6b7280" id="iss-total-ov">—</div>
+                <div class="iss-ov-l">Total</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Severity breakdown -->
+          <div class="iss-ov-card">
+            <div class="iss-ov-title">By Severity</div>
+            <div id="iss-sev-bars"></div>
+          </div>
+
+          <!-- Top categories -->
+          <div class="iss-ov-card">
+            <div class="iss-ov-title">Top Issue Categories</div>
+            <div id="iss-categories"></div>
+          </div>
+
+        </div>
+
+        <div class="f-toolbar">
+          <div class="f-title">Issues</div>
+          <span class="f-cnt" id="f-cnt">—</span>
+          <div class="f-search"><span style="color:#9ca3af">🔍</span>
+            <input type="text" id="f-q" placeholder="Search issues…" oninput="applyF()">
+          </div>
+          <select class="f-sel" id="f-sev" onchange="applyF()">
+            <option value="">All Severities</option>
+            <option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
+          </select>
+          <select class="f-sel" id="f-res" onchange="applyF()">
+            <option value="">All Results</option>
+            <option value="FAIL">Fail only</option><option value="PASS">Pass only</option>
+          </select>
+          <select class="f-sel" id="f-svc" onchange="applyF()">
+            <option value="">All Services</option>
+            <option value="s3">S3</option><option value="iam">IAM</option>
+            <option value="cloudwatch">CloudWatch</option><option value="kms">KMS</option>
+            <option value="iso27001">ISO 27001</option><option value="nist">NIST CSF</option>
+            <option value="gdpr">GDPR</option><option value="soc2">SOC 2</option>
+          </select>
+        </div>
+        <div class="f-table">
+          <div class="f-thead">
+            <div>Severity</div><div>Description</div><div>Resource</div>
+            <div>Affected</div><div>Status</div><div>Actions</div>
+          </div>
+          <div id="f-body"></div>
+          <div class="pager">
+            <div style="display:flex;align-items:center">
+              <span id="pg-info">0–0 of 0</span>
+              Rows:<select class="rows-s" id="rows-s" onchange="pg=1;renderPg()">
+                <option>10</option><option>25</option><option>50</option>
+              </select>
+            </div>
+            <div class="pg-btns" id="pg-btns"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SECURITY GRAPH ── -->
+      <div id="v-graph" hidden>
+        <div class="section-hdr mb20">
+          <div class="section-title">Security Graph</div>
+          <div class="section-note">Relationship map between assets, users, services and risks</div>
+        </div>
+        <div class="graph-grid">
+          <div class="graph-card">
+            <div style="font-size:13px;font-weight:700;margin-bottom:14px">Risk Heatmap</div>
+            <div style="background:#f9fafb;border-radius:8px;height:220px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#9ca3af">
+              <span style="font-size:36px">🔗</span>
+              <span style="font-size:13px;font-weight:500">Graph visualization requires additional data connectors</span>
+              <span style="font-size:11px">Coming in next release</span>
+            </div>
+          </div>
+          <div class="graph-card">
+            <div style="font-size:13px;font-weight:700;margin-bottom:14px">🤖 AI Insights & Recommendations</div>
+            <div class="insight-list" id="ai-insights"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── POLICIES ── -->
+      <div id="v-policies" hidden>
+        <div class="section-hdr mb20">
+          <div class="section-title">Policies</div>
+        </div>
+        <div class="placeholder">
+          <div class="ph-ico">📋</div>
+          <div class="ph-title">Policy Management</div>
+          <div class="ph-sub">Custom policy definitions and compliance rules will appear here. Connect your policy engine to start enforcing security standards.</div>
+          <button class="ph-btn">Configure Policies</button>
+        </div>
+      </div>
+
+      <!-- ── REPORTS ── -->
+      <div id="v-reports" hidden>
+        <div class="section-hdr mb20">
+          <div class="section-title">Reports</div>
+          <button class="btn-primary" onclick="">+ Generate Report</button>
+        </div>
+        <div class="report-grid" id="report-grid"></div>
+      </div>
+
+      <!-- ── PROJECTS ── -->
+      <div id="v-projects" hidden>
+        <div class="section-hdr mb20">
+          <div class="section-title">Projects</div>
+          <button class="btn-primary">+ New Project</button>
+        </div>
+        <div class="proj-grid" id="proj-grid"></div>
+      </div>
+
+    </div><!-- /content -->
+
+    <!-- RIGHT PANEL -->
+
+    <aside class="rp" id="rp" hidden>
+      <div class="rp-hdr">
+        <div class="rp-title">Security Posture</div>
+        <span class="rp-status" id="rp-status">—</span>
+      </div>
+      <div class="gauge-wrap">
+        <div class="gauge-rel">
+          <svg width="118" height="118" viewBox="0 0 118 118">
+            <circle class="g-bg" cx="59" cy="59" r="54"/>
+            <circle class="g-fg" id="g-fg" cx="59" cy="59" r="54"/>
+          </svg>
+          <div class="gauge-ctr">
+            <div class="gauge-n" id="g-num">—</div>
+            <div class="gauge-d">/100</div>
+          </div>
+        </div>
+      </div>
+      <div class="rp-checks" id="rp-checks">— of — checks passing</div>
+      <div class="rp-stats">
+        <div class="rp-s"><div class="rp-sn g" id="rp-pass">—</div><div class="rp-sl">Passing</div></div>
+        <div class="rp-s"><div class="rp-sn r" id="rp-fail">—</div><div class="rp-sl">Failing</div></div>
+      </div>
+      <div class="rp-sev-ttl">Severity Breakdown</div>
+      <div id="rp-sev"></div>
+    </aside>
+
+  </div>
+</div>
+
+<!-- REMEDIATION DRAWER -->
+<div id="fix-overlay" onclick="closeFix()"></div>
+<div id="fix-drawer">
+  <div class="fix-hdr">
+    <div class="fix-hdr-left">
+      <div id="fix-sev"></div>
+      <div id="fix-title" style="font-size:15px;font-weight:700;color:#111827;line-height:1.4;margin-top:2px"></div>
+      <div id="fix-check-id" style="font-size:12px;color:#9ca3af;font-family:monospace;margin-top:2px"></div>
+    </div>
+    <button class="fix-close" onclick="closeFix()">×</button>
+  </div>
+  <div class="fix-body">
+    <div>
+      <div class="fix-sec-title">Resource</div>
+      <div class="fix-resource-box" id="fix-resource"></div>
+    </div>
+    <div>
+      <div class="fix-sec-title">Framework</div>
+      <div id="fix-framework" style="font-size:13px;color:#374151"></div>
+    </div>
+    <div>
+      <div class="fix-sec-title">Remediation Steps</div>
+      <div id="fix-steps-wrap"></div>
+    </div>
+  </div>
+  <div class="fix-ftr">
+    <a id="fix-aws-link" class="btn-aws" href="#" target="_blank" rel="noopener">
+      🔗 &nbsp;Open in AWS Console
+    </a>
+  </div>
+</div>
+
+<!-- SCAN OVERLAY -->
+<div id="scan-overlay">
+  <div class="radar-wrap">
+    <div class="radar-circle"></div>
+    <div class="radar-circle"></div>
+    <div class="radar-circle"></div>
+    <div class="radar-circle"></div>
+    <div class="radar-sweep"></div>
+    <div class="radar-ping"></div>
+    <div class="radar-ping"></div>
+    <div class="radar-dot"></div>
+  </div>
+  <div class="scan-info">
+    <div class="scan-title" id="ov-title">Scanning your environment…</div>
+    <div class="scan-sub" id="ov-sub">Niagaros CSPM is analysing your AWS resources</div>
+  </div>
+  <div class="scan-steps" id="ov-steps"></div>
+  <div class="scan-prog-wrap">
+    <div class="scan-prog-bar"><div class="scan-prog-fill" id="ov-prog"></div></div>
+    <div class="scan-prog-lbl" id="ov-prog-lbl">0%</div>
+  </div>
+</div>
+
+<!-- SCAN TOAST -->
+<div id="scan-toast">
+  <div class="toast-hdr">
+    <span class="toast-title">⚡ Security Scan</span>
+    <span class="toast-close" onclick="closeToast()">×</span>
+  </div>
+  <div id="toast-steps"></div>
+  <div class="toast-bar-wrap"><div class="toast-bar" id="toast-bar"></div></div>
+</div>
+
+<script>
+const API         = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+const TRIGGER_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trigger-orchestrator';
+let allF=[], filtF=[], pg=1, svcF='';
+let currentAccountId=null, allAccounts=[];
+
+// ── Account switcher ─────────────────────────────────
+function toggleAcctDd(){
+  const dd=document.getElementById('acct-dd');
+  dd.classList.toggle('open');
+}
+function closeAcctDd(){
+  document.getElementById('acct-dd').classList.remove('open');
+}
+document.addEventListener('click',function(e){
+  const wrap=document.querySelector('.acct-wrap');
+  if(wrap&&!wrap.contains(e.target)) closeAcctDd();
+});
+function switchAccount(id){
+  if(id===currentAccountId) return closeAcctDd();
+  currentAccountId=id;
+  closeAcctDd();
+  loadData();
+}
+function renderAcctList(){
+  document.getElementById('acct-list').innerHTML=allAccounts.map(a=>{
+    const sel=a.id===currentAccountId;
+    return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'
+      +'<div class="acct-dot" style="background:'+(sel?'#ef4444':'#10b981')+'"></div>'
+      +'<div class="acct-item-name">'+a.name+'</div>'
+      +'<div class="acct-item-id">'+(a.aws_account_id||a.id.substring(0,8)+'…')+'</div>'
+    +'</div>';
+  }).join('');
+}
+
+// ── Sidebar ──────────────────────────────────────────
+function toggleSb(){document.getElementById('sb').classList.toggle('col')}
+function toggleDrop(){
+  const d=document.getElementById('drop-items'),a=document.getElementById('drop-arrow');
+  d.classList.toggle('open'); a.classList.toggle('open');
+}
+
+const VIEWS=['dashboard','inventory','issues','graph','policies','reports','projects'];
+const NAV_IDS={dashboard:'ni-dash',inventory:'ni-inv',issues:'ni-issues',graph:'ni-graph',policies:'ni-pol',reports:'ni-rep',projects:'ni-proj'};
+function getHashView(){
+  const hash = window.location.hash.slice(1);
+  return VIEWS.includes(hash) ? hash : 'dashboard';
+}
+function show(v,el){
+  document.querySelectorAll('.ni-item').forEach(n=>n.classList.remove('on'));
+  if(el) {
+    el.classList.add('on');
+    if(window.location.hash.slice(1)!==v) history.replaceState(null, '', '#'+v);
+  } else if(NAV_IDS[v]){
+    const navEl = document.getElementById(NAV_IDS[v]);
+    if(navEl) navEl.classList.add('on');
+  }
+  VIEWS.forEach(x=>{ const e=document.getElementById('v-'+x); if(e) e.hidden=x!==v; });
+  document.getElementById('rp').hidden = v!=='dashboard';
+  document.getElementById('tp-title').textContent = {
+    dashboard:'Security Dashboard',inventory:'Inventory',issues:'Issues',
+    graph:'Security Graph',policies:'Policies',reports:'Reports',projects:'Projects'
+  }[v]||v;
+  if(v==='issues'){renderIssuesOverview();renderPg();}
+  if(v==='inventory') renderInv();
+}
+
+// ── Scan toast ────────────────────────────────────────
+const TOAST_STEPS = ['Scan triggered','Scanners running…','Collecting findings…','Refreshing dashboard…'];
+function renderToastSteps(done, active){
+  document.getElementById('toast-steps').innerHTML = TOAST_STEPS.map((s,i)=>{
+    const d=done.includes(i), a=active.includes(i);
+    const ico = d ? `<div class="t-ico t-check">✓</div>`
+               : a ? `<div class="t-ico t-spin"></div>`
+               : `<div class="t-ico"></div>`;
+    return `<div class="toast-step ${d?'t-done':a?'t-active':''}">${ico}<span>${s}</span></div>`;
+  }).join('');
+  document.getElementById('toast-bar').style.width = Math.round(done.length/TOAST_STEPS.length*100)+'%';
+}
+function closeToast(){
+  const el=document.getElementById('scan-toast');
+  el.classList.add('t-hide');
+  setTimeout(()=>{el.classList.remove('t-show','t-hide');el.style.display='none';},300);
+}
+
+// ── Scan overlay helpers ──────────────────────────────
+const OV_STEPS = [
+  {label:'Trigger scan',       sub:'Connecting to orchestrator…'},
+  {label:'Collecting resources',sub:'IAM, S3, KMS, CloudWatch…'},
+  {label:'Running checks',     sub:'CIS, ISO 27001, NIST, GDPR, SOC2…'},
+  {label:'Saving findings',    sub:'Writing results to database…'},
+  {label:'Refreshing dashboard',sub:'Loading your updated posture…'},
+];
+
+function ovSetSteps(done, active){
+  document.getElementById('ov-steps').innerHTML = OV_STEPS.map((s,i)=>{
+    const isDone=done.includes(i), isActive=active.includes(i);
+    return `<div class="scan-step${isDone?' ss-done':isActive?' ss-active':''}">
+      <div class="ss-ico">${isDone?'✓':''}</div>
+      <div class="ss-txt">${s.label}${isActive?`<div style="font-size:11px;color:#6b7280;margin-top:2px">${s.sub}</div>`:''}</div>
+    </div>`;
+  }).join('');
+  const pct = Math.round((done.length / OV_STEPS.length) * 100);
+  document.getElementById('ov-prog').style.width = pct + '%';
+  document.getElementById('ov-prog-lbl').textContent = pct + '%';
+}
+
+function ovShow(title, sub){
+  document.getElementById('ov-title').textContent = title||'Scanning…';
+  document.getElementById('ov-sub').textContent   = sub||'';
+  document.getElementById('scan-overlay').classList.add('active');
+}
+function ovHide(){
+  const el = document.getElementById('scan-overlay');
+  el.style.animation = 'fadeIn .25s ease reverse';
+  setTimeout(()=>{el.classList.remove('active');el.style.animation='';},250);
+}
+
+// ── Remediation drawer ────────────────────────────────
+function awsConsoleUrl(f){
+  const region='eu-west-1';
+  const rid=f.resource_id||'';
+  const svc=(f.service||'').toLowerCase();
+  if(svc==='iam'){
+    if(rid.includes(':user/'))   return `https://console.aws.amazon.com/iam/home#/users/${encodeURIComponent(rid.split(':user/')[1])}`;
+    if(rid.includes(':role/'))   return `https://console.aws.amazon.com/iam/home#/roles/${encodeURIComponent(rid.split(':role/')[1])}`;
+    if(rid.includes(':policy/')) return `https://console.aws.amazon.com/iam/home#/policies/${encodeURIComponent(rid)}`;
+    return `https://console.aws.amazon.com/iam/home?region=${region}`;
+  }
+  if(svc==='s3'){
+    const bucket=f.resource_name||rid;
+    return `https://s3.console.aws.amazon.com/s3/buckets/${encodeURIComponent(bucket)}?region=${region}`;
+  }
+  if(svc==='kms'){
+    const keyId=rid.split('/').pop()||rid;
+    return `https://console.aws.amazon.com/kms/home?region=${region}#/kms/keys/${encodeURIComponent(keyId)}`;
+  }
+  if(svc==='cloudwatch'){
+    return `https://console.aws.amazon.com/cloudwatch/home?region=${region}#alarmsV2:`;
+  }
+  if(svc==='cognito'){
+    return `https://console.aws.amazon.com/cognito/v2/home?region=${region}`;
+  }
+  return `https://console.aws.amazon.com/home?region=${region}`;
+}
+
+function openFix(idx){
+  const f=filtF[idx];
+  if(!f) return;
+  const sevColor={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
+  const sev=f.severity||'LOW';
+  const col=sevColor[sev]||'#6b7280';
+  document.getElementById('fix-sev').innerHTML=
+    `<span style="background:${col}1a;color:${col};border:1px solid ${col}33;border-radius:5px;padding:2px 9px;font-size:11px;font-weight:700">${sev}</span>`;
+  document.getElementById('fix-title').textContent=f.title||f.check_id||'';
+  document.getElementById('fix-check-id').textContent=f.check_id||'';
+  document.getElementById('fix-resource').textContent=(f.resource_id||f.resource_name||'—');
+  document.getElementById('fix-framework').textContent=f.framework||f.service||'—';
+
+  const rem=f.remediation||'Raadpleeg de AWS documentatie voor herstelstappen.';
+  const lines=rem.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  document.getElementById('fix-steps-wrap').innerHTML = lines.length>1
+    ? lines.map((l,i)=>`<div class="fix-step"><div class="fix-step-num">${i+1}</div><div class="fix-step-txt">${escH(l.replace(/^\d+[\.\)]\s*/,''))}</div></div>`).join('')
+    : `<div class="fix-remediation">${escH(rem)}</div>`;
+
+  document.getElementById('fix-aws-link').href=awsConsoleUrl(f);
+  document.getElementById('fix-overlay').classList.add('open');
+  document.getElementById('fix-drawer').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+
+function closeFix(){
+  document.getElementById('fix-overlay').classList.remove('open');
+  document.getElementById('fix-drawer').classList.remove('open');
+  document.body.style.overflow='';
+}
+
+// ── Trigger scan ─────────────────────────────────────
+async function triggerScan(){
+  const btn = document.getElementById('btn-scan');
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning…';
+
+  ovShow('Scanning your environment…','Niagaros CSPM is analysing your AWS resources');
+  ovSetSteps([], [0]);
+
+  try {
+    await fetch(TRIGGER_API, { method: 'POST' });
+    ovSetSteps([0], [1]);
+    await new Promise(r=>setTimeout(r, 5000));
+    ovSetSteps([0,1], [2]);
+    await new Promise(r=>setTimeout(r, 8000));
+    ovSetSteps([0,1,2], [3]);
+    await new Promise(r=>setTimeout(r, 2000));
+    ovSetSteps([0,1,2,3], [4]);
+    await loadData();
+    ovSetSteps([0,1,2,3,4], []);
+    document.getElementById('ov-title').textContent = '✓ Scan complete';
+    document.getElementById('ov-sub').textContent   = 'Dashboard updated with latest findings';
+    await new Promise(r=>setTimeout(r, 1800));
+    ovHide();
+    btn.disabled = false;
+    btn.textContent = '↻ Scan Now';
+  } catch(e) {
+    ovHide();
+    btn.disabled = false;
+    btn.textContent = '↻ Scan Now';
+    alert('Scan failed: ' + e.message);
+  }
+}
+
+// ── PDF export ───────────────────────────────────────
+function generatePDF(type){
+  const now = new Date().toLocaleDateString('nl-NL',{day:'2-digit',month:'long',year:'numeric'});
+  const account = document.getElementById('chip-account').textContent.replace('▾','').replace('🏢','').trim();
+  const defs = {
+    cis:     {title:'CIS Benchmark Report',     desc:'CIS AWS Foundations Benchmark compliance assessment with remediation guidance.',   filter: f=>!['ISO27001','NIST','GDPR','SOC2'].includes(f.service)},
+    iso:     {title:'ISO 27001:2022 Report',    desc:'ISO 27001:2022 Annex A control mapping and compliance status overview.',          filter: f=>f.service==='ISO27001'},
+    nist:    {title:'NIST CSF v2.0 Report',     desc:'NIST Cybersecurity Framework v2.0 control assessment across all functions.',      filter: f=>f.service==='NIST'},
+    gdpr:    {title:'GDPR Compliance Report',   desc:'EU General Data Protection Regulation Articles 25, 30 and 32 compliance status for AWS environment.',  filter: f=>f.service==='GDPR'},
+    soc2:    {title:'SOC 2 Compliance Report',  desc:'SOC 2 Trust Services Criteria assessment across CC, A, C and PI control categories.',                  filter: f=>f.service==='SOC2'},
+    exec:    {title:'Executive Summary',        desc:'High-level security posture overview for stakeholders and management.',           filter: f=>true},
+    critical:{title:'Critical Issues Report',   desc:'Detailed breakdown of all critical and high severity findings requiring attention.',filter: f=>['CRITICAL','HIGH'].includes(f.severity)},
+    iam:     {title:'IAM Access Report',        desc:'IAM user, role and policy audit with least-privilege recommendations.',           filter: f=>f.service==='IAM'},
+  };
+  const def = defs[type]||defs.exec;
+  const findings = allF.filter(def.filter);
+  const passed = findings.filter(f=>f.result==='PASS').length;
+  const failed = findings.filter(f=>f.result==='FAIL').length;
+  const score = findings.length ? Math.round(passed/findings.length*100) : 0;
+  const sc={'CRITICAL':'#ef4444','HIGH':'#f97316','MEDIUM':'#f59e0b','LOW':'#3b82f6'};
+  const rows = findings.map(f=>`
+    <tr>
+      <td style="color:${sc[f.severity]||'#6b7280'};font-weight:700">${f.severity}</td>
+      <td style="font-family:monospace;font-size:11px">${f.check_id||''}</td>
+      <td>${(f.title||f.check_id||'').substring(0,80)}</td>
+      <td style="font-size:11px;color:#6b7280">${f.resource_name||'—'}</td>
+      <td style="color:${f.result==='PASS'?'#10b981':'#ef4444'};font-weight:700">${f.result}</td>
+    </tr>`).join('');
+  const S='</';
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+def.title+'</title>'
+    +'<style>'
+    +'body{font-family:Arial,sans-serif;margin:40px;color:#111;font-size:13px}'
+    +'h1{font-size:22px;margin:0 0 4px}'
+    +'.sub{color:#6b7280;margin-bottom:6px}'
+    +'.meta-row{display:flex;gap:24px;margin:20px 0;padding:16px;background:#f9fafb;border-radius:8px;flex-wrap:wrap}'
+    +'.meta-item .lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af}'
+    +'.meta-item .val{font-size:22px;font-weight:800;color:#111}'
+    +'.val.g{color:#10b981}.val.r{color:#ef4444}.val.b{color:#3b82f6}'
+    +'table{width:100%;border-collapse:collapse;margin-top:4px}'
+    +'th{background:#f3f4f6;padding:8px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;border-bottom:2px solid #e5e7eb}'
+    +'td{padding:8px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}'
+    +'tr:nth-child(even) td{background:#fafafa}'
+    +'.footer{margin-top:28px;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px}'
+    +'@media print{body{margin:20px}}'
+    +S+'style>'+S+'head><body>'
+    +'<h1>\uD83D\uDEE1 '+def.title+S+'h1>'
+    +'<div class="sub">'+def.desc+S+'div>'
+    +'<div class="meta-row">'
+    +'<div class="meta-item"><div class="lbl">Score'+S+'div><div class="val '+(score>=75?'g':score>=50?'b':'r')+'">'+score+'%'+S+'div>'+S+'div>'
+    +'<div class="meta-item"><div class="lbl">Passing'+S+'div><div class="val g">'+passed+S+'div>'+S+'div>'
+    +'<div class="meta-item"><div class="lbl">Failing'+S+'div><div class="val r">'+failed+S+'div>'+S+'div>'
+    +'<div class="meta-item"><div class="lbl">Total Checks'+S+'div><div class="val">'+findings.length+S+'div>'+S+'div>'
+    +'<div class="meta-item"><div class="lbl">Account'+S+'div><div class="val" style="font-size:14px;padding-top:6px">'+account+S+'div>'+S+'div>'
+    +'<div class="meta-item"><div class="lbl">Generated'+S+'div><div class="val" style="font-size:13px;padding-top:7px">'+now+S+'div>'+S+'div>'
+    +S+'div>'
+    +'<table><thead><tr><th>Severity'+S+'th><th>Check ID'+S+'th><th>Description'+S+'th><th>Resource'+S+'th><th>Status'+S+'th>'+S+'tr>'+S+'thead>'
+    +'<tbody>'+(rows||'<tr><td colspan="5" style="text-align:center;padding:24px;color:#9ca3af">No findings for this report.'+S+'td>'+S+'tr>')+S+'tbody>'+S+'table>'
+    +'<div class="footer">Generated by Niagaros CSPM Platform \xB7 '+now+' \xB7 niagaros.io'+S+'div>'
+    +S+'body>'+S+'html>';
+  const win=window.open('','_blank');
+  if(!win){alert('Pop-up geblokkeerd. Sta pop-ups toe voor deze pagina.');return;}
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>win.print(),400);
+}
+
+// ── Load ─────────────────────────────────────────────
+async function loadData(){
+  const view = getHashView();
+  document.getElementById('v-load').style.display='flex';
+  VIEWS.forEach(x=>{const e=document.getElementById('v-'+x);if(e)e.hidden=true;});
+  document.getElementById('rp').hidden=true;
+  try{
+    const url=currentAccountId ? API+'?account_id='+encodeURIComponent(currentAccountId) : API;
+    const r=await fetch(url), d=await r.json();
+    render(d);
+  }catch(e){
+    document.getElementById('v-load').innerHTML='<div class="err-box">'+e.message+'</div>';
+  }
+}
+
+// ── Render ───────────────────────────────────────────
+function render(d){
+  const tot=d.total||{}, score=tot.score||0, passed=tot.passed||0, total=tot.total||0;
+  const failed=total-passed, bySev=d.by_severity||{}, svcs=d.services||[];
+  allF=d.findings||[]; filtF=[...allF];
+
+  // Update accounts list + switcher
+  if(d.accounts&&d.accounts.length) allAccounts=d.accounts;
+  if(!currentAccountId&&d.accounts&&d.accounts.length) currentAccountId=d.accounts[0].id;
+  renderAcctList();
+
+  document.getElementById('last-scan').textContent='Last scan: '+(d.last_scan_at||'—').substring(0,16);
+  document.getElementById('nav-count').textContent=allF.filter(f=>f.result==='FAIL').length;
+  if(d.account_name) document.getElementById('chip-account').textContent='🏢 '+d.account_name+' ▾';
+  else if(d.account_id) document.getElementById('chip-account').textContent='🏢 '+d.account_id.substring(0,8)+'… ▾';
+
+  // ── Summary bar ─────────────────────────────────
+  const totalAssets = new Set(allF.map(f=>f.resource_id).filter(Boolean)).size;
+  const openIssues  = allF.filter(f=>f.result==='FAIL').length;
+  const allFws      = svcs; // all framework/service rows
+  const combinedP   = allFws.reduce((a,s)=>a+s.passed,0);
+  const combinedT   = allFws.reduce((a,s)=>a+s.total,0);
+  const combinedScore = combinedT ? Math.round(combinedP/combinedT*100) : score;
+  const activeProjects = 6; // static until projects come from DB
+  const sumStats=[
+    {ico:'📦',bg:'#eff6ff',n:totalAssets,  l:'Total Assets',      clr:'#3b82f6', action:()=>show('inventory',document.getElementById('ni-inv'))},
+    {ico:'⚠', bg:'#fef2f2',n:openIssues,   l:'Open Issues',       clr:'#ef4444', action:()=>{document.getElementById('f-res').value='FAIL';applyF();show('issues',document.getElementById('ni-issues'));}},
+    {ico:'✓', bg:'#f0fdf4',n:combinedScore+'%',l:'Compliance Score',clr:'#10b981',action:()=>show('dashboard',document.getElementById('ni-dash'))},
+    {ico:'🗂',bg:'#fdf4ff',n:activeProjects,l:'Projects in Progress',clr:'#8b5cf6',action:()=>show('projects',document.getElementById('ni-proj'))},
+  ];
+  document.getElementById('sum-bar').innerHTML=sumStats.map((s,i)=>
+    `<div class="sum-stat anim" style="animation-delay:${i*.04}s" onclick="(${s.action.toString()})()">
+      <div class="sum-stat-ico" style="background:${s.bg}">${s.ico}</div>
+      <div class="sum-stat-body">
+        <div class="sum-stat-n" style="color:${s.clr}">${s.n}</div>
+        <div class="sum-stat-l">${s.l}</div>
+      </div>
+    </div>`
+  ).join('');
+
+  // ── Overview cards ──────────────────────────────
+  const oc=[
+    {k:'CRITICAL',l:'Critical Severity',ico:'⭕',nc:'num-cr',ic:'ico-cr',bc:'bar-cr'},
+    {k:'HIGH',    l:'High Severity',    ico:'⚠', nc:'num-hi',ic:'ico-hi',bc:'bar-hi'},
+    {k:'MEDIUM',  l:'Medium Severity',  ico:'🕐',nc:'num-me',ic:'ico-me',bc:'bar-me'},
+    {k:'LOW',     l:'Low Severity',     ico:'ℹ', nc:'num-lo',ic:'ico-lo',bc:'bar-lo'},
+  ];
+  document.getElementById('ov-grid').innerHTML=oc.map((s,i)=>{
+    const sd=bySev[s.k]||{}, f=sd.failed||0, t=sd.total||0, p=t?Math.round(f/t*100):0;
+    return `<div class="ov-card card anim" style="animation-delay:${i*.05}s" onclick="goSev('${s.k}')">
+      <div class="ov-top"><div class="ov-ico ${s.ic}">${s.ico}</div></div>
+      <div class="ov-num ${s.nc}">${f}</div>
+      <div class="ov-lbl">${s.l}</div>
+      <div class="ov-bar"><div class="ov-bar-f ${s.bc}" data-w="${p}"></div></div>
+    </div>`;
+  }).join('');
+  later(()=>$$('.ov-bar-f').forEach(b=>b.style.width=b.dataset.w+'%'));
+
+  // ── Compliance ──────────────────────────────────
+  const cisSvcs=svcs.filter(s=>!['ISO27001','NIST','GDPR','SOC2'].includes(s.service));
+  const cisT=cisSvcs.reduce((a,s)=>a+s.total,0), cisP=cisSvcs.reduce((a,s)=>a+s.passed,0);
+  const cisScore=cisT?Math.round(cisP/cisT*100):0;
+  const iso=svcs.find(s=>s.service==='ISO27001')||{score:0,passed:0,failed:0};
+  const nist=svcs.find(s=>s.service==='NIST')||{score:0,passed:0,failed:0};
+  const gdpr=svcs.find(s=>s.service==='GDPR')||{score:0,passed:0,failed:0};
+  const soc2=svcs.find(s=>s.service==='SOC2')||{score:0,passed:0,failed:0};
+  const fws=[
+    {name:'CIS AWS',   sub:'CIS AWS Foundations',    sc:cisScore,     p:cisP,          f:cisT-cisP,       clr:'#3b82f6', go:"location.href='cis_benchmark.html'"},
+    {name:'ISO 27001', sub:'ISO 27001:2022 Annex A', sc:iso.score||0, p:iso.passed||0, f:iso.failed||0,   clr:'#10b981', go:"location.href='iso27001.html'"},
+    {name:'NIST CSF',  sub:'NIST CSF v2.0',          sc:nist.score||0,p:nist.passed||0,f:nist.failed||0,  clr:'#8b5cf6', go:"location.href='nist_csf.html'"},
+    {name:'GDPR',      sub:'EU General Data Protection Regulation', sc:gdpr.score||0, p:gdpr.passed||0, f:gdpr.failed||0, clr:'#f59e0b', go:"location.href='gdpr.html'"},
+    {name:'SOC 2',     sub:'Service Organization Control 2',        sc:soc2.score||0, p:soc2.passed||0, f:soc2.failed||0, clr:'#ec4899', go:"location.href='soc2.html'"},
+  ];
+  document.getElementById('comp-grid').innerHTML=fws.map(fw=>{
+    const [st,sc]=fw.sc>=75?['On Track','badge-ok']:fw.sc>=50?['At Risk','badge-warn']:['Critical','badge-risk'];
+    return `<div class="comp-card anim" onclick="${fw.go}">
+      <div class="cc-hdr"><div><div class="cc-name">${fw.name}</div><div class="cc-sub">${fw.sub}</div></div><div class="cc-pct">${fw.sc}%</div></div>
+      <div class="cc-bar"><div class="cc-bar-f" style="background:${fw.clr}" data-w="${fw.sc}"></div></div>
+      <div class="cc-foot">
+        <div class="cc-counts"><span class="cc-pass">✓ ${fw.p}</span><span class="cc-fail">✗ ${fw.f}</span></div>
+        <span class="${sc}">${st}</span>
+      </div>
+    </div>`;
+  }).join('');
+  later(()=>$$('.cc-bar-f').forEach(b=>b.style.width=b.dataset.w+'%'));
+
+  // ── Resources ───────────────────────────────────
+  const rcfg=[
+    {svc:'S3',name:'Storage',ico:'🪣',bg:'#eff6ff'},
+    {svc:'IAM',name:'Identity & Access',ico:'🔑',bg:'#fffbeb'},
+    {svc:'CloudWatch',name:'Monitoring',ico:'📊',bg:'#f0fdf4'},
+    {svc:'KMS',name:'Cryptography',ico:'🔐',bg:'#fdf4ff'},
+  ];
+  let totalIssues=0;
+  document.getElementById('res-grid').innerHTML=rcfg.map((rc,i)=>{
+    const s=svcs.find(x=>x.service===rc.svc)||{failed:0}, sf=allF.filter(f=>f.service===rc.svc&&f.result==='FAIL');
+    const c=sf.filter(f=>f.severity==='CRITICAL').length, h=sf.filter(f=>f.severity==='HIGH').length;
+    const m=sf.filter(f=>f.severity==='MEDIUM').length, l=sf.filter(f=>f.severity==='LOW').length;
+    totalIssues+=s.failed; const tot2=c+h+m+l||1;
+    return `<div class="res-card card anim" style="animation-delay:${i*.05}s" onclick="goSvc('${rc.svc.toLowerCase()}')">
+      <div class="res-top"><div class="res-ico" style="background:${rc.bg}">${rc.ico}</div></div>
+      <div class="res-count">${s.failed}</div>
+      <div class="res-name">${rc.name}</div>
+      <div class="res-open">Open issues</div>
+      <div class="sev-strip">
+        ${c?`<div class="ss-c" style="width:${c/tot2*100}%"></div>`:''}
+        ${h?`<div class="ss-h" style="width:${h/tot2*100}%"></div>`:''}
+        ${m?`<div class="ss-m" style="width:${m/tot2*100}%"></div>`:''}
+        ${l?`<div class="ss-l" style="width:${l/tot2*100}%"></div>`:''}
+      </div>
+      <div class="sev-chips">
+        ${c?`<span class="sc sc-c">${c}C</span>`:''}${h?`<span class="sc sc-h">${h}H</span>`:''}
+        ${m?`<span class="sc sc-m">${m}M</span>`:''}${l?`<span class="sc sc-l">${l}L</span>`:''}
+        ${(!c&&!h&&!m&&!l)?'<span style="font-size:11px;color:#10b981">All passing ✓</span>':''}
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('res-total').textContent=totalIssues+' total issues';
+
+  // ── Right panel ─────────────────────────────────
+  document.getElementById('g-num').textContent=score;
+  document.getElementById('rp-checks').textContent=passed+' of '+total+' checks passing';
+  document.getElementById('rp-pass').textContent=passed;
+  document.getElementById('rp-fail').textContent=failed;
+  const st=document.getElementById('rp-status');
+  if(score>=75){st.textContent='Good';st.style='background:#f0fdf4;color:#10b981;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
+  else if(score>=50){st.textContent='Fair';st.style='background:#fffbeb;color:#f59e0b;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
+  else{st.textContent='At Risk';st.style='background:#fef2f2;color:#ef4444;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
+  later(()=>{document.getElementById('g-fg').style.strokeDashoffset=339*(1-score/100);});
+  const sc2={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
+  document.getElementById('rp-sev').innerHTML=['CRITICAL','HIGH','MEDIUM','LOW'].map(k=>{
+    const sd=bySev[k]||{};
+    return `<div class="rp-sev-row"><div class="rp-dot" style="background:${sc2[k]}"></div>
+      <div class="rp-lbl">${k.charAt(0)+k.slice(1).toLowerCase()}</div>
+      <div class="rp-cnt" style="color:${sc2[k]}">${sd.failed||0}</div></div>`;
+  }).join('');
+
+  // ── Top Findings (from real data) ────────────────
+  const sevOrder=['CRITICAL','HIGH','MEDIUM','LOW'];
+  const topFails=allF.filter(f=>f.result==='FAIL')
+    .sort((a,b)=>sevOrder.indexOf(a.severity)-sevOrder.indexOf(b.severity))
+    .slice(0,5);
+  const sevIco={CRITICAL:'🔴',HIGH:'🟠',MEDIUM:'🟡',LOW:'🟢'};
+  const sevBadge={CRITICAL:'badge-risk',HIGH:'badge-warn',MEDIUM:'badge-warn',LOW:'badge-ok'};
+  document.getElementById('ai-insights').innerHTML=topFails.length
+    ? topFails.map(f=>`
+    <div class="insight-item"><span class="insight-ico">${sevIco[f.severity]||'🔵'}</span>
+      <div><div class="insight-title">${f.title||f.check_id}</div>
+      <div class="insight-txt">${f.resource_name?'Resource: '+f.resource_name:''}</div>
+      <span class="${sevBadge[f.severity]||'badge-ok'}" style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;display:inline-block;margin-top:4px">${f.severity}</span></div>
+    </div>`).join('')
+    : '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px">✓ No open findings</div>';
+
+  // ── Reports (dynamic — based on live scan data) ───
+  const rptDefs=[
+    {ico:'📋',name:'CIS Benchmark Report',   sub:'CIS AWS Foundations compliance assessment with remediation guidance.',       type:'cis',      filter:f=>!['ISO27001','NIST','GDPR','SOC2'].includes(f.service)},
+    {ico:'🛡', name:'ISO 27001:2022 Report', sub:'ISO 27001:2022 Annex A control mapping and compliance status overview.',     type:'iso',      filter:f=>f.service==='ISO27001'},
+    {ico:'🔒',name:'NIST CSF v2.0 Report',   sub:'NIST Cybersecurity Framework v2.0 control assessment across all functions.',type:'nist',     filter:f=>f.service==='NIST'},
+    {ico:'🔏',name:'GDPR Report',            sub:'EU GDPR Articles 25, 30 and 32 compliance status for AWS environment.',     type:'gdpr',     filter:f=>f.service==='GDPR'},
+    {ico:'🏢',name:'SOC 2 Report',           sub:'SOC 2 Trust Services Criteria assessment across CC, A, C and PI categories.',type:'soc2',    filter:f=>f.service==='SOC2'},
+    {ico:'📊',name:'Executive Summary',      sub:'High-level security posture overview for stakeholders and management.',      type:'exec',     filter:f=>true},
+    {ico:'⚠', name:'Critical Issues Report', sub:'All critical and high severity findings requiring immediate attention.',     type:'critical', filter:f=>['CRITICAL','HIGH'].includes(f.severity)},
+    {ico:'🔑',name:'IAM Access Report',      sub:'IAM user, role and policy audit with least-privilege recommendations.',      type:'iam',      filter:f=>f.service==='IAM'},
+  ];
+  const scanDate=(d.last_scan_at||'').substring(0,16)||'Latest scan';
+  document.getElementById('report-grid').innerHTML=rptDefs.map(r=>{
+    const rf=allF.filter(r.filter);
+    const rp=rf.filter(f=>f.result==='PASS').length, rf2=rf.filter(f=>f.result==='FAIL').length;
+    const rs=rf.length?Math.round(rp/rf.length*100):0;
+    return `<div class="report-card"><div class="rc-ico">${r.ico}</div>
+      <div class="rc-title">${r.name}</div>
+      <div class="rc-sub">${r.sub}</div>
+      <div style="display:flex;gap:10px;margin:8px 0;font-size:12px">
+        <span style="color:#10b981;font-weight:600">✓ ${rp}</span>
+        <span style="color:#ef4444;font-weight:600">✗ ${rf2}</span>
+        <span style="color:#9ca3af">${rs}% score</span>
+      </div>
+      <div class="rc-date">🕐 ${scanDate}</div>
+      <div class="rc-btns">
+        <button class="btn-dl" onclick="generatePDF('${r.type}')" ${rf.length===0?'disabled title="No data yet"':''}>📥 PDF</button>
+        <button class="btn-primary" style="padding:6px 12px;font-size:11px" onclick="generatePDF('${r.type}')" ${rf.length===0?'disabled':''}>↗ View</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── Projects ─────────────────────────────────────
+  const projects=[
+    {name:'CIS Remediation Sprint',desc:'Address all critical CIS benchmark findings across IAM, S3 and CloudWatch.',pct:65,pri:'High',track:true,agent:'Security Team'},
+    {name:'ISO 27001 Certification',desc:'Complete ISO 27001:2022 compliance mapping and prepare for external audit.',pct:40,pri:'High',track:false,agent:'Compliance Team'},
+    {name:'NIST CSF Implementation',desc:'Implement NIST CSF controls across all Govern, Identify and Protect functions.',pct:28,pri:'Medium',track:true,agent:'Security Team'},
+    {name:'MFA Rollout',desc:'Enable MFA for all IAM users with console access across the organization.',pct:80,pri:'High',track:true,agent:'IT Operations'},
+    {name:'S3 Encryption Hardening',desc:'Enable default server-side encryption and block public access on all S3 buckets.',pct:55,pri:'Medium',track:true,agent:'Cloud Team'},
+    {name:'CloudTrail Coverage',desc:'Enable multi-region CloudTrail logging and configure metric filters and alarms.',pct:35,pri:'Low',track:false,agent:'DevOps'},
+  ];
+  document.getElementById('proj-grid').innerHTML=projects.map(p=>`
+    <div class="proj-card"><div class="proj-hdr">
+      <div class="proj-name">${p.name}</div>
+      <span class="proj-pri pri-${p.pri==='High'?'hi':p.pri==='Medium'?'me':'lo'}">${p.pri}</span>
+    </div>
+    <div class="proj-desc">${p.desc}</div>
+    <div class="proj-bar-wrap">
+      <div class="proj-bar-lbl"><span>Progress</span><span style="font-weight:700">${p.pct}%</span></div>
+      <div class="proj-bar"><div class="proj-bar-f" data-w="${p.pct}" style="width:0"></div></div>
+    </div>
+    <div class="proj-foot">
+      <span>${p.agent}</span>
+      <span class="${p.track?'track-ok':'track-risk'}">${p.track?'On Track':'At Risk'}</span>
+    </div></div>`).join('');
+  later(()=>$$('.proj-bar-f').forEach(b=>b.style.width=b.dataset.w+'%'));
+
+  // ── Inventory data ───────────────────────────────
+  renderInv();
+
+  document.getElementById('v-load').style.display='none';
+  const view = getHashView();
+  show(view, document.getElementById('ni-'+view));
+}
+
+const INV_TYPE_MAP={S3:'Cloud Infrastructure',IAM:'Identity',CloudWatch:'Monitoring',KMS:'Cryptography'};
+const INV_TYPE_ICO={'Cloud Infrastructure':'🪣','Identity':'🔑','Monitoring':'📊','Cryptography':'🔐'};
+let invNewSet=new Set();
+
+const INV_TYPE_MAP_LC={s3:'Cloud Infrastructure',iam:'Identity',cloudwatch:'Monitoring',kms:'Cryptography'};
+
+function buildInvItems(){
+  const sevOrder=['CRITICAL','HIGH','MEDIUM','LOW'];
+  const unique={};
+  allF.forEach(f=>{
+    const k=f.resource_id||f.resource_name||(f.service?`[${f.service}] Account-Level`:null); if(!k) return;
+    const svcLc=(f.service||'').toLowerCase();
+    const type=INV_TYPE_MAP_LC[svcLc]||'Cloud Infrastructure';
+    if(!unique[k]) unique[k]={id:k,name:f.resource_name||k,svc:f.service||'',
+      type,fws:new Set(),sev:'LOW',fail:false,findings:[]};
+    unique[k].findings.push(f);
+    unique[k].fws.add(f.framework||f.service||'CIS');
+    if(f.result==='FAIL') unique[k].fail=true;
+    if(sevOrder.indexOf(f.severity)<sevOrder.indexOf(unique[k].sev)) unique[k].sev=f.severity;
+  });
+  return Object.values(unique).map(i=>({...i,fw:Array.from(i.fws).join(', ')}));
+}
+
+function detectNewInvAssets(items){
+  try{
+    const prev=new Set(JSON.parse(localStorage.getItem('niagaros_inv_ids')||'[]'));
+    invNewSet=prev.size>0?new Set(items.filter(i=>!prev.has(i.id)).map(i=>i.id)):new Set();
+    localStorage.setItem('niagaros_inv_ids',JSON.stringify(items.map(i=>i.id)));
+  }catch(e){invNewSet=new Set();}
+}
+
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function renderInv(){
+  const allItems=buildInvItems();
+  detectNewInvAssets(allItems);
+
+  document.getElementById('inv-count').textContent=allItems.length+' assets';
+  const svcCnt={S3:0,IAM:0,CloudWatch:0,KMS:0};
+  allItems.forEach(i=>{if(svcCnt[i.svc]!==undefined)svcCnt[i.svc]++;});
+  document.getElementById('inv-stats').innerHTML=[
+    {l:'Total Assets',n:allItems.length,c:'#111827'},
+    {l:'New This Scan',n:invNewSet.size,c:'#1d4ed8'},
+    {l:'S3 Buckets',n:svcCnt.S3,c:'#10b981'},
+    {l:'IAM Identities',n:svcCnt.IAM,c:'#f59e0b'},
+  ].map(s=>`<div class="inv-stat"><div class="inv-stat-n" style="color:${s.c}">${s.n}</div><div class="inv-stat-l">${s.l}</div></div>`).join('');
+
+  // Filters
+  const q=(document.getElementById('inv-q')||{value:''}).value.toLowerCase();
+  const typeF=(document.getElementById('inv-type')||{value:''}).value;
+  const statusF=(document.getElementById('inv-status')||{value:''}).value;
+  let items=[...allItems];
+  if(q) items=items.filter(i=>i.name.toLowerCase().includes(q)||i.svc.toLowerCase().includes(q)||i.type.toLowerCase().includes(q));
+  if(typeF) items=items.filter(i=>i.type===typeF);
+  if(statusF==='open') items=items.filter(i=>i.fail);
+  if(statusF==='pass') items=items.filter(i=>!i.fail);
+  if(statusF==='new') items=items.filter(i=>invNewSet.has(i.id));
+
+  if(!items.length){
+    document.getElementById('inv-body').innerHTML='<div style="padding:36px;text-align:center;color:#9ca3af;font-size:13px">No assets match the current filters.</div>';
+    return;
+  }
+
+  // Group by type
+  const groups={};
+  items.forEach(i=>{if(!groups[i.type])groups[i.type]=[];groups[i.type].push(i);});
+
+  const sevK={CRITICAL:'CR',HIGH:'HI',MEDIUM:'ME',LOW:'LO'};
+  const tagCls={S3:'tag-s3',IAM:'tag-iam',CloudWatch:'tag-cw',KMS:'tag-kms'};
+  let idx=0, html='';
+
+  Object.entries(groups).forEach(([type,gitems])=>{
+    const gk=type.replace(/\s+/g,'_');
+    html+=`<div class="inv-type-hdr" onclick="toggleInvGroup('${gk}')">
+      <span class="inv-type-ico">${INV_TYPE_ICO[type]||'📦'}</span>
+      <span>${type}</span>
+      <span class="inv-type-cnt">${gitems.length} asset${gitems.length!==1?'s':''}</span>
+      <span class="inv-type-chevron open" id="chv-${gk}">▾</span>
+    </div>
+    <div id="grp-${gk}">`;
+    gitems.forEach(i=>{
+      const n=idx++; const sk=sevK[i.sev]||'LO';
+      const isNew=invNewSet.has(i.id);
+      const fCount=i.findings.filter(f=>f.result==='FAIL').length;
+      const shortId=i.id.length>44?i.id.substring(0,44)+'…':i.id;
+      html+=`<div class="inv-row" onclick="toggleInvDetail(${n})">
+        <div>
+          <div class="inv-name">${escH(i.name)}${isNew?'<span class="badge-new">New</span>':''}</div>
+          <div class="inv-id">${escH(shortId)}</div>
+        </div>
+        <div style="font-size:12px;color:#6b7280">${type}</div>
+        <div><span class="svc-tag ${tagCls[i.svc]||'tag-cw'}">${i.svc||'—'}</span></div>
+        <div><span class="sev-pill p-${sk}"><span class="sd d-${sk}"></span>${i.sev.charAt(0)+i.sev.slice(1).toLowerCase()}</span></div>
+        <div>${i.fail?`<span class="st-o">Open (${fCount})</span>`:'<span class="st-p">Pass</span>'}</div>
+      </div>
+      <div class="inv-detail" id="inv-det-${n}">
+        <div class="inv-detail-grid">
+          <div class="inv-detail-item"><div class="inv-detail-label">Total Checks</div><div class="inv-detail-val">${i.findings.length}</div></div>
+          <div class="inv-detail-item"><div class="inv-detail-label">Failing</div><div class="inv-detail-val" style="color:#ef4444">${fCount}</div></div>
+          <div class="inv-detail-item"><div class="inv-detail-label">Framework</div><div class="inv-detail-val">${escH(i.fw)}</div></div>
+        </div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin-bottom:8px">Findings</div>
+        ${i.findings.slice(0,5).map(f=>`
+          <div class="inv-finding-row">
+            <span class="sev-pill p-${sevK[f.severity]||'LO'}" style="padding:2px 7px;font-size:10px;flex-shrink:0"><span class="sd d-${sevK[f.severity]||'LO'}"></span>${f.severity.charAt(0)+f.severity.slice(1).toLowerCase()}</span>
+            <span style="flex:1;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(f.title||f.check_id||'—')}</span>
+            <span style="color:${f.result==='PASS'?'#10b981':'#ef4444'};font-weight:600;flex-shrink:0;margin-left:8px">${f.result}</span>
+          </div>`).join('')}
+        ${i.findings.length>5?`<div style="font-size:11px;color:#9ca3af;padding-top:8px">+${i.findings.length-5} more findings</div>`:''}
+      </div>`;
+    });
+    html+='</div>';
+  });
+
+  document.getElementById('inv-body').innerHTML=html;
+}
+
+function toggleInvGroup(gk){
+  const body=document.getElementById('grp-'+gk),chv=document.getElementById('chv-'+gk);
+  if(!body)return;
+  const collapsed=body.style.display==='none';
+  body.style.display=collapsed?'':'none';
+  if(chv)chv.classList.toggle('open',collapsed);
+}
+function toggleInvDetail(n){
+  const det=document.getElementById('inv-det-'+n);
+  if(det)det.classList.toggle('open');
+}
+
+// ── Nav helpers ──────────────────────────────────────
+function goSev(s){
+  document.getElementById('f-sev').value=s;
+  document.getElementById('f-res').value='FAIL';
+  document.getElementById('f-q').value='';
+  svcF=''; applyF();
+  show('issues',document.getElementById('ni-issues'));
+}
+function goSvc(s){
+  svcF=s; document.getElementById('f-sev').value='';
+  document.getElementById('f-res').value=''; document.getElementById('f-q').value='';
+  applyF(); show('issues',document.getElementById('ni-issues'));
+}
+
+// ── Issues overview ──────────────────────────────────
+function renderIssuesOverview(){
+  const open   = allF.filter(f=>f.result==='FAIL').length;
+  const resolved = allF.filter(f=>f.result==='PASS').length;
+  const total  = allF.length;
+  document.getElementById('iss-open').textContent     = open;
+  document.getElementById('iss-resolved').textContent = resolved;
+  document.getElementById('iss-total-ov').textContent = total;
+
+  // Severity bars (open issues only)
+  const sevs=[
+    {k:'CRITICAL',c:'#ef4444',l:'Critical'},
+    {k:'HIGH',    c:'#f97316',l:'High'},
+    {k:'MEDIUM',  c:'#f59e0b',l:'Medium'},
+    {k:'LOW',     c:'#3b82f6',l:'Low'},
+  ];
+  const openF = allF.filter(f=>f.result==='FAIL');
+  const maxSev = Math.max(...sevs.map(s=>openF.filter(f=>f.severity===s.k).length), 1);
+  document.getElementById('iss-sev-bars').innerHTML = sevs.map(s=>{
+    const n = openF.filter(f=>f.severity===s.k).length;
+    const pct = Math.round(n/maxSev*100);
+    return `<div class="iss-sev-row">
+      <div class="iss-sev-dot" style="background:${s.c}"></div>
+      <div class="iss-sev-lbl">${s.l}</div>
+      <div class="iss-sev-bar-wrap"><div class="iss-sev-bar" style="background:${s.c};width:${pct}%"></div></div>
+      <div class="iss-sev-n" style="color:${s.c}">${n}</div>
+    </div>`;
+  }).join('');
+
+  // Top categories
+  const cats=[
+    {ico:'⚙',name:'Misconfigurations',sub:'S3, CloudWatch, KMS',
+      filter:f=>['S3','CloudWatch','KMS'].includes(f.service)&&f.result==='FAIL'},
+    {ico:'🔑',name:'Access Anomalies',sub:'IAM controls',
+      filter:f=>f.service==='IAM'&&f.result==='FAIL'},
+    {ico:'🛡',name:'Compliance Gaps',sub:'ISO, NIST, GDPR, SOC2',
+      filter:f=>['ISO27001','NIST','GDPR','SOC2'].includes(f.service)&&f.result==='FAIL'},
+    {ico:'⭕',name:'Critical Findings',sub:'All critical severity',
+      filter:f=>f.severity==='CRITICAL'&&f.result==='FAIL'},
+  ];
+  document.getElementById('iss-categories').innerHTML = cats.map(c=>{
+    const n = allF.filter(c.filter).length;
+    return `<div class="iss-cat-row">
+      <div class="iss-cat-ico">${c.ico}</div>
+      <div class="iss-cat-info">
+        <div class="iss-cat-name">${c.name}</div>
+        <div class="iss-cat-sub">${c.sub}</div>
+      </div>
+      <div class="iss-cat-cnt" style="color:${n>0?'#ef4444':'#10b981'}">${n}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Filters ──────────────────────────────────────────
+function applyF(){
+  const q=document.getElementById('f-q').value.toLowerCase();
+  const sev=document.getElementById('f-sev').value;
+  const res=document.getElementById('f-res').value;
+  const sv=document.getElementById('f-svc').value||svcF;
+  filtF=allF.filter(f=>{
+    if(sev&&f.severity!==sev)return false;
+    if(res&&f.result!==res)return false;
+    if(sv==='cis'&&['ISO27001','NIST','GDPR','SOC2'].includes(f.service))return false;
+    else if(sv&&sv!=='cis'&&(f.service||'').toLowerCase()!==sv)return false;
+    if(q){const h=[(f.title||''),(f.check_id||''),(f.resource_name||'')].join(' ').toLowerCase();if(!h.includes(q))return false;}
+    return true;
+  });
+  pg=1; renderPg();
+}
+
+// ── Pagination ───────────────────────────────────────
+function renderPg(){
+  const rows=parseInt(document.getElementById('rows-s').value)||10;
+  const start=(pg-1)*rows, page=filtF.slice(start,start+rows), tot=filtF.length;
+  document.getElementById('f-cnt').textContent=tot;
+  document.getElementById('pg-info').textContent=`${tot?start+1:0}–${Math.min(start+rows,tot)} of ${tot}`;
+  const sevK={CRITICAL:'CR',HIGH:'HI',MEDIUM:'ME',LOW:'LO'};
+  document.getElementById('f-body').innerHTML=page.map((f,i)=>{
+    const sk=sevK[f.severity]||'LO', fail=f.result==='FAIL';
+    const title=(f.title||f.check_id||'').substring(0,58)+((f.title||'').length>58?'…':'');
+    const res=(f.resource_name||'—').substring(0,22)+((f.resource_name||'').length>22?'…':'');
+    return `<div class="f-row">
+      <div><span class="sev-pill p-${sk}"><span class="sd d-${sk}"></span>${(f.severity||'LOW').charAt(0)+(f.severity||'LOW').slice(1).toLowerCase()}</span></div>
+      <div><div class="f-desc">${title}</div><div class="f-id">${f.check_id||''}</div></div>
+      <div><span class="res-chip">${res}</span></div>
+      <div style="font-size:12px;color:#374151">1 resource</div>
+      <div>${fail?'<span class="st-o">Open</span>':'<span class="st-p">Pass</span>'}</div>
+      <div>${fail?`<button class="btn-fix" onclick="openFix(${start+i})">🔧 Fix</button>`:''}</div>
+    </div>`;
+  }).join('')||'<div style="padding:36px;text-align:center;color:#9ca3af;font-size:13px">No findings match the current filters.</div>';
+  const pages=Math.ceil(tot/rows)||1;
+  let h=`<button class="pg" onclick="chPg(${pg-1})" ${pg<=1?'disabled':''}>‹</button>`;
+  const lo=Math.max(1,pg-2),hi=Math.min(pages,pg+2);
+  if(lo>1)h+=`<button class="pg" onclick="chPg(1)">1</button>${lo>2?'<span style="color:#9ca3af;padding:0 3px">…</span>':''}`;
+  for(let i=lo;i<=hi;i++)h+=`<button class="pg${i===pg?' on':''}" onclick="chPg(${i})">${i}</button>`;
+  if(hi<pages)h+=`${hi<pages-1?'<span style="color:#9ca3af;padding:0 3px">…</span>':''}<button class="pg" onclick="chPg(${pages})">${pages}</button>`;
+  h+=`<button class="pg" onclick="chPg(${pg+1})" ${pg>=pages?'disabled':''}>›</button>`;
+  document.getElementById('pg-btns').innerHTML=h;
+}
+function chPg(p){
+  const rows=parseInt(document.getElementById('rows-s').value)||10;
+  const pages=Math.ceil(filtF.length/rows)||1;
+  if(p<1||p>pages)return; pg=p; renderPg();
+}
+
+const $$=s=>Array.from(document.querySelectorAll(s));
+const later=fn=>setTimeout(fn,60);
+window.addEventListener('hashchange', ()=>{
+  const view = getHashView();
+  show(view, document.getElementById('ni-'+view));
+});
+loadData();
+</script>
+</body>
+</html>

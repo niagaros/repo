@@ -10,9 +10,5 @@ class CloudWatch12Check(CloudWatchBaseCheck):
         "($.eventName = AttachInternetGateway) || ($.eventName = CreateInternetGateway) || "
         "($.eventName = DeleteInternetGateway) || ($.eventName = DetachInternetGateway) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects network gateway changes "
-        "(create, delete, attach and detach of internet gateways and customer gateways) "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for network gateway changes via a CloudTrail metric filter and notify via SNS."
 

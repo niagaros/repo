@@ -10,7 +10,4 @@ class CloudWatch11Check(CloudWatchBaseCheck):
         "($.eventName = DeleteNetworkAcl) || ($.eventName = DeleteNetworkAclEntry) || "
         "($.eventName = ReplaceNetworkAclEntry) || ($.eventName = ReplaceNetworkAclAssociation) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects NACL changes "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for NACL changes via a CloudTrail metric filter and notify via SNS."

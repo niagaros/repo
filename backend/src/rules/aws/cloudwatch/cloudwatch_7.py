@@ -9,7 +9,4 @@ class CloudWatch7Check(CloudWatchBaseCheck):
         "{ ($.eventSource = kms.amazonaws.com) && "
         "(($.eventName = DisableKey) || ($.eventName = ScheduleKeyDeletion)) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects disabling or scheduled deletion "
-        "of KMS customer managed keys and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for KMS key disabling or deletion via a CloudTrail metric filter and notify via SNS."

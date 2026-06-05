@@ -57,25 +57,22 @@ def _get_connection():
 # Helpers
 # ---------------------------------------------------------------------------
 
-SEVERITY_MAP = {
-    "CRITICAL": "critical",
-    "HIGH": "high",
-    "MEDIUM": "medium",
-    "LOW": "low",
-}
+
 
 STATUS_MAP = {
-    "PASS": "resolved",
+    "PASS": "pass",
     "FAIL": "open",
 }
 
 
 def _normalize_severity(raw: str) -> str:
-    return SEVERITY_MAP.get((raw or "").upper(), "medium")
+    valid = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
+    upper = (raw or "").upper()
+    return upper if upper in valid else "MEDIUM"
 
 
 def _normalize_status(raw: str) -> str:
-    return STATUS_MAP.get((raw or "").upper(), "open")
+    return STATUS_MAP.get((raw or "").upper(), "fail")
 
 
 
@@ -164,6 +161,34 @@ def save_scan_results(
                     resources_upserted += 1
                     logger.info("Upserted resource: %s → %s", trail_arn, resource_id_cache[trail_arn])
 
+                # Fallback resource for findings without a specific trail_arn
+                # (e.g. checks that fail before a trail is identified)
+                fallback_resource_id = f"cloudwatch-account-{account_id}"
+                cur.execute(
+                    """
+                    INSERT INTO resources
+                        (cloud_account_id, resource_type, resource_id,
+                         resource_name, region, config, last_scanned_at)
+                    VALUES
+                        (%s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (cloud_account_id, resource_id)
+                    DO UPDATE SET
+                        last_scanned_at = NOW()
+                    RETURNING id
+                    """,
+                    (
+                        cloud_account_id,
+                        "cloudwatch_account",
+                        fallback_resource_id,
+                        "CloudWatch (Account-Level)",
+                        region,
+                        json.dumps({}),
+                    ),
+                )
+                fallback_uuid = str(cur.fetchone()[0])
+                resource_id_cache["__fallback__"] = fallback_uuid
+                logger.info("Upserted fallback CloudWatch resource → %s", fallback_uuid)
+
                 # ----------------------------------------------------------------
                 # 2. Upsert findings
                 #    One finding row per (resource_id, check_id).
@@ -173,10 +198,10 @@ def save_scan_results(
                     trail_arn = result.get("details", {}).get("trail_arn")
 
                     if not trail_arn or trail_arn not in resource_id_cache:
-                        logger.warning("No resource found for trail_arn=%s, skipping finding %s", trail_arn, control_id)
-                        continue
-
-                    resource_uuid = resource_id_cache[trail_arn]
+                        logger.warning("No trail_arn for finding %s — saving to fallback resource", control_id)
+                        resource_uuid = resource_id_cache["__fallback__"]
+                    else:
+                        resource_uuid = resource_id_cache[trail_arn]
                     reasons = result.get("reasons", [])
                     description = " | ".join(reasons) if reasons else result.get("title", "")
                     remediation = result.get("remediation", "Raadpleeg de CIS AWS Foundations Benchmark documentatie voor herstelstappen.")
@@ -208,7 +233,7 @@ def save_scan_results(
                             _normalize_severity(result.get("severity", "MEDIUM")),
                             _normalize_status(result.get("status", "FAIL")),
                             result.get("status", "FAIL"),
-                            "CIS AWS Foundations Benchmark",
+                            "CIS AWS Foundations Benchmark v5.0.0",
                             remediation,
                             json.dumps(result.get("details", {}), default=str),
                         ),

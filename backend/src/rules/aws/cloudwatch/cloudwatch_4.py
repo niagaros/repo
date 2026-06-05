@@ -16,8 +16,4 @@ class CloudWatch4Check(CloudWatchBaseCheck):
         "($.eventName = DetachUserPolicy) || ($.eventName = AttachGroupPolicy) || "
         "($.eventName = DetachGroupPolicy) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects all IAM policy changes "
-        "(create, modify, delete, attach and detach of policies) "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for IAM policy changes via a CloudTrail metric filter and notify via SNS."

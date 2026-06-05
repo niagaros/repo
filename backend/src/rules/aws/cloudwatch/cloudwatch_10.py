@@ -10,8 +10,4 @@ class CloudWatch10Check(CloudWatchBaseCheck):
         "($.eventName = RevokeSecurityGroupIngress) || ($.eventName = RevokeSecurityGroupEgress) || "
         "($.eventName = CreateSecurityGroup) || ($.eventName = DeleteSecurityGroup) }"
     )
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group that detects security group changes "
-        "(create, delete, and modification of inbound/outbound rules) "
-        "and attach a CloudWatch alarm that sends an SNS notification."
-    )
+    REMEDIATION = "Enable a CloudWatch alarm for security group changes via a CloudTrail metric filter and notify via SNS."

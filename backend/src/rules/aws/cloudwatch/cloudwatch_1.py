@@ -3,11 +3,7 @@ from rules.aws.cloudwatch.cloudwatch_base import CloudWatchBaseCheck
 
 class CloudWatch1Check(CloudWatchBaseCheck):
     CONTROL_ID = "CloudWatch.1"
-    TITLE = "Ensure a log metric filter and alarm exist for unauthorized API calls"
-    SEVERITY = "HIGH"
-    FILTER_PATTERN = '{ ($.errorCode = "AccessDenied") || ($.errorCode = "UnauthorizedOperation") }'
-    REMEDIATION = (
-        "Create a metric filter on the CloudTrail log group with the pattern "
-        '{ ($.errorCode = "AccessDenied") || ($.errorCode = "UnauthorizedOperation") } '
-        "and attach a CloudWatch alarm that sends an SNS notification to an active subscription."
-    )
+    TITLE = "A log metric filter and alarm should exist for usage of the root user"
+    SEVERITY = "LOW"
+    FILTER_PATTERN = '{ $.userIdentity.type = "Root" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != "AwsServiceEvent" }'
+    REMEDIATION = "Enable a CloudWatch alarm for root user activity via a CloudTrail metric filter and notify via SNS."
