@@ -38,6 +38,25 @@
 
 ---
 
+## Social Proof
+
+Niagaros is being actively developed and validated in collaboration with **Domits** as the first pilot customer. This MVP represents a real-world, production-focused implementation of Cloud Security Posture Management (CSPM) aligned with industry best practices and compliance frameworks.
+
+---
+
+## Introduction to Cloud Security
+
+Build a shared baseline on cloud and AI-native security concepts, roles, and controls by exploring:
+
+- **[Cloud Security Glossary](https://niagaros.com/glossary/)**
+- **[Cloud Security Skills Training (AWS, Azure, GCP, OCI)](https://niagaros.com/cloud-security-skills-training-aws-azure-gcp-oci/)**
+- **[Compliance Frameworks](https://niagaros.com/frameworks/)**
+- **[Cybersecurity Job Roles](https://niagaros.com/cybersecurity-job-roles/)**
+- **[Unified Cloud Security Categories](https://niagaros.com/unified-cloud-security-categories/)**
+- **[Cloud Security Risk Assessment](https://niagaros.com/cloud-security-risk-assessment/)**
+
+---
+
 ## What is Niagaros?
 
 **Niagaros** is developing a **CNAPP (Cloud-Native Application Protection Platform)** that protects cloud-native applications across their entire lifecycle — from development and deployment to runtime.
@@ -64,6 +83,8 @@
 
 ## Table of Contents
 
+- [Social Proof](#social-proof)
+- [Introduction to Cloud Security](#introduction-to-cloud-security)
 - [Project Overview](#project-overview)
 - [Architecture](#architecture)
 - [MVP Scope](#mvp-scope)
