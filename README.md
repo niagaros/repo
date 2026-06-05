@@ -234,9 +234,6 @@ Niagaros is in active development.
 - **Essentials** – + 1:1 onboarding, Stripe checkout
 - **Mid-Market** – + premium support + add-ons
 - **Enterprise** – Multi-cloud, full CNAPP capabilities
-
-For custom pricing: **info@niagaros.com**
-
 ---
 
 ## Documentation Hubs
