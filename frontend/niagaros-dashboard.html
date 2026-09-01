@@ -609,10 +609,24 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
           <select class="f-sel" id="f-svc" onchange="applyF()">
             <option value="">All Services</option>
             <option value="s3">S3</option><option value="iam">IAM</option>
+            <option value="rds">Databases</option>
             <option value="cloudwatch">CloudWatch</option><option value="kms">KMS</option>
             <option value="iso27001">ISO 27001</option><option value="nist">NIST CSF</option>
             <option value="gdpr">GDPR</option><option value="soc2">SOC 2</option>
           </select>
+        </div>
+        <div id="dr-evidence-banner" hidden style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">🛟 Disaster Recovery — proven, not claimed</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:11px 13px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600;margin-bottom:4px">RDS · cspm-db</div>
+              <div style="font-size:12px;color:#374151;line-height:1.6">RPO <strong>3m 12s</strong> · RTO <strong>28m 34s</strong> · data-integrity 100% match (192/192 resources, 7,716/7,716 findings)<br><span style="color:#9ca3af">Restore-test completed 31 Aug 2026, 21:03 UTC</span></div>
+            </div>
+            <div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:11px 13px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600;margin-bottom:4px">DynamoDB · WebSocketConnections</div>
+              <div style="font-size:12px;color:#374151;line-height:1.6">RPO <strong>4m 58s</strong> · RTO <strong>3m 12s</strong> · restored table verified<br><span style="color:#9ca3af">Restore-test completed 1 Sep 2026, 09:30 UTC</span></div>
+            </div>
+          </div>
         </div>
         <div class="f-table">
           <div class="f-thead">
@@ -1496,6 +1510,8 @@ function applyF(){
   const sev=document.getElementById('f-sev').value;
   const res=document.getElementById('f-res').value;
   const sv=document.getElementById('f-svc').value||svcF;
+  const drBanner=document.getElementById('dr-evidence-banner');
+  if(drBanner)drBanner.hidden=(sv!=='rds');
   filtF=allF.filter(f=>{
     if(sev&&f.severity!==sev)return false;
     if(res&&f.result!==res)return false;
