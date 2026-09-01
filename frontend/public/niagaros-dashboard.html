@@ -499,17 +499,8 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
           </select>
         </div>
         <div id="dr-evidence-banner" hidden style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:10px">🛟 Disaster Recovery — proven, not claimed</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:11px 13px">
-              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600;margin-bottom:4px">RDS · cspm-db</div>
-              <div style="font-size:12px;color:#374151;line-height:1.6">RPO <strong>3m 12s</strong> · RTO <strong>28m 34s</strong> · data-integrity 100% match (192/192 resources, 7,716/7,716 findings)<br><span style="color:#9ca3af">Restore-test completed 31 Aug 2026, 21:03 UTC</span></div>
-            </div>
-            <div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:11px 13px">
-              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600;margin-bottom:4px">DynamoDB · WebSocketConnections</div>
-              <div style="font-size:12px;color:#374151;line-height:1.6">RPO <strong>4m 58s</strong> · RTO <strong>3m 12s</strong> · restored table verified<br><span style="color:#9ca3af">Restore-test completed 1 Sep 2026, 09:30 UTC</span></div>
-            </div>
-          </div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">🛟 Backup &amp; recovery posture — live from this scan</div>
+          <div id="dr-evidence-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px"></div>
         </div>
         <div class="f-table">
           <div class="f-thead">
@@ -1163,6 +1154,32 @@ function goSvc(s){
   applyF(); show('issues',document.getElementById('ni-issues'));
 }
 
+// ── Backup & recovery evidence (computed live from real findings) ──
+function renderDrEvidence(){
+  const grid=document.getElementById('dr-evidence-grid');
+  if(!grid)return;
+  const checks=[
+    {id:'S3.3.3',        label:'S3 bucket versioning'},
+    {id:'RDS.DR.1',      label:'RDS automated backups'},
+    {id:'RDS.DR.2',      label:'RDS Multi-AZ failover'},
+    {id:'RDS.DR.3',      label:'RDS deletion protection'},
+    {id:'RDS.DR.4',      label:'RDS RPO target (5 min)'},
+    {id:'DynamoDB.DR.1', label:'DynamoDB point-in-time recovery'},
+    {id:'DynamoDB.DR.2', label:'DynamoDB deletion protection'},
+  ];
+  const cards=checks.map(c=>{
+    const rows=(allF||[]).filter(f=>f.check_id===c.id);
+    if(!rows.length)return '';
+    const pass=rows.filter(r=>r.result==='PASS').length, total=rows.length;
+    const color=pass===total?'#10b981':'#ef4444';
+    return `<div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:11px 13px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600;margin-bottom:4px">${c.label}</div>
+      <div style="font-size:16px;font-weight:800;color:${color}">${pass}/${total} <span style="font-size:11px;font-weight:500;color:#6b7280">passing</span></div>
+    </div>`;
+  }).filter(Boolean).join('');
+  grid.innerHTML=cards||'<div style="font-size:12px;color:#9ca3af">No backup/recovery checks found in this scan.</div>';
+}
+
 // ── Filters ──────────────────────────────────────────
 function applyF(){
   const q=document.getElementById('f-q').value.toLowerCase();
@@ -1170,7 +1187,7 @@ function applyF(){
   const res=document.getElementById('f-res').value;
   const sv=document.getElementById('f-svc').value||svcF;
   const drBanner=document.getElementById('dr-evidence-banner');
-  if(drBanner)drBanner.hidden=(sv!=='rds');
+  if(drBanner){drBanner.hidden=(sv!=='rds'); if(!drBanner.hidden)renderDrEvidence();}
   filtF=allF.filter(f=>{
     if(sev&&f.severity!==sev)return false;
     if(res&&f.result!==res)return false;
