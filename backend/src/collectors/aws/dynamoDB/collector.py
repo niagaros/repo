@@ -32,7 +32,9 @@ class DynamoDBCollector(BaseCollector):
                 try:
                     table = ddb.describe_table(TableName=name)["Table"]
                     pitr = ddb.describe_continuous_backups(TableName=name)["ContinuousBackupsDescription"]
-                    pitr_status = pitr.get("PointInTimeRecoveryDescription", {}).get("PointInTimeRecoveryStatus")
+                    pitr_desc = pitr.get("PointInTimeRecoveryDescription", {})
+                    pitr_status = pitr_desc.get("PointInTimeRecoveryStatus")
+                    latest_restorable = pitr_desc.get("LatestRestorableDateTime")
 
                     config = {
                         "region":                        region,
@@ -40,6 +42,7 @@ class DynamoDBCollector(BaseCollector):
                         "point_in_time_recovery_enabled": pitr_status == "ENABLED",
                         "billing_mode":                  table.get("BillingModeSummary", {}).get("BillingMode"),
                         "item_count":                    table.get("ItemCount", 0),
+                        "latest_restorable_time":        latest_restorable.isoformat() if latest_restorable else None,
                     }
                     resources.append(self._resource(
                         resource_id = table.get("TableArn", name),

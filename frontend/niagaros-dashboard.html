@@ -1517,6 +1517,7 @@ function renderDrEvidence(){
     {id:'RDS.DR.4',      label:'RDS RPO target (5 min)'},
     {id:'DynamoDB.DR.1', label:'DynamoDB point-in-time recovery'},
     {id:'DynamoDB.DR.2', label:'DynamoDB deletion protection'},
+    {id:'DynamoDB.DR.3', label:'DynamoDB RPO target (5 min)'},
   ];
   const cards=checks.map(c=>{
     const rows=(allF||[]).filter(f=>f.check_id===c.id);
