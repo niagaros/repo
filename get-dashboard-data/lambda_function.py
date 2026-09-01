@@ -198,6 +198,7 @@ def lambda_handler(event, context):
                                 WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
                                 WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
                                 WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
+                                WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
                                 WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
                                 WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
                                 WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
@@ -206,6 +207,13 @@ def lambda_handler(event, context):
                                 WHEN f.framework = 'NIST CSF v2.0'  THEN 'NIST'
                                 WHEN f.framework = 'GDPR'            THEN 'GDPR'
                                 WHEN f.framework = 'SOC2'            THEN 'SOC2'
+                                WHEN f.framework = 'PCI DSS v4.0'   THEN 'PCIDSS'
+                                WHEN f.framework = 'NIS2'            THEN 'NIS2'
+                                WHEN f.framework = 'HIPAA'           THEN 'HIPAA'
+                                WHEN f.framework = 'NIST 800-53 Rev 5' THEN 'NIST80053'
+                                WHEN f.framework = 'BSI-C5'          THEN 'BSIC5'
+                                WHEN f.framework = 'CSA CCM 4.0'     THEN 'CSACCM'
+                                WHEN f.framework = 'FedRAMP Moderate Rev 4' THEN 'FEDRAMP'
                                 ELSE 'Other'
                             END AS service,
                             f.result
@@ -219,14 +227,22 @@ def lambda_handler(event, context):
                         WHEN 'CloudWatch' THEN 1
                         WHEN 'S3'         THEN 2
                         WHEN 'IAM'        THEN 3
-                        WHEN 'KMS'        THEN 4
-                        WHEN 'Cognito'    THEN 5
-                        WHEN 'GitHub'     THEN 6
-                        WHEN 'ISO27001'   THEN 7
-                        WHEN 'NIST'       THEN 8
-                        WHEN 'GDPR'       THEN 9
-                        WHEN 'SOC2'       THEN 10
-                        ELSE 11
+                        WHEN 'RDS'        THEN 4
+                        WHEN 'KMS'        THEN 5
+                        WHEN 'Cognito'    THEN 6
+                        WHEN 'GitHub'     THEN 7
+                        WHEN 'ISO27001'   THEN 8
+                        WHEN 'NIST'       THEN 9
+                        WHEN 'GDPR'       THEN 10
+                        WHEN 'SOC2'       THEN 11
+                        WHEN 'PCIDSS'     THEN 12
+                        WHEN 'NIS2'       THEN 13
+                        WHEN 'HIPAA'      THEN 14
+                        WHEN 'NIST80053'  THEN 15
+                        WHEN 'BSIC5'      THEN 16
+                        WHEN 'CSACCM'     THEN 17
+                        WHEN 'FEDRAMP'    THEN 18
+                        ELSE 19
                     END
                 """, (account_id,))
                 for row in cur.fetchall():
@@ -275,6 +291,7 @@ def lambda_handler(event, context):
                             WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
                             WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
                             WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
+                            WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
                             WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
                             WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
                             WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
@@ -283,6 +300,13 @@ def lambda_handler(event, context):
                             WHEN f.framework = 'NIST CSF v2.0'  THEN 'NIST'
                             WHEN f.framework = 'GDPR'            THEN 'GDPR'
                             WHEN f.framework = 'SOC2'            THEN 'SOC2'
+                            WHEN f.framework = 'PCI DSS v4.0'   THEN 'PCIDSS'
+                            WHEN f.framework = 'NIS2'            THEN 'NIS2'
+                            WHEN f.framework = 'HIPAA'           THEN 'HIPAA'
+                            WHEN f.framework = 'NIST 800-53 Rev 5' THEN 'NIST80053'
+                            WHEN f.framework = 'BSI-C5'          THEN 'BSIC5'
+                            WHEN f.framework = 'CSA CCM 4.0'     THEN 'CSACCM'
+                            WHEN f.framework = 'FedRAMP Moderate Rev 4' THEN 'FEDRAMP'
                             ELSE r.resource_type
                         END AS service,
                         UPPER(f.severity) AS severity,
@@ -321,6 +345,96 @@ def lambda_handler(event, context):
                 ]
             except Exception as e:
                 data["_debug"]["findings"] = str(e)
+                conn.rollback()
+
+            # ── 6. Cross-compliance heatmap ──────────────────────────
+            try:
+                COMPLIANCE_FWS = [
+                    ("ISO 27001:2022",     "ISO27001",  "ISO 27001:2022"),
+                    ("NIST CSF v2.0",      "NIST",      "NIST CSF v2.0"),
+                    ("GDPR",               "GDPR",      "GDPR"),
+                    ("SOC2",               "SOC2",      "SOC 2"),
+                    ("PCI DSS v4.0",       "PCIDSS",    "PCI DSS v4.0"),
+                    ("NIS2",               "NIS2",      "NIS2"),
+                    ("HIPAA",              "HIPAA",     "HIPAA"),
+                    ("NIST 800-53 Rev 5",  "NIST80053", "NIST SP 800-53"),
+                    ("BSI-C5",             "BSIC5",     "BSI C5"),
+                    ("CSA CCM 4.0",        "CSACCM",    "CSA CCM 4.0"),
+                    ("FedRAMP Moderate Rev 4", "FEDRAMP", "FedRAMP Moderate"),
+                ]
+                fw_name_to_id    = {fw[0]: fw[1] for fw in COMPLIANCE_FWS}
+                fw_id_to_label   = {fw[1]: fw[2] for fw in COMPLIANCE_FWS}
+                fw_names_tuple   = tuple(fw[0] for fw in COMPLIANCE_FWS)
+
+                cur.execute("""
+                    SELECT
+                        CASE
+                            WHEN r.resource_type LIKE 'iam%%'       OR r.resource_type LIKE 'cognito%%'
+                                THEN 'Access & Identity'
+                            WHEN r.resource_type LIKE 'kms%%'
+                                THEN 'Cryptography & Keys'
+                            WHEN r.resource_type LIKE 'cloudwatch%%'
+                                THEN 'Logging & Monitoring'
+                            WHEN r.resource_type LIKE 's3%%'
+                                THEN 'Data & Storage'
+                            ELSE 'Other Controls'
+                        END                                         AS domain,
+                        f.framework                                  AS fw_name,
+                        COUNT(*)                                     AS total,
+                        COUNT(*) FILTER (WHERE f.result = 'PASS')   AS passed
+                    FROM findings f
+                    JOIN resources r ON f.resource_id = r.id
+                    WHERE r.cloud_account_id = %s
+                      AND f.framework IN %s
+                    GROUP BY 1, 2
+                """, (account_id, fw_names_tuple))
+
+                domain_data = {}
+                for domain, fw_name, total, passed in cur.fetchall():
+                    fw_id = fw_name_to_id.get(fw_name)
+                    if not fw_id:
+                        continue
+                    if domain not in domain_data:
+                        domain_data[domain] = {}
+                    domain_data[domain][fw_id] = {"total": int(total), "passed": int(passed)}
+
+                active_fws = [
+                    {"id": fw[1], "label": fw[2]}
+                    for fw in COMPLIANCE_FWS
+                    if any(fw[1] in d for d in domain_data.values())
+                ]
+
+                DOMAIN_ORDER = [
+                    "Access & Identity",
+                    "Cryptography & Keys",
+                    "Logging & Monitoring",
+                    "Data & Storage",
+                    "Other Controls",
+                ]
+                domains_out = []
+                for domain in DOMAIN_ORDER:
+                    if domain not in domain_data:
+                        continue
+                    scores = []
+                    for fw in active_fws:
+                        d = domain_data[domain].get(fw["id"])
+                        if d and d["total"] > 0:
+                            scores.append({
+                                "score":  round(d["passed"] / d["total"] * 100),
+                                "passed": d["passed"],
+                                "total":  d["total"],
+                            })
+                        else:
+                            scores.append(None)
+                    if any(s is not None for s in scores):
+                        domains_out.append({"label": domain, "scores": scores})
+
+                data["cross_compliance"] = {
+                    "frameworks": active_fws,
+                    "domains":    domains_out,
+                }
+            except Exception as e:
+                data["_debug"]["cross_compliance"] = str(e)
                 conn.rollback()
 
     except Exception as e:
