@@ -791,7 +791,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 <script>
 const API         = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
 const TRIGGER_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trigger-orchestrator';
-let allF=[], filtF=[], pg=1, svcF='';
+let allF=[], filtF=[], pg=1, svcF='', drResults=[];
 let currentAccountId=null, allAccounts=[];
 
 // ── Account switcher ─────────────────────────────────
@@ -1085,6 +1085,7 @@ function render(d){
   const tot=d.total||{}, score=tot.score||0, passed=tot.passed||0, total=tot.total||0;
   const failed=total-passed, bySev=d.by_severity||{}, svcs=d.services||[];
   allF=d.findings||[]; filtF=[...allF];
+  drResults=d.dr_test_results||[];
 
   // Update accounts list + switcher
   if(d.accounts&&d.accounts.length) allAccounts=d.accounts;
@@ -1496,9 +1497,18 @@ function renderIssuesOverview(){
 }
 
 // ── Backup & recovery evidence (computed live from real findings) ──
+function fmtDuration(sec){
+  if(sec==null)return '—';
+  const m=Math.floor(sec/60), s=sec%60;
+  return m>0?`${m}m ${s}s`:`${s}s`;
+}
 function renderDrEvidence(){
   const grid=document.getElementById('dr-evidence-grid');
   if(!grid)return;
+  const testCards=(drResults||[]).map(t=>`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 13px">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#15803d;font-weight:600;margin-bottom:4px">${t.resource_name} — restore-tested</div>
+    <div style="font-size:12px;color:#374151;line-height:1.6">RPO <strong>${fmtDuration(t.rpo_seconds)}</strong> · RTO <strong>${fmtDuration(t.rto_seconds)}</strong> · integrity ${t.data_integrity_match?'✓ match':'✗ mismatch'}<br><span style="color:#6b7280">Tested ${t.tested_at?new Date(t.tested_at).toLocaleString():''}</span></div>
+  </div>`).join('');
   const checks=[
     {id:'S3.3.3',        label:'S3 bucket versioning'},
     {id:'RDS.DR.1',      label:'RDS automated backups'},
@@ -1518,7 +1528,7 @@ function renderDrEvidence(){
       <div style="font-size:16px;font-weight:800;color:${color}">${pass}/${total} <span style="font-size:11px;font-weight:500;color:#6b7280">passing</span></div>
     </div>`;
   }).filter(Boolean).join('');
-  grid.innerHTML=cards||'<div style="font-size:12px;color:#9ca3af">No backup/recovery checks found in this scan.</div>';
+  grid.innerHTML=testCards+cards||'<div style="font-size:12px;color:#9ca3af">No backup/recovery checks found in this scan.</div>';
 }
 
 // ── Filters ──────────────────────────────────────────

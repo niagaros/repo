@@ -102,6 +102,7 @@ def lambda_handler(event, context):
         "services": [],
         "by_severity": {},
         "findings": [],
+        "dr_test_results": [],
         "_debug": {},
     }
 
@@ -437,6 +438,30 @@ def lambda_handler(event, context):
                 }
             except Exception as e:
                 data["_debug"]["cross_compliance"] = str(e)
+                conn.rollback()
+
+            # ── 7. Disaster-recovery restore-test results ────────────
+            try:
+                cur.execute("""
+                    SELECT resource_type, resource_name, rpo_seconds, rto_seconds,
+                           data_integrity_match, tested_at
+                    FROM dr_test_results
+                    WHERE cloud_account_id = %s
+                    ORDER BY tested_at DESC
+                """, (account_id,))
+                data["dr_test_results"] = [
+                    {
+                        "resource_type":        row[0],
+                        "resource_name":        row[1],
+                        "rpo_seconds":          row[2],
+                        "rto_seconds":          row[3],
+                        "data_integrity_match": row[4],
+                        "tested_at":            str(row[5]) if row[5] else None,
+                    }
+                    for row in cur.fetchall()
+                ]
+            except Exception as e:
+                data["_debug"]["dr_test_results"] = str(e)
                 conn.rollback()
 
     except Exception as e:
