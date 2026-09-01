@@ -9,7 +9,12 @@ class RDSCollector(BaseCollector):
         return ResourceType.RDS_INSTANCE
 
     def collect(self) -> list:
-        rds = self.aws.get_client("rds")
+        # NOTE: AWSSession.get_client() defaults to us-east-1, and RDS results are
+        # region-scoped (unlike S3's list_buckets). Scanner does not currently pass
+        # a per-account region into collectors, so this is pinned to eu-west-1 to
+        # match every account onboarded so far — a real limitation, not a full
+        # multi-region scan, until region is threaded through Scanner.
+        rds = self.aws.get_client("rds", region="eu-west-1")
         resources = []
 
         paginator = rds.get_paginator("describe_db_instances")
@@ -29,7 +34,7 @@ class RDSCollector(BaseCollector):
                     "multi_az":                db.get("MultiAZ", False),
                     "deletion_protection":     db.get("DeletionProtection", False),
                     "engine":                  db.get("Engine"),
-                    "latest_restorable_time":  db.get("LatestRestorableTime"),
+                    "latest_restorable_time":  db["LatestRestorableTime"].isoformat() if db.get("LatestRestorableTime") else None,
                 }
                 resources.append(self._resource(
                     resource_id = db.get("DBInstanceArn", identifier),

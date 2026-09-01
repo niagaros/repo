@@ -15,10 +15,11 @@ class RDS_DR_4(BaseCheck):
             "remediation":   "Investigate transaction log shipping delay — usually caused by high write load or an undersized instance class.",
         }
     def run(self, resource):
-        latest_restorable = resource["config"].get("latest_restorable_time")
-        if not latest_restorable:
+        latest_restorable_str = resource["config"].get("latest_restorable_time")
+        if not latest_restorable_str:
             return CheckResult("FAIL", {"reason": "no LatestRestorableTime available — PITR may not be enabled"})
 
+        latest_restorable = datetime.datetime.fromisoformat(latest_restorable_str)
         now = datetime.datetime.now(datetime.timezone.utc)
         lag_seconds = (now - latest_restorable).total_seconds()
         ok = lag_seconds <= RPO_TARGET_SECONDS
