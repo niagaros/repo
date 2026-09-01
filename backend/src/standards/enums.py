@@ -26,3 +26,4 @@ class ResourceType(str, Enum):
     IAM_USER     = "iam-user"      # ready for later
     EC2_INSTANCE = "ec2-instance"  # ready for later
     RDS_INSTANCE = "rds-instance"
+    DYNAMODB_TABLE = "dynamodb-table"
