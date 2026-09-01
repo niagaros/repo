@@ -443,12 +443,11 @@ def lambda_handler(event, context):
             # ── 7. Disaster-recovery restore-test results ────────────
             try:
                 cur.execute("""
-                    SELECT DISTINCT ON (resource_name)
-                           resource_type, resource_name, rpo_seconds, rto_seconds,
+                    SELECT resource_type, resource_name, rpo_seconds, rto_seconds,
                            data_integrity_match, tested_at
                     FROM dr_test_results
                     WHERE cloud_account_id = %s
-                    ORDER BY resource_name, tested_at DESC
+                    ORDER BY tested_at DESC
                 """, (account_id,))
                 data["dr_test_results"] = [
                     {
