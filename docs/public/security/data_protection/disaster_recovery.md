@@ -56,3 +56,7 @@ The restored instance was a temporary, isolated resource used only for this test
 
 - `cspm-db` currently runs single-AZ (no Multi-AZ automatic failover). A regional/AZ outage would require a manual restore rather than an automatic failover. Enabling Multi-AZ is a recommended follow-up — it changes the live production instance and is a separate decision from this test.
 - This page covers the database only. It does not cover a full application-level DR runbook (DNS, API Gateway, Lambda redeploy) since those are serverless/stateless and are not the gap this page addresses.
+
+## The same check runs against the environments we scan
+
+The methodology on this page — a continuous, near-zero-cost check of backup freshness (comparing "now" to the latest restorable point on every scan) plus periodic, fully isolated restore tests with measured RTO and verified data integrity — is not unique to our own infrastructure. It is the same check the Niagaros platform runs against RDS and DynamoDB resources in any AWS account it scans, surfaced on the customer's own dashboard under "Databases". We hold our own infrastructure to the same standard we check for.
