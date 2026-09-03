@@ -542,20 +542,64 @@ def _get_analytics(cur, cloud_account_id):
     }
 
 
+def _current_control_status(cur, cloud_account_id):
+    cur.execute("""
+        SELECT f.check_id, BOOL_OR(f.result = 'FAIL') AS any_fail,
+               COUNT(*) FILTER (WHERE f.result = 'PASS') AS n_pass,
+               COUNT(*) FILTER (WHERE f.result = 'FAIL') AS n_fail
+        FROM findings f
+        JOIN resources r ON r.id = f.resource_id
+        WHERE r.cloud_account_id = %s
+        GROUP BY f.check_id
+    """, (cloud_account_id,))
+    return {
+        check_id: {"status": "FAIL" if any_fail else "PASS", "passed": n_pass, "failed": n_fail}
+        for check_id, any_fail, n_pass, n_fail in cur.fetchall()
+    }
+
+
+def _is_stale(evidence, current_status):
+    """Acceptance criterion from issue #259: "Given compliance evidence
+    changes, when a related questionnaire is reopened, then outdated
+    responses are identified and recommended for review." Compares the
+    control status/counts an answer was drafted from against the current
+    live scan state — the same worst-case-PASS/FAIL computation every
+    mapper and _find_control_evidence already use, so this is comparing
+    like with like, not a different metric."""
+    for e in evidence or []:
+        if e.get("type") != "control":
+            continue
+        current = current_status.get(e.get("check_id"))
+        if current is None:
+            continue  # check no longer produces findings — ambiguous, don't flag
+        if (current["status"] != e.get("status")
+                or current["passed"] != e.get("passed")
+                or current["failed"] != e.get("failed")):
+            return True
+    return False
+
+
 def _get_questionnaire(cur, questionnaire_id):
-    cur.execute("SELECT id, name, source_filename, status, created_at FROM questionnaires WHERE id = %s", (questionnaire_id,))
+    cur.execute("SELECT id, name, source_filename, status, created_at, cloud_account_id FROM questionnaires WHERE id = %s", (questionnaire_id,))
     row = cur.fetchone()
     if not row:
         return None
     q = {"id": str(row[0]), "name": row[1], "source_filename": row[2], "status": row[3], "created_at": row[4].isoformat()}
+    cloud_account_id = row[5]
     cur.execute("""
         SELECT id, row_number, question_text, answer_text, answer_status, confidence, evidence, ai_generated
         FROM questionnaire_items WHERE questionnaire_id = %s ORDER BY row_number
     """, (questionnaire_id,))
-    q["items"] = [{
+    items = [{
         "id": str(r[0]), "row_number": r[1], "question_text": r[2], "answer_text": r[3],
         "answer_status": r[4], "confidence": r[5], "evidence": r[6], "ai_generated": r[7],
     } for r in cur.fetchall()]
+
+    current_status = _current_control_status(cur, cloud_account_id)
+    for item in items:
+        item["is_stale"] = bool(item["answer_text"]) and _is_stale(item["evidence"], current_status)
+
+    q["items"] = items
     return q
 
 

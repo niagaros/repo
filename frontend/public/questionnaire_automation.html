@@ -476,10 +476,12 @@ function renderDetail(){
     const evidence = item.evidence||[];
     const evHtml = evidence.length ? `<div class="evidence-wrap">${evidence.map(evidenceChip).join('')}</div>` : `<div class="no-evidence-note">No matching evidence found in this account's compliance data or published documentation — answer manually.</div>`;
     const confBadge = item.confidence ? `<span class="badge conf-${item.confidence}">${item.confidence} confidence</span>` : '';
+    const staleBadge = item.is_stale ? `<span class="badge conf-low" title="The compliance data this answer was drafted from has changed since — re-generate or re-review before relying on it.">⚠ outdated evidence</span>` : '';
     return `<div class="item-card">
       <div class="item-top">
         <div class="item-q"><span class="item-num">Q${item.row_number}</span>${esc(item.question_text)}</div>
         <div class="item-badges">
+          ${staleBadge}
           ${confBadge}
           <span class="badge b-${item.answer_status}">${item.answer_status.replace('_',' ')}</span>
         </div>
