@@ -155,17 +155,85 @@ The detail view also surfaces an `outstanding_count` (items not yet
 | XLS / DOC (legacy binary) | ❌ | Clear upload error asking for `.xlsx`/`.docx`/`.csv` instead. |
 | PDF | ❌ | Not attempted — reliable Q&A extraction from arbitrary PDF layouts needs real, dedicated work (AcroForm fields vs. free text vary wildly); a rushed heuristic risks silently mis-reading questions, which is worse than refusing the upload. |
 
+## Secure sharing and Print/PDF export
+
+`questionnaire_share_links` (migration 009) — a cryptographically random
+token (`secrets.token_urlsafe`), a default 7-day expiry, and a `revoked`
+flag. A new public, unauthenticated GET path (`?share_token=...`) serves a
+read-only view with none of the normal `cloud_account_id` scoping. **Only
+`approved` items are ever exposed** — an unapproved item still appears in
+the question list (so the external viewer sees the real shape of the
+questionnaire) but with the answer withheld and status
+`pending_internal_review`; an unreviewed AI draft never leaves the
+building through a share link, regardless of how much real evidence backs
+it. `frontend/public/questionnaire_share_view.html` renders it standalone,
+no sidebar/login chrome. Revoking immediately invalidates the token.
+
+PDF export is the browser's native "Print / Save as PDF" (`@media print`
+rules hiding app chrome), both on the internal detail view (full content)
+and the external share view — deliberately no server-side PDF library
+vendored, since that would mean either a heavy native dependency
+(weasyprint) or a fragile compiled one (reportlab's optional accelerator),
+for something the browser already does reliably.
+
+## Answer Library (Knowledge Base)
+
+`GET ?cloud_account_id=..&library=1[&q=search]` groups every approved
+answer across all of an account's questionnaires by exact question text,
+returning: **tags** (the real frameworks/doc-categories that answer's
+evidence actually cited — never an invented taxonomy), and **version
+history** (every historical approved answer to that exact question,
+newest first — genuine version history derived from real approvals, not a
+separate versioning system). The `q` param filters on question text,
+answer text, or tags. Frontend: "📚 Answer Library" view with a live
+search box.
+
+## Analytics — full list of what's tracked
+
+Beyond completion/automation rate and confidence distribution (see
+acceptance criteria above): **most common questions** (asked more than
+once across all questionnaires) and **manual edit rate** — the fraction of
+AI-generated answers whose text was changed before approval, tracked via
+an `edited_after_ai` column (migration 010) set in `_update_item` only
+when the submitted text actually differs from what's stored, not just
+resubmitted unchanged.
+
+**Real bug found and fixed while wiring this up**: `_update_item`
+previously set `ai_generated = FALSE` on *every* save that included
+`answer_text`, even when the "Save" button resubmitted identical,
+unedited text — silently discarding accurate AI-generated provenance and
+miscounting untouched drafts as "manually entered" everywhere (UI,
+automation-rate analytics). Fixed by comparing against the previously
+stored `answer_text` and only touching provenance fields when it actually
+changed. Verified: resaving an AI draft unchanged now correctly leaves
+`ai_generated: true`; a genuine edit correctly flips `edited_after_ai`.
+
+## Issue #259 — final coverage summary
+
+Everything explicitly asked for is built except: **PDF upload** (see table
+below — a deliberate refusal, not an oversight), **preserving original
+file formatting on export** (not applicable — export is plain text/CSV in
+both directions, there's no original layout to preserve), **assigned
+reviewers / @mentions** (no real user-account system exists to assign or
+notify — faking it would be names with no routing behind them), a
+**"suggested improvements before submission" AI pass** (the review/edit
+step already lets a human correct a draft before approving; a distinct
+"AI critiques its own draft" feature was not built), and specific evidence
+sub-types the codebase has no real data source for at all — **certificates,
+penetration-test summaries, and architecture diagrams** are not modeled as
+evidence because nothing in this codebase ingests them; treating that as a
+gap to fake would violate the same "no fabricated evidence" rule the rest
+of this feature is built around.
+
 ## Known limitations / not yet built
 
-- **PDF upload** (see table above).
-- **No "generate PDF report" / "customer-ready package" / "secure sharing
-  link"** export options — CSV export only.
-- **No searchable, tagged knowledge-base browser** — the approved-answer
-  reuse mechanism works automatically at upload time, but there's no UI to
-  browse/search/tag the accumulated approved answers directly.
+- **PDF upload** (see format table above).
 - **`evidence_documents` is a point-in-time seed**, not synced live from the
   docs folder — re-run the seed after editing `docs/public/security/**/*.md`
   in any way that should show up in future drafts.
+- **No role-based review routing** (legal/security/compliance as distinct
+  review stages) — approval is a single `needs_review` → `approved` step,
+  not a multi-stage pipeline.
 
 ## Manual re-seed / test commands
 
