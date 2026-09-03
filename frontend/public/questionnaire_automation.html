@@ -145,6 +145,19 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .gap-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:12px}
 .gap-row:last-child{border-bottom:none}
 .gap-count{color:#9ca3af;font-weight:600;flex-shrink:0}
+.thread-toggle{font-size:11px;color:#6b7280;cursor:pointer;font-weight:600;user-select:none}
+.thread-toggle:hover{color:#059669}
+.thread{margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6}
+.comment{display:flex;gap:8px;margin-bottom:8px;font-size:11.5px}
+.comment-avatar{width:22px;height:22px;border-radius:50%;background:#059669;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.comment-body{flex:1}
+.comment-meta{font-weight:700;color:#111827}
+.comment-time{font-weight:500;color:#9ca3af;margin-left:6px}
+.comment-text{color:#374151;margin-top:1px}
+.comment-input{display:flex;gap:8px;margin-top:8px}
+.comment-input input{flex:1;border:1px solid #e5e7eb;border-radius:7px;padding:6px 10px;font-size:11.5px;font-family:'Inter',sans-serif}
+.history-trail{font-size:10.5px;color:#9ca3af;margin-top:6px}
+.outstanding-pill{background:#fffbeb;color:#d97706;border:1px solid #fde68a;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
 </style>
 </head>
 <body>
@@ -283,6 +296,15 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
 const QNR_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/questionnaires';
 let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[], questionnaires=[], activeQuestionnaire=null, chosenFileBase64=null, chosenFilename=null;
+
+function myDisplayName(){
+  let n=localStorage.getItem('niagaros_display_name');
+  if(!n){
+    n=(prompt('Your name, for comments and approval history:')||'Anonymous').trim()||'Anonymous';
+    localStorage.setItem('niagaros_display_name', n);
+  }
+  return n;
+}
 
 function navTo(page){location.href=page+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'');}
 function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
@@ -465,10 +487,35 @@ function evidenceChip(e){
   return `<span class="ev-chip ev-doc" title="${esc(e.excerpt||'')}">📄 ${esc(e.section_title||e.source_path)}</span>`;
 }
 
+function initials(name){ return (name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+
+function historyTrail(history){
+  if(!history||!history.length) return '';
+  const line=history.map(h=>`${esc(h.to_status.replace('_',' '))} by ${esc(h.actor_name||'someone')}`).join(' → ');
+  return `<div class="history-trail">History: ${line}</div>`;
+}
+
+function commentThread(item){
+  const comments=item.comments||[];
+  return `<div class="thread-toggle" onclick="toggleThread('${item.id}')">💬 ${comments.length} comment${comments.length===1?'':'s'} ${historyTrail(item.history)?'· has history':''}</div>
+    <div class="thread" id="thread-${item.id}" hidden>
+      ${comments.map(c=>`<div class="comment">
+        <div class="comment-avatar">${esc(initials(c.author_name))}</div>
+        <div class="comment-body"><span class="comment-meta">${esc(c.author_name)}</span><span class="comment-time">${new Date(c.created_at).toLocaleString()}</span><div class="comment-text">${esc(c.comment_text)}</div></div>
+      </div>`).join('')}
+      ${historyTrail(item.history)}
+      <div class="comment-input">
+        <input type="text" id="comment-in-${item.id}" placeholder="Add a comment…" onkeydown="if(event.key==='Enter')postComment('${item.id}')">
+        <button class="btn-ghost btn-sm" onclick="postComment('${item.id}')">Post</button>
+      </div>
+    </div>`;
+}
+
 function renderDetail(){
   const q=activeQuestionnaire;
   document.getElementById('d-title').textContent=q.name;
-  document.getElementById('d-sub').textContent=q.items.length+' questions · '+q.items.filter(i=>i.answer_status==='approved').length+' approved';
+  document.getElementById('d-sub').innerHTML=q.items.length+' questions · '+q.items.filter(i=>i.answer_status==='approved').length+' approved'+
+    (q.outstanding_count?` · <span class="outstanding-pill">${q.outstanding_count} outstanding</span>`:'');
   const anyBedrockBlocked = q.items.some(i=>i.evidence&&i.evidence.length&&!i.answer_text&&!i.ai_generated);
   document.getElementById('bedrock-notice').hidden = !anyBedrockBlocked;
 
@@ -496,11 +543,26 @@ function renderDetail(){
           <button class="btn-primary btn-sm" onclick="saveItem('${item.id}','approved')">✓ Approve</button>
         </div>
       </div>
+      ${commentThread(item)}
     </div>`;
   }).join('');
 
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-detail').hidden=false;
+}
+
+function toggleThread(itemId){
+  const el=document.getElementById('thread-'+itemId);
+  el.hidden=!el.hidden;
+}
+async function postComment(itemId){
+  const input=document.getElementById('comment-in-'+itemId);
+  const text=input.value.trim();
+  if(!text) return;
+  await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'add_comment',item_id:itemId,author_name:myDisplayName(),comment_text:text})});
+  await openDetail(activeQuestionnaire.id);
+  const el=document.getElementById('thread-'+itemId);
+  if(el) el.hidden=false;
 }
 
 async function generateItem(itemId){
@@ -523,7 +585,7 @@ async function generateAll(){
 }
 async function saveItem(itemId,status){
   const text=document.getElementById('ans-'+itemId).value;
-  await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'update_item',item_id:itemId,answer_text:text,answer_status:status})});
+  await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'update_item',item_id:itemId,answer_text:text,answer_status:status,actor_name:myDisplayName()})});
   showToast(status==='approved'?'Goedgekeurd':'Opgeslagen');
   await openDetail(activeQuestionnaire.id);
 }

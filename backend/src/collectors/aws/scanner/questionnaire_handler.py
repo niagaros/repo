@@ -88,14 +88,33 @@ CREATE TABLE IF NOT EXISTS evidence_documents (
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     UNIQUE (source_path, section_title)
 );
+CREATE TABLE IF NOT EXISTS questionnaire_item_comments (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id       UUID         NOT NULL REFERENCES questionnaire_items(id) ON DELETE CASCADE,
+    author_name   VARCHAR(120) NOT NULL,
+    comment_text  TEXT         NOT NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS questionnaire_item_history (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id       UUID         NOT NULL REFERENCES questionnaire_items(id) ON DELETE CASCADE,
+    from_status   VARCHAR(20),
+    to_status     VARCHAR(20)  NOT NULL,
+    actor_name    VARCHAR(120),
+    changed_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
 CREATE INDEX IF NOT EXISTS questionnaires_account_idx ON questionnaires(cloud_account_id);
 CREATE INDEX IF NOT EXISTS questionnaire_items_questionnaire_idx ON questionnaire_items(questionnaire_id);
+CREATE INDEX IF NOT EXISTS questionnaire_item_comments_item_idx ON questionnaire_item_comments(item_id);
+CREATE INDEX IF NOT EXISTS questionnaire_item_history_item_idx ON questionnaire_item_history(item_id);
 """
 
 ADMIN_MIGRATION_SQL = BOOTSTRAP_SQL + """
 GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaires TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaire_items TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON evidence_documents TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaire_item_comments TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaire_item_history TO cspm_lambda;
 """
 
 STOPWORDS = set("""
@@ -596,20 +615,51 @@ def _get_questionnaire(cur, questionnaire_id):
     } for r in cur.fetchall()]
 
     current_status = _current_control_status(cur, cloud_account_id)
+
+    item_ids = [item["id"] for item in items]
+    comments_by_item, history_by_item = {}, {}
+    if item_ids:
+        cur.execute("""
+            SELECT item_id, id, author_name, comment_text, created_at
+            FROM questionnaire_item_comments WHERE item_id = ANY(%s::uuid[]) ORDER BY created_at
+        """, (item_ids,))
+        for item_id, cid, author_name, comment_text, created_at in cur.fetchall():
+            comments_by_item.setdefault(str(item_id), []).append({
+                "id": str(cid), "author_name": author_name, "comment_text": comment_text,
+                "created_at": created_at.isoformat(),
+            })
+        cur.execute("""
+            SELECT item_id, from_status, to_status, actor_name, changed_at
+            FROM questionnaire_item_history WHERE item_id = ANY(%s::uuid[]) ORDER BY changed_at
+        """, (item_ids,))
+        for item_id, from_status, to_status, actor_name, changed_at in cur.fetchall():
+            history_by_item.setdefault(str(item_id), []).append({
+                "from_status": from_status, "to_status": to_status, "actor_name": actor_name,
+                "changed_at": changed_at.isoformat(),
+            })
+
     for item in items:
         item["is_stale"] = bool(item["answer_text"]) and _is_stale(item["evidence"], current_status)
+        item["comments"] = comments_by_item.get(item["id"], [])
+        item["history"] = history_by_item.get(item["id"], [])
 
     q["items"] = items
+    q["outstanding_count"] = sum(1 for i in items if i["answer_status"] != "approved")
     return q
 
 
-def _update_item(conn, item_id, answer_text=None, answer_status=None):
+def _update_item(conn, item_id, answer_text=None, answer_status=None, actor_name=None):
     sets, params = [], []
     if answer_text is not None:
         sets.append("answer_text = %s")
         params.append(answer_text)
         sets.append("ai_generated = FALSE")
+    prior_status = None
     if answer_status is not None:
+        with conn.cursor() as cur:
+            cur.execute("SELECT answer_status FROM questionnaire_items WHERE id = %s", (item_id,))
+            row = cur.fetchone()
+            prior_status = row[0] if row else None
         sets.append("answer_status = %s")
         params.append(answer_status)
         if answer_status == "approved":
@@ -621,6 +671,22 @@ def _update_item(conn, item_id, answer_text=None, answer_status=None):
     with conn:
         with conn.cursor() as cur:
             cur.execute(f"UPDATE questionnaire_items SET {', '.join(sets)} WHERE id = %s", params)
+            if answer_status is not None and answer_status != prior_status:
+                cur.execute("""
+                    INSERT INTO questionnaire_item_history (item_id, from_status, to_status, actor_name)
+                    VALUES (%s, %s, %s, %s)
+                """, (item_id, prior_status, answer_status, actor_name))
+
+
+def _add_comment(conn, item_id, author_name, comment_text):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO questionnaire_item_comments (item_id, author_name, comment_text)
+                VALUES (%s, %s, %s) RETURNING id, created_at
+            """, (item_id, author_name, comment_text))
+            cid, created_at = cur.fetchone()
+    return {"id": str(cid), "author_name": author_name, "comment_text": comment_text, "created_at": created_at.isoformat()}
 
 
 def _delete_questionnaire(conn, questionnaire_id):
@@ -733,8 +799,11 @@ def handler(event, context):
                         results["bedrock_unavailable"] += 1
                 return _resp(200, results)
             if action == "update_item":
-                _update_item(conn, body["item_id"], body.get("answer_text"), body.get("answer_status"))
+                _update_item(conn, body["item_id"], body.get("answer_text"), body.get("answer_status"), body.get("actor_name"))
                 return _resp(200, {"updated": True})
+            if action == "add_comment":
+                comment = _add_comment(conn, body["item_id"], body.get("author_name", "Anonymous"), body["comment_text"])
+                return _resp(200, comment)
             return _resp(400, {"error": f"unknown action: {action}"})
 
         if method == "DELETE":
