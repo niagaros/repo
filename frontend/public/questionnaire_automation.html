@@ -131,6 +131,20 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .item-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .item-actions{display:flex;gap:6px}
 .no-evidence-note{font-size:11px;color:#9ca3af;font-style:italic;margin-bottom:8px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:18px}
+.stat-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px}
+.stat-num{font-size:24px;font-weight:800;color:#111827;font-variant-numeric:tabular-nums}
+.stat-lbl{font-size:11px;color:#9ca3af;margin-top:4px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.bar-lbl{width:110px;font-size:11px;color:#374151;flex-shrink:0}
+.bar-track{flex:1;height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:5px}
+.bar-val{width:34px;text-align:right;font-size:11px;font-weight:700;color:#111827;flex-shrink:0}
+.analytics-section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.analytics-section h3{font-size:12.5px;font-weight:700;margin-bottom:12px;color:#111827}
+.gap-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:12px}
+.gap-row:last-child{border-bottom:none}
+.gap-count{color:#9ca3af;font-weight:600;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -182,6 +196,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       </div>
     </div>
     <div class="tp-right">
+      <button class="btn-ghost" onclick="openAnalytics()">📈 Analytics</button>
       <button class="btn-primary" id="btn-upload" onclick="openUploadModal()">+ Upload Questionnaire</button>
       <div class="avatar">DN</div>
     </div>
@@ -217,6 +232,17 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <div><b>AI drafting is temporarily unavailable</b> — the drafting API could not be reached. The evidence below was still found and matched for real; answer these manually using it, or try Generate again shortly.</div>
       </div>
       <div id="items-list"></div>
+    </div>
+
+    <div id="v-analytics" hidden>
+      <div class="back-link" onclick="backToList()">← All questionnaires</div>
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Analytics</div>
+          <div class="page-sub">Every number below is a direct aggregate over stored questionnaire items for this account — no assumed "time saved per question" figure, since that would have no real basis.</div>
+        </div>
+      </div>
+      <div id="analytics-body"></div>
     </div>
   </div>
 </div>
@@ -321,6 +347,55 @@ function renderList(){
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-list').hidden=false;
   document.getElementById('v-detail').hidden=true;
+  document.getElementById('v-analytics').hidden=true;
+}
+
+async function openAnalytics(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-list').hidden=true;
+  document.getElementById('v-detail').hidden=true;
+  const r=await fetch(QNR_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&analytics=1');
+  const a=await r.json();
+  renderAnalytics(a);
+}
+
+function barRow(label,value,total,color){
+  const pct=total?Math.round(value/total*100):0;
+  return `<div class="bar-row"><div class="bar-lbl">${esc(label)}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div><div class="bar-val">${value}</div></div>`;
+}
+
+function renderAnalytics(a){
+  const pct=v=>v===null||v===undefined?'—':Math.round(v*100)+'%';
+  const ansTotal=a.answered_questions||0;
+  const gaps=(a.recurring_evidence_gaps||[]);
+  document.getElementById('analytics-body').innerHTML=`
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-num">${a.total_questions}</div><div class="stat-lbl">Total questions (all questionnaires)</div></div>
+      <div class="stat-card"><div class="stat-num">${pct(a.completion_rate)}</div><div class="stat-lbl">Completion rate (approved / total)</div></div>
+      <div class="stat-card"><div class="stat-num">${pct(a.automation_rate)}</div><div class="stat-lbl">Automation rate (AI + reused / answered)</div></div>
+      <div class="stat-card"><div class="stat-num">${a.avg_review_time_hours!==null?a.avg_review_time_hours+'h':'—'}</div><div class="stat-lbl">Avg. time to review (${a.reviewed_count} reviewed)</div></div>
+    </div>
+    <div class="analytics-section">
+      <h3>How answers got filled in</h3>
+      ${barRow('AI-generated',a.automation_breakdown.ai_generated,ansTotal||1,'#059669')}
+      ${barRow('Reused (approved)',a.automation_breakdown.reused,ansTotal||1,'#a21caf')}
+      ${barRow('Manually entered',a.automation_breakdown.manual,ansTotal||1,'#3b82f6')}
+      ${barRow('Still unanswered',a.automation_breakdown.unanswered,a.total_questions||1,'#d1d5db')}
+    </div>
+    <div class="analytics-section">
+      <h3>Answer confidence distribution</h3>
+      ${barRow('High',a.confidence_breakdown.high,a.total_questions||1,'#059669')}
+      ${barRow('Medium',a.confidence_breakdown.medium,a.total_questions||1,'#d97706')}
+      ${barRow('Low',a.confidence_breakdown.low,a.total_questions||1,'#ef4444')}
+      ${barRow('Not scored yet',a.confidence_breakdown.none,a.total_questions||1,'#d1d5db')}
+    </div>
+    <div class="analytics-section">
+      <h3>Recurring evidence gaps — questions asked more than once with no matching evidence</h3>
+      ${gaps.length?gaps.map(g=>`<div class="gap-row"><span>${esc(g.question)}</span><span class="gap-count">asked ${g.times_asked}×</span></div>`).join(''):'<div class="no-evidence-note">None yet — every repeated question so far found some evidence.</div>'}
+    </div>
+  `;
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-analytics').hidden=false;
 }
 
 function openUploadModal(){
@@ -374,6 +449,7 @@ function backToList(){ activeQuestionnaire=null; renderList(); }
 async function openDetail(id){
   document.getElementById('v-load').style.display='flex';
   document.getElementById('v-list').hidden=true;
+  document.getElementById('v-analytics').hidden=true;
   const r=await fetch(QNR_API+'?questionnaire_id='+encodeURIComponent(id));
   activeQuestionnaire=await r.json();
   renderDetail();

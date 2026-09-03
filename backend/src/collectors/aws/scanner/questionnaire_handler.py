@@ -476,6 +476,72 @@ def _list_questionnaires(cur, cloud_account_id):
     } for r in cur.fetchall()]
 
 
+def _get_analytics(cur, cloud_account_id):
+    """Acceptance criterion from issue #259: "automation rates, review
+    times, and completion metrics are displayed." Every number here is a
+    direct aggregate over real stored rows — deliberately no "time saved"
+    metric, since that would require inventing an assumed minutes-per-
+    question constant with no real basis, which is exactly the kind of
+    fabricated number this codebase avoids."""
+    cur.execute("""
+        SELECT qi.answer_status, qi.confidence, qi.ai_generated, qi.evidence,
+               qi.created_at, qi.reviewed_at
+        FROM questionnaire_items qi
+        JOIN questionnaires q ON q.id = qi.questionnaire_id
+        WHERE q.cloud_account_id = %s
+    """, (cloud_account_id,))
+    rows = cur.fetchall()
+
+    total = len(rows)
+    approved = sum(1 for r in rows if r[0] == "approved")
+    answered = 0
+    automation = {"ai_generated": 0, "reused": 0, "manual": 0, "unanswered": 0}
+    confidence_counts = {"high": 0, "medium": 0, "low": 0, "none": 0}
+    review_hours = []
+
+    for status, confidence, ai_generated, evidence, created_at, reviewed_at in rows:
+        confidence_counts[confidence or "none"] += 1
+        was_reused = isinstance(evidence, list) and any(e.get("type") == "reused" for e in evidence)
+        if ai_generated:
+            automation["ai_generated"] += 1
+            answered += 1
+        elif was_reused:
+            automation["reused"] += 1
+            answered += 1
+        elif status != "unanswered":
+            automation["manual"] += 1
+            answered += 1
+        else:
+            automation["unanswered"] += 1
+        if reviewed_at:
+            review_hours.append((reviewed_at - created_at).total_seconds() / 3600)
+
+    cur.execute("""
+        SELECT qi.question_text, COUNT(*) AS n
+        FROM questionnaire_items qi
+        JOIN questionnaires q ON q.id = qi.questionnaire_id
+        WHERE q.cloud_account_id = %s AND qi.evidence = '[]'::jsonb AND qi.answer_text IS NULL
+        GROUP BY qi.question_text
+        HAVING COUNT(*) > 1
+        ORDER BY n DESC
+        LIMIT 10
+    """, (cloud_account_id,))
+    recurring_gaps = [{"question": r[0], "times_asked": r[1]} for r in cur.fetchall()]
+
+    return {
+        "total_questions": total,
+        "answered_questions": answered,
+        "approved_questions": approved,
+        "completion_rate": round(approved / total, 3) if total else None,
+        "automation_rate": round((automation["ai_generated"] + automation["reused"]) / answered, 3) if answered else None,
+        "automation_breakdown": automation,
+        "confidence_breakdown": confidence_counts,
+        "avg_review_time_hours": round(sum(review_hours) / len(review_hours), 2) if review_hours else None,
+        "reviewed_count": len(review_hours),
+        "recurring_evidence_gaps": recurring_gaps,
+    }
+
+
 def _get_questionnaire(cur, questionnaire_id):
     cur.execute("SELECT id, name, source_filename, status, created_at FROM questionnaires WHERE id = %s", (questionnaire_id,))
     row = cur.fetchone()
@@ -581,6 +647,9 @@ def handler(event, context):
             account_id = qs.get("cloud_account_id")
             if not account_id:
                 return _resp(400, {"error": "cloud_account_id required"})
+            if qs.get("analytics"):
+                with conn.cursor() as cur:
+                    return _resp(200, _get_analytics(cur, account_id))
             with conn.cursor() as cur:
                 return _resp(200, {"questionnaires": _list_questionnaires(cur, account_id)})
 
