@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS questionnaire_items (
     confidence        VARCHAR(10),
     evidence          JSONB        NOT NULL DEFAULT '[]',
     ai_generated      BOOLEAN      NOT NULL DEFAULT FALSE,
+    edited_after_ai   BOOLEAN      NOT NULL DEFAULT FALSE,
     reviewed_at       TIMESTAMPTZ,
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS questionnaire_item_history (
     actor_name    VARCHAR(120),
     changed_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+ALTER TABLE questionnaire_items ADD COLUMN IF NOT EXISTS edited_after_ai BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS questionnaire_share_links (
     id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     questionnaire_id UUID         NOT NULL REFERENCES questionnaires(id) ON DELETE CASCADE,
@@ -328,7 +330,8 @@ def _generate_item(conn, item_id):
                 cur.execute("""
                     UPDATE questionnaire_items
                     SET answer_text = %s, confidence = %s, evidence = %s,
-                        ai_generated = TRUE, answer_status = 'draft', updated_at = NOW()
+                        ai_generated = TRUE, edited_after_ai = FALSE,
+                        answer_status = 'draft', updated_at = NOW()
                     WHERE id = %s
                 """, (answer, confidence, Json(evidence), item_id))
             else:
@@ -630,7 +633,7 @@ def _get_analytics(cur, cloud_account_id):
     fabricated number this codebase avoids."""
     cur.execute("""
         SELECT qi.answer_status, qi.confidence, qi.ai_generated, qi.evidence,
-               qi.created_at, qi.reviewed_at
+               qi.created_at, qi.reviewed_at, qi.edited_after_ai
         FROM questionnaire_items qi
         JOIN questionnaires q ON q.id = qi.questionnaire_id
         WHERE q.cloud_account_id = %s
@@ -640,11 +643,13 @@ def _get_analytics(cur, cloud_account_id):
     total = len(rows)
     approved = sum(1 for r in rows if r[0] == "approved")
     answered = 0
+    ai_ever_generated = 0
+    edited_after_ai_count = 0
     automation = {"ai_generated": 0, "reused": 0, "manual": 0, "unanswered": 0}
     confidence_counts = {"high": 0, "medium": 0, "low": 0, "none": 0}
     review_hours = []
 
-    for status, confidence, ai_generated, evidence, created_at, reviewed_at in rows:
+    for status, confidence, ai_generated, evidence, created_at, reviewed_at, edited_after_ai in rows:
         confidence_counts[confidence or "none"] += 1
         was_reused = isinstance(evidence, list) and any(e.get("type") == "reused" for e in evidence)
         if ai_generated:
@@ -658,6 +663,10 @@ def _get_analytics(cur, cloud_account_id):
             answered += 1
         else:
             automation["unanswered"] += 1
+        if ai_generated or edited_after_ai:
+            ai_ever_generated += 1
+        if edited_after_ai:
+            edited_after_ai_count += 1
         if reviewed_at:
             review_hours.append((reviewed_at - created_at).total_seconds() / 3600)
 
@@ -673,6 +682,18 @@ def _get_analytics(cur, cloud_account_id):
     """, (cloud_account_id,))
     recurring_gaps = [{"question": r[0], "times_asked": r[1]} for r in cur.fetchall()]
 
+    cur.execute("""
+        SELECT qi.question_text, COUNT(*) AS n
+        FROM questionnaire_items qi
+        JOIN questionnaires q ON q.id = qi.questionnaire_id
+        WHERE q.cloud_account_id = %s
+        GROUP BY qi.question_text
+        HAVING COUNT(*) > 1
+        ORDER BY n DESC
+        LIMIT 10
+    """, (cloud_account_id,))
+    most_common_questions = [{"question": r[0], "times_asked": r[1]} for r in cur.fetchall()]
+
     return {
         "total_questions": total,
         "answered_questions": answered,
@@ -684,6 +705,10 @@ def _get_analytics(cur, cloud_account_id):
         "avg_review_time_hours": round(sum(review_hours) / len(review_hours), 2) if review_hours else None,
         "reviewed_count": len(review_hours),
         "recurring_evidence_gaps": recurring_gaps,
+        "most_common_questions": most_common_questions,
+        "manual_edit_rate": round(edited_after_ai_count / ai_ever_generated, 3) if ai_ever_generated else None,
+        "edited_after_ai_count": edited_after_ai_count,
+        "ai_ever_generated_count": ai_ever_generated,
     }
 
 
@@ -775,17 +800,24 @@ def _get_questionnaire(cur, questionnaire_id):
 
 
 def _update_item(conn, item_id, answer_text=None, answer_status=None, actor_name=None):
+    with conn.cursor() as cur:
+        cur.execute("SELECT answer_status, answer_text, ai_generated FROM questionnaire_items WHERE id = %s", (item_id,))
+        row = cur.fetchone()
+    prior_status, prior_answer_text, was_ai_generated = row if row else (None, None, False)
+
     sets, params = [], []
     if answer_text is not None:
         sets.append("answer_text = %s")
         params.append(answer_text)
-        sets.append("ai_generated = FALSE")
-    prior_status = None
+        # Only touch provenance if the text actually changed — the "Save"
+        # button always resubmits the full textarea, so without this check
+        # every click would silently discard an accurate ai_generated=TRUE
+        # even when nothing was edited.
+        if answer_text != prior_answer_text:
+            sets.append("ai_generated = FALSE")
+            if was_ai_generated:
+                sets.append("edited_after_ai = TRUE")
     if answer_status is not None:
-        with conn.cursor() as cur:
-            cur.execute("SELECT answer_status FROM questionnaire_items WHERE id = %s", (item_id,))
-            row = cur.fetchone()
-            prior_status = row[0] if row else None
         sets.append("answer_status = %s")
         params.append(answer_status)
         if answer_status == "approved":

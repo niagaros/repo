@@ -451,6 +451,7 @@ function renderAnalytics(a){
       <div class="stat-card"><div class="stat-num">${pct(a.completion_rate)}</div><div class="stat-lbl">Completion rate (approved / total)</div></div>
       <div class="stat-card"><div class="stat-num">${pct(a.automation_rate)}</div><div class="stat-lbl">Automation rate (AI + reused / answered)</div></div>
       <div class="stat-card"><div class="stat-num">${a.avg_review_time_hours!==null?a.avg_review_time_hours+'h':'—'}</div><div class="stat-lbl">Avg. time to review (${a.reviewed_count} reviewed)</div></div>
+      <div class="stat-card"><div class="stat-num">${pct(a.manual_edit_rate)}</div><div class="stat-lbl">AI drafts needing manual edits (${a.edited_after_ai_count}/${a.ai_ever_generated_count})</div></div>
     </div>
     <div class="analytics-section">
       <h3>How answers got filled in</h3>
@@ -465,6 +466,10 @@ function renderAnalytics(a){
       ${barRow('Medium',a.confidence_breakdown.medium,a.total_questions||1,'#d97706')}
       ${barRow('Low',a.confidence_breakdown.low,a.total_questions||1,'#ef4444')}
       ${barRow('Not scored yet',a.confidence_breakdown.none,a.total_questions||1,'#d1d5db')}
+    </div>
+    <div class="analytics-section">
+      <h3>Most common questions across all questionnaires</h3>
+      ${(a.most_common_questions||[]).length?a.most_common_questions.map(g=>`<div class="gap-row"><span>${esc(g.question)}</span><span class="gap-count">asked ${g.times_asked}×</span></div>`).join(''):'<div class="no-evidence-note">No question has been asked more than once yet.</div>'}
     </div>
     <div class="analytics-section">
       <h3>Recurring evidence gaps — questions asked more than once with no matching evidence</h3>
