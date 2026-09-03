@@ -12,9 +12,10 @@ as custom_framework_handler.py:
 
 Honesty constraints this file is deliberately built around (see issue
 discussion and the rest of this codebase's "no fabricated checks" rule):
-  - Only CSV upload is implemented. XLSX/DOCX/PDF are not parsed in v1;
-    callers get a clear "not supported yet" error instead of silent
-    mis-parsing.
+  - CSV and XLSX upload are implemented (XLSX parsed per-worksheet, only
+    reading sheets with a recognizable "Question" header — real multi-tab
+    questionnaires like CAIQ have 17 CCM-domain sheets). DOCX/PDF are not
+    parsed yet; callers get a clear error instead of silent mis-parsing.
   - An answer is only drafted from evidence this account actually has:
     its own live compliance findings (findings/resources tables) and
     Niagaros' own published security docs (evidence_documents, seeded
@@ -28,6 +29,7 @@ discussion and the rest of this codebase's "no fabricated checks" rule):
     so a reviewer isn't starting from nothing.
 """
 
+import base64
 import csv
 import io
 import json
@@ -336,10 +338,55 @@ def _parse_csv(csv_text):
     return questions
 
 
-def _upload_questionnaire(conn, cloud_account_id, name, filename, csv_text):
-    questions = _parse_csv(csv_text)
+def _parse_xlsx(file_bytes):
+    """Parses every worksheet independently — real multi-tab questionnaires
+    (e.g. CAIQ's 17 CCM-domain sheets) put questions in different sheets with
+    their own header row. A sheet is only read if one of its header cells
+    contains "question" (case-insensitive); sheets without a recognizable
+    question column (e.g. a cover/instructions tab) are silently skipped
+    rather than guessing a column."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    questions = []
+    for ws in wb.worksheets:
+        q_idx = a_idx = None
+        header_found = False
+        for row in ws.iter_rows(values_only=True):
+            if not any(c not in (None, "") for c in row):
+                continue
+            if not header_found:
+                header = [str(c).strip().lower() if c is not None else "" for c in row]
+                q_idx = next((i for i, h in enumerate(header) if re.search(r"\bquestions?\b", h)), None)
+                a_idx = next((i for i, h in enumerate(header) if re.search(r"\b(answer|response)s?\b", h)), None)
+                header_found = True
+                continue
+            if q_idx is None or q_idx >= len(row):
+                continue
+            qtext = row[q_idx]
+            if not qtext or not str(qtext).strip():
+                continue
+            existing = None
+            if a_idx is not None and a_idx < len(row) and row[a_idx] not in (None, ""):
+                existing = str(row[a_idx]).strip()
+            questions.append((str(qtext).strip(), existing))
+    return questions
+
+
+def _parse_uploaded_file(filename, file_base64):
+    ext = (filename or "").rsplit(".", 1)[-1].lower()
+    raw = base64.b64decode(file_base64)
+    if ext in ("xlsx", "xlsm"):
+        return _parse_xlsx(raw)
+    if ext == "xls":
+        raise ValueError("Legacy .xls files aren't supported — please re-save as .xlsx or .csv and re-upload.")
+    return _parse_csv(raw.decode("utf-8-sig", errors="replace"))
+
+
+def _upload_questionnaire(conn, cloud_account_id, name, filename, file_base64):
+    questions = _parse_uploaded_file(filename, file_base64)
     if not questions:
-        raise ValueError("No questions found in the uploaded CSV — expected one question per row, optionally with a header row containing a 'Question' column.")
+        raise ValueError("No questions found in the uploaded file — expected one question per row/sheet-row, optionally under a header cell containing 'Question'.")
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -485,7 +532,14 @@ def handler(event, context):
             action = body.get("action")
             if action == "upload":
                 try:
-                    qid, n = _upload_questionnaire(conn, body["cloud_account_id"], body["name"], body.get("filename", ""), body["csv_text"])
+                    filename = body.get("filename", "")
+                    if "file_base64" in body:
+                        file_b64 = body["file_base64"]
+                    else:
+                        # Back-compat: plain CSV text sent directly (no file picker).
+                        file_b64 = base64.b64encode(body["csv_text"].encode("utf-8")).decode("ascii")
+                        filename = filename or "upload.csv"
+                    qid, n = _upload_questionnaire(conn, body["cloud_account_id"], body["name"], filename, file_b64)
                 except ValueError as ve:
                     return _resp(400, {"error": str(ve)})
                 return _resp(200, {"id": qid, "questions_imported": n})

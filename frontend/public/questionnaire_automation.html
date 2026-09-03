@@ -233,14 +233,14 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <input class="f-in" id="in-q-name" placeholder="e.g. Acme Corp — SIG Lite 2026">
       </div>
       <div>
-        <label class="f-lbl">CSV file</label>
+        <label class="f-lbl">CSV or Excel file</label>
         <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
           <div class="dz-ic">📄</div>
-          <div class="dz-t">Click to choose a .csv file, or drag it here</div>
+          <div class="dz-t">Click to choose a .csv or .xlsx file, or drag it here</div>
           <div class="dz-f" id="dz-filename"></div>
         </div>
-        <input type="file" id="file-input" accept=".csv" hidden onchange="onFileChosen(this.files[0])">
-        <div class="f-hint">One question per row. A header row with a "Question" column (and optionally "Answer") is recognized automatically — otherwise the first column of every row is used. XLSX/DOCX/PDF questionnaires aren't supported yet.</div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xlsm" hidden onchange="onFileChosen(this.files[0])">
+        <div class="f-hint">CSV: one question per row, optionally under a "Question" header column. XLSX: every worksheet with a header cell containing "Question" is read (e.g. CAIQ's per-domain tabs) — sheets without one (cover pages, instructions) are skipped automatically. DOCX/PDF aren't supported yet.</div>
       </div>
     </div>
     <div class="modal-foot">
@@ -255,7 +255,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 <script>
 const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
 const QNR_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/questionnaires';
-let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[], questionnaires=[], activeQuestionnaire=null, chosenCsvText=null, chosenFilename=null;
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[], questionnaires=[], activeQuestionnaire=null, chosenFileBase64=null, chosenFilename=null;
 
 function navTo(page){location.href=page+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'');}
 function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
@@ -326,7 +326,7 @@ function openUploadModal(){
   document.getElementById('in-q-name').value='';
   document.getElementById('dz-filename').textContent='';
   document.getElementById('btn-submit-upload').disabled=true;
-  chosenCsvText=null; chosenFilename=null;
+  chosenFileBase64=null; chosenFilename=null;
   document.getElementById('ov-upload').classList.add('open');
 }
 function onFileChosen(file){
@@ -334,11 +334,14 @@ function onFileChosen(file){
   chosenFilename=file.name;
   const reader=new FileReader();
   reader.onload=e=>{
-    chosenCsvText=e.target.result;
+    const bytes=new Uint8Array(e.target.result);
+    let binary='';
+    for(let i=0;i<bytes.length;i++) binary+=String.fromCharCode(bytes[i]);
+    chosenFileBase64=btoa(binary);
     document.getElementById('dz-filename').textContent='✓ '+file.name;
     document.getElementById('btn-submit-upload').disabled=false;
   };
-  reader.readAsText(file);
+  reader.readAsArrayBuffer(file);
 }
 const dz=null;
 document.addEventListener('DOMContentLoaded',()=>{
@@ -350,8 +353,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 async function submitUpload(){
   const name=document.getElementById('in-q-name').value.trim();
   if(!name){showToast('Geef de questionnaire een naam');return;}
-  if(!chosenCsvText){showToast('Kies eerst een CSV-bestand');return;}
-  const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'upload',cloud_account_id:currentAccountId,name,filename:chosenFilename,csv_text:chosenCsvText})});
+  if(!chosenFileBase64){showToast('Kies eerst een bestand');return;}
+  const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'upload',cloud_account_id:currentAccountId,name,filename:chosenFilename,file_base64:chosenFileBase64})});
   const d=await r.json();
   if(!r.ok){showToast('⚠ '+(d.error||'Upload mislukt'));return;}
   closeOvDirect('ov-upload');
