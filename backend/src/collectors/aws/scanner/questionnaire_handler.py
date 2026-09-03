@@ -12,10 +12,14 @@ as custom_framework_handler.py:
 
 Honesty constraints this file is deliberately built around (see issue
 discussion and the rest of this codebase's "no fabricated checks" rule):
-  - CSV and XLSX upload are implemented (XLSX parsed per-worksheet, only
-    reading sheets with a recognizable "Question" header — real multi-tab
-    questionnaires like CAIQ have 17 CCM-domain sheets). DOCX/PDF are not
-    parsed yet; callers get a clear error instead of silent mis-parsing.
+  - CSV, XLSX, and DOCX upload are implemented (XLSX parsed per-worksheet,
+    only reading sheets with a recognizable "Question" header — real
+    multi-tab questionnaires like CAIQ have 17 CCM-domain sheets; DOCX
+    read directly from its OOXML via stdlib zipfile+ElementTree, no lxml
+    dependency). PDF forms are not parsed — extracting reliable Q&A pairs
+    from arbitrary PDF layouts needs real, dedicated work, and a rushed
+    heuristic risks silently mis-reading questions, which is worse than
+    refusing the upload with a clear error.
   - An answer is only drafted from evidence this account actually has:
     its own live compliance findings (findings/resources tables) and
     Niagaros' own published security docs (evidence_documents, seeded
@@ -37,6 +41,8 @@ import logging
 import os
 import re
 import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
 
 import boto3
 import psycopg2
@@ -392,6 +398,58 @@ def _parse_xlsx(file_bytes):
     return questions
 
 
+DOCX_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _docx_text(elem):
+    return "".join(t.text or "" for t in elem.iter(DOCX_W_NS + "t"))
+
+
+def _parse_docx(file_bytes):
+    """Reads word/document.xml directly via the stdlib zipfile + ElementTree
+    (a .docx is just a zip of OOXML) instead of pulling in python-docx,
+    which depends on lxml — a compiled C extension that would need a
+    manylinux wheel vendored the same way psycopg2 is, for a format this
+    simple to read directly. Two extraction strategies, in order:
+      1. Any table with a header cell matching "question" as a whole word
+         (the common case: a two/three-column Question/Answer table).
+      2. If no such table exists, every paragraph ending in "?" is treated
+         as a question — covers plainly-numbered-list questionnaires with
+         no table structure at all."""
+    with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+        xml_bytes = z.read("word/document.xml")
+    body = ET.fromstring(xml_bytes).find(DOCX_W_NS + "body")
+
+    questions = []
+    for tbl in body.iter(DOCX_W_NS + "tbl"):
+        rows = tbl.findall(DOCX_W_NS + "tr")
+        if not rows:
+            continue
+        header_cells = [_docx_text(tc).strip().lower() for tc in rows[0].findall(DOCX_W_NS + "tc")]
+        q_idx = next((i for i, h in enumerate(header_cells) if re.search(r"\bquestions?\b", h)), None)
+        a_idx = next((i for i, h in enumerate(header_cells) if re.search(r"\b(answer|response)s?\b", h)), None)
+        if q_idx is None:
+            continue
+        for tr in rows[1:]:
+            cells = tr.findall(DOCX_W_NS + "tc")
+            if q_idx >= len(cells):
+                continue
+            qtext = _docx_text(cells[q_idx]).strip()
+            if not qtext:
+                continue
+            existing = _docx_text(cells[a_idx]).strip() if (a_idx is not None and a_idx < len(cells) and _docx_text(cells[a_idx]).strip()) else None
+            questions.append((qtext, existing))
+
+    if questions:
+        return questions
+
+    for p in body.findall(DOCX_W_NS + "p"):
+        text = _docx_text(p).strip()
+        if text.endswith("?"):
+            questions.append((text, None))
+    return questions
+
+
 def _parse_uploaded_file(filename, file_base64):
     ext = (filename or "").rsplit(".", 1)[-1].lower()
     raw = base64.b64decode(file_base64)
@@ -399,6 +457,12 @@ def _parse_uploaded_file(filename, file_base64):
         return _parse_xlsx(raw)
     if ext == "xls":
         raise ValueError("Legacy .xls files aren't supported — please re-save as .xlsx or .csv and re-upload.")
+    if ext == "docx":
+        return _parse_docx(raw)
+    if ext == "doc":
+        raise ValueError("Legacy .doc files aren't supported — please re-save as .docx or .csv and re-upload.")
+    if ext == "pdf":
+        raise ValueError("PDF questionnaires aren't supported yet — please export/retype the questions as .csv, .xlsx, or .docx and re-upload.")
     return _parse_csv(raw.decode("utf-8-sig", errors="replace"))
 
 

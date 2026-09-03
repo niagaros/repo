@@ -273,14 +273,14 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <input class="f-in" id="in-q-name" placeholder="e.g. Acme Corp — SIG Lite 2026">
       </div>
       <div>
-        <label class="f-lbl">CSV or Excel file</label>
+        <label class="f-lbl">CSV, Excel, or Word file</label>
         <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
           <div class="dz-ic">📄</div>
-          <div class="dz-t">Click to choose a .csv or .xlsx file, or drag it here</div>
+          <div class="dz-t">Click to choose a .csv, .xlsx, or .docx file, or drag it here</div>
           <div class="dz-f" id="dz-filename"></div>
         </div>
-        <input type="file" id="file-input" accept=".csv,.xlsx,.xlsm" hidden onchange="onFileChosen(this.files[0])">
-        <div class="f-hint">CSV: one question per row, optionally under a "Question" header column. XLSX: every worksheet with a header cell containing "Question" is read (e.g. CAIQ's per-domain tabs) — sheets without one (cover pages, instructions) are skipped automatically. DOCX/PDF aren't supported yet.</div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xlsm,.docx" hidden onchange="onFileChosen(this.files[0])">
+        <div class="f-hint">CSV: one question per row, optionally under a "Question" header column. XLSX: every worksheet with a header cell containing "Question" is read (e.g. CAIQ's per-domain tabs) — sheets without one are skipped automatically. DOCX: reads a Question/Answer table if present, otherwise every line ending in "?". PDF isn't supported yet.</div>
       </div>
     </div>
     <div class="modal-foot">
