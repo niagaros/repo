@@ -213,7 +213,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       </div>
       <div id="bedrock-notice" class="notice" hidden>
         <span>ℹ</span>
-        <div><b>AI drafting isn't available yet on this AWS account</b> — Amazon Bedrock model access for Anthropic Claude hasn't been provisioned/authorized. The evidence below was still found and matched for real; answer these manually using it until Bedrock access is granted.</div>
+        <div><b>AI drafting is temporarily unavailable</b> — the drafting API could not be reached. The evidence below was still found and matched for real; answer these manually using it, or try Generate again shortly.</div>
       </div>
       <div id="items-list"></div>
     </div>
@@ -423,7 +423,7 @@ async function generateItem(itemId){
   const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'generate_item',item_id:itemId})});
   const d=await r.json();
   if(d.generated) showToast('AI-concept gegenereerd');
-  else if(d.reason==='bedrock_unavailable') showToast('Evidence gevonden, maar AI-tekstgeneratie is nog niet beschikbaar op dit account');
+  else if(d.reason==='bedrock_unavailable') showToast('Evidence gevonden, maar AI-tekstgeneratie is nu niet bereikbaar — probeer later opnieuw');
   else showToast('Geen bewijs gevonden — vul handmatig in');
   await openDetail(activeQuestionnaire.id);
 }
@@ -433,7 +433,7 @@ async function generateAll(){
   const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'generate_all',questionnaire_id:activeQuestionnaire.id})});
   const d=await r.json();
   btn.disabled=false; btn.textContent='✨ Generate AI Drafts';
-  showToast(`${d.generated} gegenereerd · ${d.bedrock_unavailable} evidence gevonden (AI nog niet beschikbaar) · ${d.no_evidence} zonder bewijs`);
+  showToast(`${d.generated} gegenereerd · ${d.bedrock_unavailable} evidence gevonden (AI niet bereikbaar) · ${d.no_evidence} zonder bewijs`);
   await openDetail(activeQuestionnaire.id);
 }
 async function saveItem(itemId,status){

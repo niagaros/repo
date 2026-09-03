@@ -22,10 +22,10 @@ discussion and the rest of this codebase's "no fabricated checks" rule):
     overlap — no vector index, no invented semantic matching.
   - Confidence is computed from how much real evidence was found, not
     self-reported by the model.
-  - If Amazon Bedrock model access isn't provisioned on this AWS account,
-    or no evidence was found for a question, no AI draft is produced —
-    the item is left for a human to answer, with whatever real evidence
-    was found still attached so a reviewer isn't starting from nothing.
+  - If the Groq API key isn't configured yet, or no evidence was found
+    for a question, no AI draft is produced — the item is left for a
+    human to answer, with whatever real evidence was found still attached
+    so a reviewer isn't starting from nothing.
 """
 
 import csv
@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import re
+import urllib.request
 
 import boto3
 import psycopg2
@@ -49,10 +50,8 @@ CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
-BEDROCK_MODEL_ID = os.environ.get(
-    "BEDROCK_MODEL_ID", "eu.anthropic.claude-sonnet-4-20250514-v1:0"
-)
-BEDROCK_REGION = os.environ.get("SECRET_REGION", "eu-west-1")
+GROQ_MODEL_ID = os.environ.get("GROQ_MODEL_ID", "openai/gpt-oss-120b")
+GROQ_SECRET_NAME = os.environ.get("GROQ_SECRET_NAME", "cspm/questionnaire/groq-api-key")
 
 BOOTSTRAP_SQL = """
 CREATE TABLE IF NOT EXISTS questionnaires (
@@ -187,9 +186,25 @@ def _confidence(control_ev, doc_ev):
 
 # ── AI drafting (Bedrock, grounded strictly in retrieved evidence) ──────
 
+_groq_key_cache = None
+
+
+def _get_groq_key():
+    global _groq_key_cache
+    if _groq_key_cache is None:
+        region = os.environ.get("SECRET_REGION", "eu-west-1")
+        client = boto3.client("secretsmanager", region_name=region)
+        secret = client.get_secret_value(SecretId=GROQ_SECRET_NAME)["SecretString"]
+        try:
+            _groq_key_cache = json.loads(secret)["api_key"]
+        except (json.JSONDecodeError, KeyError):
+            _groq_key_cache = secret.strip()
+    return _groq_key_cache
+
+
 def _draft_answer(question_text, control_ev, doc_ev):
-    """Returns (answer_text, error). error is a short string if Bedrock
-    isn't usable on this account; answer_text is None in that case."""
+    """Returns (answer_text, error). error is a short string if the
+    drafting API isn't usable; answer_text is None in that case."""
     if not control_ev and not doc_ev:
         return None, None  # no evidence — caller skips drafting, that's expected
 
@@ -219,22 +234,30 @@ def _draft_answer(question_text, control_ev, doc_ev):
     )
 
     try:
-        client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
-        resp = client.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 400,
-                "messages": [{"role": "user", "content": prompt}],
-            }),
+        api_key = _get_groq_key()
+        req_body = json.dumps({
+            "model": GROQ_MODEL_ID,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 400,
+            "temperature": 0.2,
+            "reasoning_effort": "low",
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=req_body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Mozilla/5.0 (compatible; niagaros-questionnaire-handler/1.0)",
+            },
+            method="POST",
         )
-        payload = json.loads(resp["body"].read())
-        answer = "".join(b.get("text", "") for b in payload.get("content", []) if b.get("type") == "text").strip()
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read())
+        answer = payload["choices"][0]["message"]["content"].strip()
         return (answer or None), None
     except Exception as e:
-        logger.warning("Bedrock draft generation unavailable: %s", e)
+        logger.warning("AI draft generation unavailable: %s", e)
         return None, str(e)
 
 
