@@ -383,6 +383,52 @@ def _parse_uploaded_file(filename, file_base64):
     return _parse_csv(raw.decode("utf-8-sig", errors="replace"))
 
 
+REUSE_SIMILARITY_THRESHOLD = 0.7
+
+
+def _find_reused_answer(cur, cloud_account_id, question_text, exclude_questionnaire_id):
+    """Acceptance criterion from issue #259: previously-approved answers to
+    the same or a near-identical question, from any other questionnaire on
+    this account, are surfaced automatically instead of re-answering from
+    scratch every time. Similarity is plain Jaccard overlap on tokens — the
+    same inspectable method used for evidence retrieval, not an embedding
+    index. Deliberately conservative (0.7 default): a wrong reused answer
+    on a security questionnaire is worse than missing a reuse opportunity,
+    so this only fires on a strong match, and even then leaves the item at
+    'needs_review' rather than auto-approving it."""
+    q_tokens = _tokenize(question_text)
+    if not q_tokens:
+        return None
+    cur.execute("""
+        SELECT qi.question_text, qi.answer_text, q.name, q.id, qi.reviewed_at
+        FROM questionnaire_items qi
+        JOIN questionnaires q ON q.id = qi.questionnaire_id
+        WHERE q.cloud_account_id = %s
+          AND q.id != %s
+          AND qi.answer_status = 'approved'
+          AND qi.answer_text IS NOT NULL
+    """, (cloud_account_id, exclude_questionnaire_id))
+
+    best = None
+    for candidate_q, candidate_a, source_name, source_qid, reviewed_at in cur.fetchall():
+        c_tokens = _tokenize(candidate_q)
+        if not c_tokens:
+            continue
+        union = q_tokens | c_tokens
+        similarity = len(q_tokens & c_tokens) / len(union) if union else 0
+        if similarity >= REUSE_SIMILARITY_THRESHOLD and (best is None or similarity > best["similarity"]):
+            best = {
+                "type": "reused",
+                "answer_text": candidate_a,
+                "source_questionnaire": source_name,
+                "source_questionnaire_id": str(source_qid),
+                "matched_question": candidate_q,
+                "similarity": round(similarity, 2),
+                "approved_at": reviewed_at.isoformat() if reviewed_at else None,
+            }
+    return best
+
+
 def _upload_questionnaire(conn, cloud_account_id, name, filename, file_base64):
     questions = _parse_uploaded_file(filename, file_base64)
     if not questions:
@@ -394,13 +440,23 @@ def _upload_questionnaire(conn, cloud_account_id, name, filename, file_base64):
                 VALUES (%s, %s, %s) RETURNING id
             """, (cloud_account_id, name, filename))
             questionnaire_id = cur.fetchone()[0]
+            reused_count = 0
             for i, (question_text, existing_answer) in enumerate(questions, start=1):
-                status = "unanswered" if not existing_answer else "needs_review"
+                answer_text, status, confidence, evidence = existing_answer, ("needs_review" if existing_answer else "unanswered"), None, []
+                if not existing_answer:
+                    reuse = _find_reused_answer(cur, cloud_account_id, question_text, questionnaire_id)
+                    if reuse:
+                        answer_text = reuse["answer_text"]
+                        status = "needs_review"
+                        confidence = "high"
+                        evidence = [reuse]
+                        reused_count += 1
                 cur.execute("""
-                    INSERT INTO questionnaire_items (questionnaire_id, row_number, question_text, answer_text, answer_status)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (questionnaire_id, i, question_text, existing_answer, status))
-    return str(questionnaire_id), len(questions)
+                    INSERT INTO questionnaire_items
+                        (questionnaire_id, row_number, question_text, answer_text, answer_status, confidence, evidence)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (questionnaire_id, i, question_text, answer_text, status, confidence, Json(evidence)))
+    return str(questionnaire_id), len(questions), reused_count
 
 
 def _list_questionnaires(cur, cloud_account_id):
@@ -539,15 +595,19 @@ def handler(event, context):
                         # Back-compat: plain CSV text sent directly (no file picker).
                         file_b64 = base64.b64encode(body["csv_text"].encode("utf-8")).decode("ascii")
                         filename = filename or "upload.csv"
-                    qid, n = _upload_questionnaire(conn, body["cloud_account_id"], body["name"], filename, file_b64)
+                    qid, n, reused = _upload_questionnaire(conn, body["cloud_account_id"], body["name"], filename, file_b64)
                 except ValueError as ve:
                     return _resp(400, {"error": str(ve)})
-                return _resp(200, {"id": qid, "questions_imported": n})
+                return _resp(200, {"id": qid, "questions_imported": n, "reused_from_prior_approvals": reused})
             if action == "generate_item":
                 return _resp(200, _generate_item(conn, body["item_id"]))
             if action == "generate_all":
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id FROM questionnaire_items WHERE questionnaire_id = %s ORDER BY row_number", (body["questionnaire_id"],))
+                    cur.execute("""
+                        SELECT id FROM questionnaire_items
+                        WHERE questionnaire_id = %s AND answer_text IS NULL
+                        ORDER BY row_number
+                    """, (body["questionnaire_id"],))
                     item_ids = [str(r[0]) for r in cur.fetchall()]
                 results = {"generated": 0, "no_evidence": 0, "bedrock_unavailable": 0}
                 for iid in item_ids:

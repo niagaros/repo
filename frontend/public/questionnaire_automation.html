@@ -127,6 +127,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .ev-chip{font-size:10px;font-weight:600;padding:3px 9px;border-radius:6px;cursor:default;border:1px solid}
 .ev-control{background:#eef2ff;border-color:#c7d2fe;color:#3730a3}
 .ev-doc{background:#f0fdfa;border-color:#99f6e4;color:#0f766e}
+.ev-reused{background:#fdf4ff;border-color:#f0abfc;color:#a21caf}
 .item-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .item-actions{display:flex;gap:6px}
 .no-evidence-note{font-size:11px;color:#9ca3af;font-style:italic;margin-bottom:8px}
@@ -358,7 +359,7 @@ async function submitUpload(){
   const d=await r.json();
   if(!r.ok){showToast('⚠ '+(d.error||'Upload mislukt'));return;}
   closeOvDirect('ov-upload');
-  showToast(d.questions_imported+' vragen geïmporteerd');
+  showToast(d.questions_imported+' vragen geïmporteerd'+(d.reused_from_prior_approvals?' · '+d.reused_from_prior_approvals+' hergebruikt van eerder goedgekeurde antwoorden':''));
   loadAll();
 }
 async function deleteQuestionnaire(id,name){
@@ -381,6 +382,9 @@ async function openDetail(id){
 function evidenceChip(e){
   if(e.type==='control'){
     return `<span class="ev-chip ev-control" title="${esc(e.description||'')}">${esc(e.check_id)} · ${e.status}</span>`;
+  }
+  if(e.type==='reused'){
+    return `<span class="ev-chip ev-reused" title="Matched question: ${esc(e.matched_question)} (${Math.round(e.similarity*100)}% similar)">♻ Reused from "${esc(e.source_questionnaire)}"</span>`;
   }
   return `<span class="ev-chip ev-doc" title="${esc(e.excerpt||'')}">📄 ${esc(e.section_title||e.source_path)}</span>`;
 }
