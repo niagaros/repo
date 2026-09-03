@@ -18,7 +18,8 @@ produced and the item is left for a human to fill in.
   shell as every other framework page, reachable via the new "Questionnaires"
   sidebar item added to the dashboard and all framework pages.
 - **DB**: `questionnaires`, `questionnaire_items`, `evidence_documents`
-  (migration `007_questionnaire_automation.sql`).
+  (migration `007_questionnaire_automation.sql`); `questionnaire_item_comments`,
+  `questionnaire_item_history` (migration `008_questionnaire_collaboration.sql`).
 
 ## How evidence retrieval works
 
@@ -106,16 +107,62 @@ control is currently failing") instead of glossing over them when the
 evidence is mixed — which is the point of grounding the prompt strictly in
 retrieved evidence rather than letting the model free-associate.
 
+## Acceptance criteria from issue #259 — status
+
+1. ✅ **Previously-approved answers auto-matched.** On upload, every question
+   without a file-provided answer is checked (Jaccard token overlap, ≥0.7
+   similarity) against every approved answer from this account's other
+   questionnaires. Deliberately conservative and never auto-approves — lands
+   at `needs_review` with an evidence entry recording the source.
+2. ✅ **Relevant evidence suggested/attached automatically.** The evidence
+   chips described above.
+3. ✅ **Low-confidence answers flagged for review.** `confidence: "low"`
+   (no real evidence found) never gets an AI draft; item stays `needs_review`.
+4. ⚠️ **"Original formatting preserved" on export.** Not applicable as
+   specified — export is CSV-only in both directions, so there's no
+   "original formatting" to preserve. Would need format-matching export
+   (e.g. re-filling the original XLSX/DOCX) to actually satisfy this.
+5. ✅ **Outdated responses flagged when evidence changes.** Every fetch of a
+   questionnaire recomputes each cited control's *current* live status/counts
+   and compares against what was stored at drafting time; a mismatch sets
+   `is_stale: true` on the item.
+6. ✅ **Analytics: automation rate, review time, completion rate.**
+   `GET ?cloud_account_id=..&analytics=1` — real aggregates only, no assumed
+   "time saved per question" constant.
+
+## Collaboration (comments, approval history)
+
+`questionnaire_item_comments` (a flat discussion thread per item) and
+`questionnaire_item_history` (every `answer_status` transition — from, to,
+who, when, logged inside `_update_item`). No multi-user auth is wired into
+this Lambda (the dashboard's bearer token is opaque, validated elsewhere),
+so `author_name`/`actor_name` is a display name the browser asks for once
+and remembers in `localStorage` — a real name people type in, not a
+fabricated identity/role system. **Not built**: assigned reviewers and
+@mentions from the issue — without real user accounts to assign or notify,
+faking that would just be names with no routing/notification behind them.
+
+The detail view also surfaces an `outstanding_count` (items not yet
+`approved`) as a header pill.
+
+## Supported upload formats
+
+| Format | Status | How |
+|---|---|---|
+| CSV | ✅ | stdlib `csv`, header row with a "Question" column recognized automatically |
+| XLSX/XLSM | ✅ | `openpyxl` (vendored, pure-Python — no compiled extension needed). Every worksheet is checked independently for a header cell matching `\bquestions?\b`; sheets without one (cover pages, instructions) are skipped. Handles CAIQ's 17 CCM-domain-tab layout. |
+| DOCX | ✅ | Reads `word/document.xml` directly via stdlib `zipfile`+`ElementTree` — deliberately avoids `python-docx`/`lxml` (a compiled C extension needing its own manylinux wheel) for a format this simple to read directly. Prefers a Question/Answer table; falls back to every paragraph ending in "?". |
+| XLS / DOC (legacy binary) | ❌ | Clear upload error asking for `.xlsx`/`.docx`/`.csv` instead. |
+| PDF | ❌ | Not attempted — reliable Q&A extraction from arbitrary PDF layouts needs real, dedicated work (AcroForm fields vs. free text vary wildly); a rushed heuristic risks silently mis-reading questions, which is worse than refusing the upload. |
+
 ## Known limitations / not yet built
 
-- **CSV only.** XLSX/DOCX/PDF questionnaires aren't parsed; the upload UI
-  says so rather than silently mishandling them.
-- **No collaboration** (comments, mentions, assigned reviewers) and **no
-  analytics dashboard** — issue #259 asked for both, out of scope for this
-  pass.
-- **No cross-questionnaire answer library** — every questionnaire's
-  evidence retrieval runs independently; a previously-approved answer to
-  the same question on a different questionnaire isn't reused or suggested.
+- **PDF upload** (see table above).
+- **No "generate PDF report" / "customer-ready package" / "secure sharing
+  link"** export options — CSV export only.
+- **No searchable, tagged knowledge-base browser** — the approved-answer
+  reuse mechanism works automatically at upload time, but there's no UI to
+  browse/search/tag the accumulated approved answers directly.
 - **`evidence_documents` is a point-in-time seed**, not synced live from the
   docs folder — re-run the seed after editing `docs/public/security/**/*.md`
   in any way that should show up in future drafts.
