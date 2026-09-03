@@ -35,7 +35,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 
 /* Compliance dropdown */
 .drop-items{overflow:hidden;max-height:0;transition:max-height .28s ease}
-.drop-items.open{max-height:300px}
+.drop-items.open{max-height:1300px}
 .di{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 40px;font-size:12px;font-weight:500;color:#6b7280;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .12s;white-space:nowrap}
 .di:hover{background:#161b27;color:#e5e7eb}
 .di.on{color:#ef4444;font-weight:600}
@@ -282,6 +282,14 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 #fix-modal{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:24px}
 #fix-modal.open{display:flex}
 #fix-box{background:#12151d;border:1px solid #1e2433;border-radius:16px;padding:32px;max-width:580px;width:100%;position:relative;box-shadow:0 24px 48px rgba(0,0,0,.5)}
+.fix-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:6px;font-size:11px;font-weight:700}
+.fix-sev-CRITICAL{background:rgba(239,68,68,.12);color:#f87171}
+.fix-sev-HIGH{background:rgba(249,115,22,.12);color:#fb923c}
+.fix-sev-MEDIUM{background:rgba(245,158,11,.12);color:#fbbf24}
+.fix-sev-LOW{background:rgba(59,130,246,.12);color:#60a5fa}
+.fix-st-FAIL{background:rgba(239,68,68,.12);color:#f87171}
+.fix-st-PASS{background:rgba(16,185,129,.12);color:#34d399}
+.fix-chk-tag{background:#0d0f14;border:1px solid #1e2433;color:#94a3b8;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:600;font-family:monospace}
 #fix-close{position:absolute;top:14px;right:16px;background:none;border:none;color:#475569;font-size:22px;cursor:pointer;line-height:1;padding:4px}
 #fix-close:hover{color:#94a3b8}
 
@@ -322,6 +330,49 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .toast-bar{height:100%;background:linear-gradient(90deg,#ef4444,#f97316);border-radius:2px;width:0%;transition:width .8s ease}
 .toast-close{position:fixed;top:24px;right:28px;color:#4b5563;cursor:pointer;font-size:24px;line-height:1;transition:color .12s}
 .toast-close:hover{color:#9ca3af}
+
+/* ── CROSS-COMPLIANCE HEATMAP ─────────────────────────── */
+#v-heatmap{color:#111827}
+.hm-outer{background:#fff;border-radius:12px;padding:24px;border:1px solid #e5e7eb}
+.hm-header{text-align:center;margin-bottom:20px}
+.hm-main-title{font-size:18px;font-weight:700;color:#111827;letter-spacing:.01em;margin-bottom:4px}
+.hm-main-sub{font-size:12px;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase}
+.hm-filter-bar{display:flex;align-items:center;gap:7px;margin-bottom:14px;flex-wrap:wrap}
+.hm-search{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e5e7eb;padding:6px 12px;border-radius:8px;min-width:180px}
+.hm-search input{border:none;outline:none;background:transparent;color:#374151;font-size:12px;font-family:'Inter',sans-serif;width:100%}
+.hm-search input::placeholder{color:#9ca3af}
+.hm-bi-btn{padding:5px 13px;border-radius:6px;border:1px solid #e5e7eb;font-size:11px;font-weight:700;cursor:pointer;background:#fff;color:#6b7280;transition:all .15s;letter-spacing:.03em}
+.hm-bi-btn.hm-bi-active{background:#ef4444;color:#fff;border-color:#ef4444}
+.hm-sel{background:#fff;border:1px solid #e5e7eb;padding:5px 10px;border-radius:7px;font-size:12px;color:#374151;font-family:'Inter',sans-serif;outline:none;cursor:pointer}
+.hm-toggle{background:#f9fafb;border:1px solid #e5e7eb;color:#374151;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;margin-left:auto}
+.hm-toggle.on{background:#ef4444;color:#fff;border-color:#ef4444}
+.hm-body-wrap{display:flex;align-items:stretch;gap:10px}
+.hm-wrap{overflow-x:auto;flex:1}
+.hm-table{width:100%;border-collapse:separate;border-spacing:4px;min-width:400px}
+.hm-th{padding:8px 6px;font-size:11px;font-weight:700;color:#6b7280;text-align:center;white-space:nowrap;background:transparent;letter-spacing:.04em}
+.hm-th.row-hdr{text-align:left;min-width:160px;color:#9ca3af}
+.hm-td-label{padding:6px 8px 6px 2px;font-size:12.5px;font-weight:500;color:#374151;white-space:nowrap;vertical-align:middle}
+.hm-td-label .hm-bi-tag{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:middle;letter-spacing:.04em}
+.hm-td{padding:2px;text-align:center;vertical-align:middle}
+.hm-cell{border-radius:7px;padding:12px 8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;min-width:68px;min-height:46px;transition:transform .12s,filter .12s;cursor:default;position:relative}
+.hm-cell:hover{transform:scale(1.06);filter:brightness(1.08);z-index:2}
+.hm-cell.hm-high{background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff}
+.hm-cell.hm-medh{background:linear-gradient(135deg,#65a30d,#84cc16);color:#fff}
+.hm-cell.hm-med{background:linear-gradient(135deg,#ca8a04,#eab308);color:#fff}
+.hm-cell.hm-low{background:linear-gradient(135deg,#c2410c,#f97316);color:#fff}
+.hm-cell.hm-risk{background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff}
+.hm-cell.hm-none{background:#f3f4f6;color:#d1d5db}
+.hm-cell .hm-pct{font-size:13px;font-weight:800;letter-spacing:-.01em}
+.hm-scale{display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0 4px 4px;min-width:26px}
+.hm-scale-bar{width:12px;flex:1;border-radius:6px;background:linear-gradient(to bottom,#22c55e,#84cc16,#eab308,#f97316,#ef4444);min-height:160px}
+.hm-scale-lbl{font-size:10px;color:#9ca3af;font-weight:600}
+.hm-legend{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:18px;flex-wrap:wrap}
+.hm-lg{display:flex;align-items:center;gap:6px;font-size:11px;color:#6b7280;font-weight:500}
+.hm-lg-dot{width:14px;height:10px;border-radius:3px;flex-shrink:0}
+.hm-summary{display:grid;gap:8px;margin-top:20px}
+.hm-sum-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px;text-align:center}
+.hm-sum-n{font-size:20px;font-weight:800;margin-bottom:3px}
+.hm-sum-l{font-size:10px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 </style>
 </head>
 <body>
@@ -332,9 +383,18 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <button id="fix-close" onclick="closeFix()">×</button>
     <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#ef4444;margin-bottom:8px" id="fix-checkid"></div>
     <h3 style="color:#f1f5f9;margin:0 0 6px;font-size:16px;font-weight:700;line-height:1.4" id="fix-title"></h3>
-    <div style="font-size:12px;color:#475569;margin-bottom:20px" id="fix-resource"></div>
+    <div style="font-size:12px;color:#475569;margin-bottom:12px" id="fix-resource"></div>
+    <div style="display:flex;gap:8px;margin-bottom:20px" id="fix-badges"></div>
+    <div id="fix-desc-wrap" style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Description</div>
+      <div id="fix-description" style="font-size:13px;color:#94a3b8;line-height:1.7"></div>
+    </div>
     <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Remediation</div>
     <div id="fix-remediation" style="font-size:13px;color:#cbd5e1;line-height:1.75;background:#0d0f14;border:1px solid #1e2433;border-radius:10px;padding:16px 18px;white-space:pre-wrap"></div>
+    <div id="fix-checks-wrap" style="margin-top:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Mapped CIS Checks</div>
+      <div id="fix-checks" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
   </div>
 </div>
 
@@ -368,6 +428,12 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <span class="da" id="drop-arrow">▾</span>
     </div>
     <div class="drop-items" id="drop-items">
+      <div class="di" id="ni-heatmap" onclick="show('heatmap',this)">
+        <span class="di-dot" style="background:#ef4444"></span>Cross-Compliance Heatmap
+      </div>
+      <div class="di" onclick="navTo('cis_controls.html')">
+        <span class="di-dot" style="background:#0d9488"></span>CIS Controls v8.1
+      </div>
       <div class="di on" onclick="navTo('cis_benchmark.html')">
         <span class="di-dot" style="background:#3b82f6"></span>CIS Benchmark
       </div>
@@ -382,6 +448,75 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       </div>
       <div class="di" onclick="navTo('soc2.html')">
         <span class="di-dot" style="background:#ec4899"></span>SOC 2
+      </div>
+      <div class="di" onclick="navTo('iso42001.html')">
+        <span class="di-dot" style="background:#06b6d4"></span>ISO 42001:2023
+      </div>
+      <div class="di" onclick="navTo('iso27017.html')">
+        <span class="di-dot" style="background:#14b8a6"></span>ISO 27017:2015
+      </div>
+      <div class="di" onclick="navTo('aws_ftr.html')">
+        <span class="di-dot" style="background:#ff9900"></span>AWS FTR
+      </div>
+      <div class="di" onclick="navTo('mvsp.html')">
+        <span class="di-dot" style="background:#a855f7"></span>MVSP
+      </div>
+      <div class="di" onclick="navTo('tisax.html')">
+        <span class="di-dot" style="background:#f43f5e"></span>TISAX
+      </div>
+      <div class="di" onclick="navTo('nis2.html')">
+        <span class="di-dot" style="background:#14b8a6"></span>NIS2
+      </div>
+      <div class="di" onclick="navTo('nist_800_53.html')">
+        <span class="di-dot" style="background:#a78bfa"></span>NIST SP 800-53
+      </div>
+      <div class="di" onclick="navTo('hipaa.html')">
+        <span class="di-dot" style="background:#f87171"></span>HIPAA
+      </div>
+      <div class="di" onclick="navTo('pci_dss.html')">
+        <span class="di-dot" style="background:#fbbf24"></span>PCI DSS
+      </div>
+      <div class="di" onclick="navTo('c5.html')">
+        <span class="di-dot" style="background:#94a3b8"></span>BSI C5
+      </div>
+      <div class="di" onclick="navTo('csa_ccm.html')">
+        <span class="di-dot" style="background:#0ea5e9"></span>CSA CCM 4.0
+      </div>
+      <div class="di" onclick="navTo('fedramp.html')">
+        <span class="di-dot" style="background:#2563eb"></span>FedRAMP Moderate
+      </div>
+      <div class="di" onclick="navTo('hitrust.html')">
+        <span class="di-dot" style="background:#22c55e"></span>HITRUST CSF
+      </div>
+      <div class="di" onclick="navTo('dora.html')">
+        <span class="di-dot" style="background:#7c3aed"></span>DORA
+      </div>
+      <div class="di" onclick="navTo('cri_profile.html')">
+        <span class="di-dot" style="background:#0891b2"></span>CRI Profile
+      </div>
+      <div class="di" onclick="navTo('nydfs.html')">
+        <span class="di-dot" style="background:#be123c"></span>23 NYCRR 500 (NYDFS)
+      </div>
+      <div class="di" onclick="navTo('eu_ai_act.html')">
+        <span class="di-dot" style="background:#d946ef"></span>EU AI Act
+      </div>
+      <div class="di" onclick="navTo('nist_ai_rmf.html')">
+        <span class="di-dot" style="background:#eab308"></span>NIST AI RMF
+      </div>
+      <div class="di" onclick="navTo('iso27701.html')">
+        <span class="di-dot" style="background:#be185d"></span>ISO 27701
+      </div>
+      <div class="di" onclick="navTo('iso27018.html')">
+        <span class="di-dot" style="background:#7e22ce"></span>ISO 27018
+      </div>
+      <div class="di" onclick="navTo('sspa.html')">
+        <span class="di-dot" style="background:#4f46e5"></span>Microsoft SSPA
+      </div>
+      <div class="di" onclick="navTo('nist_privacy.html')">
+        <span class="di-dot" style="background:#0284c7"></span>NIST Privacy Framework
+      </div>
+      <div class="di" onclick="navTo('custom_frameworks.html')">
+        <span class="di-dot" style="background:#0284c7"></span>Custom Frameworks
       </div>
     </div>
 
@@ -496,6 +631,29 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
             <option value="cloudwatch">CloudWatch</option><option value="kms">KMS</option>
             <option value="iso27001">ISO 27001</option><option value="nist">NIST CSF</option>
             <option value="gdpr">GDPR</option><option value="soc2">SOC 2</option>
+            <option value="iso42001">ISO 42001</option>
+            <option value="iso27017">ISO 27017</option>
+            <option value="awsftr">AWS FTR</option>
+            <option value="mvsp">MVSP</option>
+            <option value="tisax">TISAX</option>
+            <option value="hipaa">HIPAA</option>
+            <option value="nis2">NIS2</option>
+            <option value="pcidss">PCI DSS</option>
+            <option value="nist80053">NIST 800-53</option>
+            <option value="bsic5">BSI C5</option>
+            <option value="csaccm">CSA CCM</option>
+            <option value="fedramp">FedRAMP</option>
+            <option value="hitrust">HITRUST CSF</option>
+            <option value="dora">DORA</option>
+            <option value="criprofile">CRI Profile</option>
+            <option value="euaiact">EU AI Act</option>
+            <option value="nistairmf">NIST AI RMF</option>
+            <option value="iso27701">ISO 27701</option>
+            <option value="iso27018">ISO 27018</option>
+            <option value="sspa">Microsoft SSPA</option>
+            <option value="cisctrl">CIS Controls v8.1</option>
+            <option value="nydfs">23 NYCRR 500 (NYDFS)</option>
+            <option value="nistpriv">NIST Privacy Framework</option>
           </select>
         </div>
         <div id="dr-evidence-banner" hidden style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px 20px;margin-bottom:14px">
@@ -581,6 +739,52 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <div class="proj-grid" id="proj-grid"></div>
       </div>
 
+      <!-- ── HEATMAP ── -->
+      <div id="v-heatmap" hidden>
+        <div class="hm-outer">
+          <div class="hm-header">
+            <div class="hm-main-title">Cross-Compliance Heatmap</div>
+            <div class="hm-main-sub">Similarity &amp; Overlap Analysis</div>
+          </div>
+          <div class="hm-filter-bar">
+            <div class="hm-search">
+              <span style="color:#334155;font-size:13px">🔍</span>
+              <input type="text" id="hm-q" placeholder="Search domain…" oninput="renderHeatmap()">
+            </div>
+            <button class="hm-bi-btn hm-bi-active" id="hm-bi-all" onclick="setHmBi('all')">All</button>
+            <button class="hm-bi-btn" id="hm-bi-H" onclick="setHmBi('H')">HBI</button>
+            <button class="hm-bi-btn" id="hm-bi-M" onclick="setHmBi('M')">MBI</button>
+            <button class="hm-bi-btn" id="hm-bi-L" onclick="setHmBi('L')">LBI</button>
+            <select class="hm-sel" id="hm-fw-filter" onchange="renderHeatmap()">
+              <option value="">All Frameworks</option>
+            </select>
+            <button class="hm-toggle" id="hm-pct-btn" onclick="toggleHmPct()">Show %</button>
+          </div>
+          <div class="hm-body-wrap">
+            <div class="hm-wrap">
+              <table class="hm-table" id="hm-table">
+                <thead id="hm-thead"></thead>
+                <tbody id="hm-tbody"></tbody>
+              </table>
+            </div>
+            <div class="hm-scale">
+              <div class="hm-scale-lbl">100</div>
+              <div class="hm-scale-bar"></div>
+              <div class="hm-scale-lbl">0</div>
+            </div>
+          </div>
+          <div class="hm-summary" id="hm-summary"></div>
+          <div class="hm-legend">
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#16a34a,#22c55e)"></div>High (&gt;80%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#65a30d,#84cc16)"></div>Good (60–80%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#ca8a04,#eab308)"></div>Medium (40–60%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#c2410c,#f97316)"></div>Low (20–40%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:linear-gradient(135deg,#b91c1c,#ef4444)"></div>At Risk (&lt;20%)</div>
+            <div class="hm-lg"><div class="hm-lg-dot" style="background:#1e2d3d;border:1px solid #2d4057"></div>No Data</div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
 
     <!-- RIGHT PANEL -->
@@ -640,6 +844,7 @@ const API         = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/defa
 const TRIGGER_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trigger-orchestrator';
 let allF=[], filtF=[], pg=1, svcF='', drResults=[];
 let currentAccountId=null, allAccounts=[];
+let lastCrossCompliance=null, hmShowPct=false, hmBiF='all';
 
 // ── Account switcher ─────────────────────────────────
 function toggleAcctDd(){
@@ -678,8 +883,8 @@ function toggleDrop(){
   d.classList.toggle('open'); a.classList.toggle('open');
 }
 
-const VIEWS=['dashboard','inventory','issues','graph','policies','reports','projects'];
-const NAV_IDS={dashboard:'ni-dash',inventory:'ni-inv',issues:'ni-issues',graph:'ni-graph',policies:'ni-pol',reports:'ni-rep',projects:'ni-proj'};
+const VIEWS=['dashboard','inventory','issues','graph','policies','reports','projects','heatmap'];
+const NAV_IDS={dashboard:'ni-dash',inventory:'ni-inv',issues:'ni-issues',graph:'ni-graph',policies:'ni-pol',reports:'ni-rep',projects:'ni-proj',heatmap:'ni-heatmap'};
 function getHashView(){
   const hash = window.location.hash.slice(1);
   return VIEWS.includes(hash) ? hash : 'dashboard';
@@ -697,10 +902,12 @@ function show(v,el){
   document.getElementById('rp').hidden = v!=='dashboard';
   document.getElementById('tp-title').textContent = {
     dashboard:'Security Dashboard',inventory:'Inventory',issues:'Issues',
-    graph:'Security Graph',policies:'Policies',reports:'Reports',projects:'Projects'
+    graph:'Security Graph',policies:'Policies',reports:'Reports',projects:'Projects',
+    heatmap:'Cross-Compliance Heatmap'
   }[v]||v;
   if(v==='issues') renderPg();
   if(v==='inventory') renderInv();
+  if(v==='heatmap') renderHeatmap();
 }
 
 // ── Scan toast ────────────────────────────────────────
@@ -748,9 +955,10 @@ async function triggerScan(){
 
   try {
     const _tok=localStorage.getItem('niagaros_token')||'';
-    await fetch(TRIGGER_API + (currentAccountId ? '?account_id='+encodeURIComponent(currentAccountId) : ''), {
+    const triggerResp = await fetch(TRIGGER_API + (currentAccountId ? '?account_id='+encodeURIComponent(currentAccountId) : ''), {
       method: 'POST', headers: _tok ? {Authorization:'Bearer '+_tok} : {}
     });
+    if (triggerResp.status === 401) { location.href = '/'; return; }
     renderToastSteps([0], [1]);
 
     // Poll every 10s; close only when total findings count is stable for 2 consecutive
@@ -767,6 +975,7 @@ async function triggerScan(){
       try {
         const url = currentAccountId ? API+'?account_id='+encodeURIComponent(currentAccountId) : API;
         const r = await fetch(url, { headers: _tok ? {Authorization:'Bearer '+_tok} : {} });
+        if (r.status === 401) { location.href = '/'; return; }
         const d = await r.json();
         lastData = d;
         const count = (d.total && d.total.total) || 0;
@@ -808,10 +1017,31 @@ async function triggerScan(){
 function showFix(idx){
   const f=filtF[idx];
   if(!f)return;
-  document.getElementById('fix-checkid').textContent=f.check_id||'';
+  document.getElementById('fix-checkid').textContent=(f.framework?f.framework+' · ':'')+(f.check_id||'');
   document.getElementById('fix-title').textContent=f.title||f.check_id||'';
   document.getElementById('fix-resource').textContent=f.resource_name?'Resource: '+f.resource_name:'';
+
+  const sev=(f.severity||'LOW').toUpperCase();
+  const st=f.result==='FAIL'?'FAIL':'PASS';
+  document.getElementById('fix-badges').innerHTML=
+    `<span class="fix-pill fix-sev-${sev}">${sev.charAt(0)+sev.slice(1).toLowerCase()}</span>`+
+    `<span class="fix-pill fix-st-${st}">${st}</span>`;
+
+  const descWrap=document.getElementById('fix-desc-wrap');
+  if(f.description){descWrap.hidden=false;document.getElementById('fix-description').textContent=f.description;}
+  else{descWrap.hidden=true;}
+
   document.getElementById('fix-remediation').textContent=f.remediation||'No remediation guidance available for this check.';
+
+  const checksWrap=document.getElementById('fix-checks-wrap');
+  const mapped=(f.details&&f.details.mapped_checks)||[];
+  if(mapped.length){
+    checksWrap.hidden=false;
+    document.getElementById('fix-checks').innerHTML=mapped.map(c=>`<span class="fix-chk-tag">${c}</span>`).join('');
+  }else{
+    checksWrap.hidden=true;
+  }
+
   document.getElementById('fix-modal').classList.add('open');
 }
 function closeFix(){
@@ -823,11 +1053,34 @@ function generatePDF(type){
   const now = new Date().toLocaleDateString('nl-NL',{day:'2-digit',month:'long',year:'numeric'});
   const account = document.getElementById('chip-account').textContent.replace('▾','').replace('🏢','').trim();
   const defs = {
-    cis:     {title:'CIS Benchmark Report',     desc:'CIS AWS Foundations Benchmark compliance assessment with remediation guidance.',   filter: f=>!['ISO27001','NIST','GDPR','SOC2'].includes(f.service)},
+    cis:     {title:'CIS Benchmark Report',     desc:'CIS AWS Foundations Benchmark compliance assessment with remediation guidance.',   filter: f=>!['ISO27001','NIST','GDPR','SOC2','ISO42001','ISO27017','AWSFTR','MVSP','TISAX','HIPAA','NIS2','PCIDSS','NIST80053','BSIC5','CSACCM','FEDRAMP','HITRUST','DORA','CRIPROFILE','EUAIACT','NISTAIRMF','ISO27701','ISO27018','SSPA','CISCTRL','NYDFS','CUSTOM','NISTPRIV'].includes(f.service)},
     iso:     {title:'ISO 27001:2022 Report',    desc:'ISO 27001:2022 Annex A control mapping and compliance status overview.',          filter: f=>f.service==='ISO27001'},
     nist:    {title:'NIST CSF v2.0 Report',     desc:'NIST Cybersecurity Framework v2.0 control assessment across all functions.',      filter: f=>f.service==='NIST'},
     gdpr:    {title:'GDPR Compliance Report',   desc:'EU General Data Protection Regulation Articles 25, 30 and 32 compliance status for AWS environment.',  filter: f=>f.service==='GDPR'},
     soc2:    {title:'SOC 2 Compliance Report',  desc:'SOC 2 Trust Services Criteria assessment across CC, A, C and PI control categories.',                  filter: f=>f.service==='SOC2'},
+    iso42001:{title:'ISO 42001:2023 Report',    desc:'ISO/IEC 42001 AI Management System Annex A control assessment.',                                       filter: f=>f.service==='ISO42001'},
+    iso27017:{title:'ISO 27017:2015 Report',    desc:'Cloud-specific information security controls assessment.',                                             filter: f=>f.service==='ISO27017'},
+    awsftr:  {title:'AWS FTR Report',           desc:'AWS Foundational Technical Review security requirement areas.',                                        filter: f=>f.service==='AWSFTR'},
+    mvsp:    {title:'MVSP Report',              desc:'Minimum Viable Secure Product control assessment.',                                                    filter: f=>f.service==='MVSP'},
+    tisax:   {title:'TISAX Report',             desc:'TISAX (VDA ISA) IT security chapter assessment.',                                                      filter: f=>f.service==='TISAX'},
+    hipaa:   {title:'HIPAA Report',             desc:'45 CFR Part 164 Administrative & Technical Safeguards assessment.',                                    filter: f=>f.service==='HIPAA'},
+    nis2:    {title:'NIS2 Report',              desc:'EU NIS2 Directive Article 21 measures assessment.',                                                    filter: f=>f.service==='NIS2'},
+    pcidss:  {title:'PCI DSS Report',           desc:'PCI DSS v4.0 payment card data security assessment.',                                                  filter: f=>f.service==='PCIDSS'},
+    nist80053:{title:'NIST SP 800-53 Report',   desc:'NIST SP 800-53 Rev 5 security & privacy controls assessment.',                                         filter: f=>f.service==='NIST80053'},
+    bsic5:   {title:'BSI C5 Report',            desc:'BSI Cloud Computing Compliance Criteria Catalogue assessment.',                                        filter: f=>f.service==='BSIC5'},
+    csaccm:  {title:'CSA CCM Report',           desc:'Cloud Security Alliance Cloud Controls Matrix v4.0 assessment.',                                       filter: f=>f.service==='CSACCM'},
+    fedramp: {title:'FedRAMP Report',           desc:'FedRAMP Moderate Baseline (NIST 800-53 Rev 4) assessment.',                                            filter: f=>f.service==='FEDRAMP'},
+    hitrust: {title:'HITRUST CSF Report',       desc:'HITRUST CSF v11 Common Security Framework assessment.',                                                filter: f=>f.service==='HITRUST'},
+    dora: {title:'DORA Report',                 desc:'Digital Operational Resilience Act ICT risk assessment.',                                              filter: f=>f.service==='DORA'},
+    criprofile: {title:'CRI Profile Report',    desc:'Cyber Risk Institute Profile financial-sector assessment.',                                            filter: f=>f.service==='CRIPROFILE'},
+    euaiact: {title:'EU AI Act Report',         desc:'Regulation (EU) 2024/1689 high-risk AI system assessment.',                                            filter: f=>f.service==='EUAIACT'},
+    nistairmf: {title:'NIST AI RMF Report',     desc:'NIST AI Risk Management Framework 1.0 assessment.',                                                    filter: f=>f.service==='NISTAIRMF'},
+    iso27701: {title:'ISO 27701 Report',        desc:'Privacy Information Management System assessment.',                                                   filter: f=>f.service==='ISO27701'},
+    iso27018: {title:'ISO 27018 Report',        desc:'PII Protection in Public Clouds assessment.',                                                          filter: f=>f.service==='ISO27018'},
+    sspa: {title:'Microsoft SSPA Report',       desc:'Supplier Security & Privacy Assurance Program assessment.',                                            filter: f=>f.service==='SSPA'},
+    cisctrl: {title:'CIS Controls v8.1 Report', desc:'Vendor-neutral security program assessment (8 of 18 controls with a real technical proxy).',            filter: f=>f.service==='CISCTRL'},
+    nydfs: {title:'23 NYCRR 500 (NYDFS) Report', desc:'NY Dept. of Financial Services cybersecurity regulation assessment (6 of 18 sections with a real technical proxy).', filter: f=>f.service==='NYDFS'},
+    nistpriv: {title:'NIST Privacy Framework Report', desc:'Privacy risk management assessment (3 of ~19 categories with a real technical proxy).', filter: f=>f.service==='NISTPRIV'},
     exec:    {title:'Executive Summary',        desc:'High-level security posture overview for stakeholders and management.',           filter: f=>true},
     critical:{title:'Critical Issues Report',   desc:'Detailed breakdown of all critical and high severity findings requiring attention.',filter: f=>['CRITICAL','HIGH'].includes(f.severity)},
     iam:     {title:'IAM Access Report',        desc:'IAM user, role and policy audit with least-privilege recommendations.',           filter: f=>f.service==='IAM'},
@@ -908,6 +1161,9 @@ function render(d){
   const tot=d.total||{}, score=tot.score||0, passed=tot.passed||0, total=tot.total||0;
   const failed=total-passed, bySev=d.by_severity||{}, svcs=d.services||[];
   allF=d.findings||[]; filtF=[...allF];
+  lastCrossCompliance=d.cross_compliance||null;
+  const fwSel0=document.getElementById('hm-fw-filter');
+  if(fwSel0){ fwSel0.innerHTML='<option value="">All Frameworks</option>'; }
   drResults=d.dr_test_results||[];
 
   // Update accounts list + switcher
@@ -916,22 +1172,22 @@ function render(d){
   renderAcctList();
 
   document.getElementById('last-scan').textContent='Last scan: '+(d.last_scan_at||'—').substring(0,16);
-  document.getElementById('nav-count').textContent=allF.filter(f=>f.result==='FAIL').length;
+  document.getElementById('nav-count').textContent=failed;
   if(d.account_name) document.getElementById('chip-account').textContent='🏢 '+d.account_name+' ▾';
   else if(d.account_id) document.getElementById('chip-account').textContent='🏢 '+d.account_id.substring(0,8)+'… ▾';
 
   // ── Summary bar ─────────────────────────────────
+  // Open Issues / Compliance Score use the raw, non-duplicated issue count
+  // (d.total, scoped server-side to the raw scanner output) — not a sum
+  // across all 27 frameworks, which would count one real problem once per
+  // framework that happens to flag it.
   const totalAssets = new Set(allF.map(f=>f.resource_id).filter(Boolean)).size;
-  const openIssues  = allF.filter(f=>f.result==='FAIL').length;
-  const allFws      = svcs; // all framework/service rows
-  const combinedP   = allFws.reduce((a,s)=>a+s.passed,0);
-  const combinedT   = allFws.reduce((a,s)=>a+s.total,0);
-  const combinedScore = combinedT ? Math.round(combinedP/combinedT*100) : score;
+  const openIssues  = failed;
   const activeProjects = 6; // static until projects come from DB
   const sumStats=[
     {ico:'📦',bg:'#eff6ff',n:totalAssets,  l:'Total Assets',      clr:'#3b82f6', action:()=>show('inventory',document.getElementById('ni-inv'))},
     {ico:'⚠', bg:'#fef2f2',n:openIssues,   l:'Open Issues',       clr:'#ef4444', action:()=>{document.getElementById('f-res').value='FAIL';applyF();show('issues',document.getElementById('ni-issues'));}},
-    {ico:'✓', bg:'#f0fdf4',n:combinedScore+'%',l:'Compliance Score',clr:'#10b981',action:()=>show('dashboard',document.getElementById('ni-dash'))},
+    {ico:'✓', bg:'#f0fdf4',n:score+'%',l:'Compliance Score',clr:'#10b981',action:()=>show('dashboard',document.getElementById('ni-dash'))},
     {ico:'🗂',bg:'#fdf4ff',n:activeProjects,l:'Projects in Progress',clr:'#8b5cf6',action:()=>show('projects',document.getElementById('ni-proj'))},
   ];
   document.getElementById('sum-bar').innerHTML=sumStats.map((s,i)=>
@@ -963,19 +1219,65 @@ function render(d){
   later(()=>$$('.ov-bar-f').forEach(b=>b.style.width=b.dataset.w+'%'));
 
   // ── Compliance ──────────────────────────────────
-  const cisSvcs=svcs.filter(s=>!['ISO27001','NIST','GDPR','SOC2'].includes(s.service));
+  const cisSvcs=svcs.filter(s=>!['ISO27001','NIST','GDPR','SOC2','ISO42001','ISO27017','AWSFTR','MVSP','TISAX','HIPAA','NIS2','PCIDSS','NIST80053','BSIC5','CSACCM','FEDRAMP','HITRUST','DORA','CRIPROFILE','EUAIACT','NISTAIRMF','ISO27701','ISO27018','SSPA','CISCTRL','NYDFS','CUSTOM','NISTPRIV'].includes(s.service));
   const cisT=cisSvcs.reduce((a,s)=>a+s.total,0), cisP=cisSvcs.reduce((a,s)=>a+s.passed,0);
   const cisScore=cisT?Math.round(cisP/cisT*100):0;
   const iso=svcs.find(s=>s.service==='ISO27001')||{score:0,passed:0,failed:0};
   const nist=svcs.find(s=>s.service==='NIST')||{score:0,passed:0,failed:0};
   const gdpr=svcs.find(s=>s.service==='GDPR')||{score:0,passed:0,failed:0};
   const soc2=svcs.find(s=>s.service==='SOC2')||{score:0,passed:0,failed:0};
+  const iso42001=svcs.find(s=>s.service==='ISO42001')||{score:0,passed:0,failed:0};
+  const iso27017=svcs.find(s=>s.service==='ISO27017')||{score:0,passed:0,failed:0};
+  const awsftr=svcs.find(s=>s.service==='AWSFTR')||{score:0,passed:0,failed:0};
+  const mvsp=svcs.find(s=>s.service==='MVSP')||{score:0,passed:0,failed:0};
+  const tisax=svcs.find(s=>s.service==='TISAX')||{score:0,passed:0,failed:0};
+  const hipaa=svcs.find(s=>s.service==='HIPAA')||{score:0,passed:0,failed:0};
+  const nis2=svcs.find(s=>s.service==='NIS2')||{score:0,passed:0,failed:0};
+  const pcidss=svcs.find(s=>s.service==='PCIDSS')||{score:0,passed:0,failed:0};
+  const nist80053=svcs.find(s=>s.service==='NIST80053')||{score:0,passed:0,failed:0};
+  const bsic5=svcs.find(s=>s.service==='BSIC5')||{score:0,passed:0,failed:0};
+  const csaccm=svcs.find(s=>s.service==='CSACCM')||{score:0,passed:0,failed:0};
+  const fedramp=svcs.find(s=>s.service==='FEDRAMP')||{score:0,passed:0,failed:0};
+  const hitrust=svcs.find(s=>s.service==='HITRUST')||{score:0,passed:0,failed:0};
+  const dora=svcs.find(s=>s.service==='DORA')||{score:0,passed:0,failed:0};
+  const criprofile=svcs.find(s=>s.service==='CRIPROFILE')||{score:0,passed:0,failed:0};
+  const euaiact=svcs.find(s=>s.service==='EUAIACT')||{score:0,passed:0,failed:0};
+  const nistairmf=svcs.find(s=>s.service==='NISTAIRMF')||{score:0,passed:0,failed:0};
+  const iso27701=svcs.find(s=>s.service==='ISO27701')||{score:0,passed:0,failed:0};
+  const iso27018=svcs.find(s=>s.service==='ISO27018')||{score:0,passed:0,failed:0};
+  const sspa=svcs.find(s=>s.service==='SSPA')||{score:0,passed:0,failed:0};
+  const cisctrl=svcs.find(s=>s.service==='CISCTRL')||{score:0,passed:0,failed:0};
+  const nydfs=svcs.find(s=>s.service==='NYDFS')||{score:0,passed:0,failed:0};
+  const nistpriv=svcs.find(s=>s.service==='NISTPRIV')||{score:0,passed:0,failed:0};
   const fws=[
     {name:'CIS AWS',   sub:'CIS AWS Foundations',    sc:cisScore,     p:cisP,          f:cisT-cisP,       clr:'#3b82f6', go:"navTo('cis_benchmark.html')"},
     {name:'ISO 27001', sub:'ISO 27001:2022 Annex A', sc:iso.score||0, p:iso.passed||0, f:iso.failed||0,   clr:'#10b981', go:"navTo('iso27001.html')"},
     {name:'NIST CSF',  sub:'NIST CSF v2.0',          sc:nist.score||0,p:nist.passed||0,f:nist.failed||0,  clr:'#8b5cf6', go:"navTo('nist_csf.html')"},
     {name:'GDPR',      sub:'EU General Data Protection Regulation', sc:gdpr.score||0, p:gdpr.passed||0, f:gdpr.failed||0, clr:'#f59e0b', go:"navTo('gdpr.html')"},
     {name:'SOC 2',     sub:'Service Organization Control 2',        sc:soc2.score||0, p:soc2.passed||0, f:soc2.failed||0, clr:'#ec4899', go:"navTo('soc2.html')"},
+    {name:'ISO 42001', sub:'AI Management System (Annex A)',        sc:iso42001.score||0, p:iso42001.passed||0, f:iso42001.failed||0, clr:'#06b6d4', go:"navTo('iso42001.html')"},
+    {name:'ISO 27017', sub:'Cloud Security Controls',                sc:iso27017.score||0, p:iso27017.passed||0, f:iso27017.failed||0, clr:'#14b8a6', go:"navTo('iso27017.html')"},
+    {name:'AWS FTR',   sub:'Foundational Technical Review',          sc:awsftr.score||0, p:awsftr.passed||0, f:awsftr.failed||0, clr:'#ff9900', go:"navTo('aws_ftr.html')"},
+    {name:'MVSP',      sub:'Minimum Viable Secure Product',          sc:mvsp.score||0, p:mvsp.passed||0, f:mvsp.failed||0, clr:'#a855f7', go:"navTo('mvsp.html')"},
+    {name:'TISAX',     sub:'VDA ISA (Automotive)',                   sc:tisax.score||0, p:tisax.passed||0, f:tisax.failed||0, clr:'#f43f5e', go:"navTo('tisax.html')"},
+    {name:'HIPAA',     sub:'Health Insurance Portability Act',       sc:hipaa.score||0, p:hipaa.passed||0, f:hipaa.failed||0, clr:'#f87171', go:"navTo('hipaa.html')"},
+    {name:'NIS2',      sub:'EU NIS2 Directive',                      sc:nis2.score||0, p:nis2.passed||0, f:nis2.failed||0, clr:'#14b8a6', go:"navTo('nis2.html')"},
+    {name:'PCI DSS',   sub:'PCI DSS v4.0',                           sc:pcidss.score||0, p:pcidss.passed||0, f:pcidss.failed||0, clr:'#fbbf24', go:"navTo('pci_dss.html')"},
+    {name:'NIST 800-53', sub:'NIST SP 800-53 Rev 5',                 sc:nist80053.score||0, p:nist80053.passed||0, f:nist80053.failed||0, clr:'#a78bfa', go:"navTo('nist_800_53.html')"},
+    {name:'BSI C5',    sub:'Cloud Computing Compliance Catalogue',   sc:bsic5.score||0, p:bsic5.passed||0, f:bsic5.failed||0, clr:'#94a3b8', go:"navTo('c5.html')"},
+    {name:'CSA CCM',   sub:'Cloud Controls Matrix 4.0',              sc:csaccm.score||0, p:csaccm.passed||0, f:csaccm.failed||0, clr:'#0ea5e9', go:"navTo('csa_ccm.html')"},
+    {name:'FedRAMP',   sub:'FedRAMP Moderate Baseline',              sc:fedramp.score||0, p:fedramp.passed||0, f:fedramp.failed||0, clr:'#2563eb', go:"navTo('fedramp.html')"},
+    {name:'HITRUST CSF', sub:'Common Security Framework v11',        sc:hitrust.score||0, p:hitrust.passed||0, f:hitrust.failed||0, clr:'#22c55e', go:"navTo('hitrust.html')"},
+    {name:'DORA',      sub:'Digital Operational Resilience Act',     sc:dora.score||0, p:dora.passed||0, f:dora.failed||0, clr:'#7c3aed', go:"navTo('dora.html')"},
+    {name:'CRI Profile', sub:'Cyber Risk Institute Profile',          sc:criprofile.score||0, p:criprofile.passed||0, f:criprofile.failed||0, clr:'#0891b2', go:"navTo('cri_profile.html')"},
+    {name:'EU AI Act', sub:'Regulation (EU) 2024/1689',               sc:euaiact.score||0, p:euaiact.passed||0, f:euaiact.failed||0, clr:'#d946ef', go:"navTo('eu_ai_act.html')"},
+    {name:'NIST AI RMF', sub:'AI Risk Management Framework 1.0',      sc:nistairmf.score||0, p:nistairmf.passed||0, f:nistairmf.failed||0, clr:'#eab308', go:"navTo('nist_ai_rmf.html')"},
+    {name:'ISO 27701', sub:'Privacy Information Management System',  sc:iso27701.score||0, p:iso27701.passed||0, f:iso27701.failed||0, clr:'#be185d', go:"navTo('iso27701.html')"},
+    {name:'ISO 27018', sub:'PII Protection in Public Clouds',        sc:iso27018.score||0, p:iso27018.passed||0, f:iso27018.failed||0, clr:'#7e22ce', go:"navTo('iso27018.html')"},
+    {name:'Microsoft SSPA', sub:'Supplier Security & Privacy Assurance', sc:sspa.score||0, p:sspa.passed||0, f:sspa.failed||0, clr:'#4f46e5', go:"navTo('sspa.html')"},
+    {name:'CIS Controls v8.1', sub:'Vendor-Neutral Security Program', sc:cisctrl.score||0, p:cisctrl.passed||0, f:cisctrl.failed||0, clr:'#0d9488', go:"navTo('cis_controls.html')"},
+    {name:'23 NYCRR 500 (NYDFS)', sub:'NY Dept. of Financial Services', sc:nydfs.score||0, p:nydfs.passed||0, f:nydfs.failed||0, clr:'#be123c', go:"navTo('nydfs.html')"},
+    {name:'NIST Privacy Framework', sub:'Privacy Risk Management', sc:nistpriv.score||0, p:nistpriv.passed||0, f:nistpriv.failed||0, clr:'#0284c7', go:"navTo('nist_privacy.html')"},
   ];
   document.getElementById('comp-grid').innerHTML=fws.map(fw=>{
     const [st,sc]=fw.sc>=75?['On Track','badge-ok']:fw.sc>=50?['At Risk','badge-warn']:['Critical','badge-risk'];
@@ -1000,13 +1302,17 @@ function render(d){
   ];
   let totalIssues=0;
   document.getElementById('res-grid').innerHTML=rcfg.map((rc,i)=>{
-    const s=svcs.find(x=>x.service===rc.svc)||{failed:0}, sf=allF.filter(f=>f.service===rc.svc&&f.result==='FAIL');
+    // Count rows (sf), not svcs' credit-based sum — the big number and the
+    // severity chips below it must come from the exact same array, or a
+    // resource can show e.g. "5" up top while every chip below reads PASS.
+    const sf=allF.filter(f=>f.service===rc.svc&&f.result==='FAIL');
     const c=sf.filter(f=>f.severity==='CRITICAL').length, h=sf.filter(f=>f.severity==='HIGH').length;
     const m=sf.filter(f=>f.severity==='MEDIUM').length, l=sf.filter(f=>f.severity==='LOW').length;
-    totalIssues+=s.failed; const tot2=c+h+m+l||1;
+    const failCount=sf.length;
+    totalIssues+=failCount; const tot2=c+h+m+l||1;
     return `<div class="res-card card anim" style="animation-delay:${i*.05}s" onclick="goSvc('${rc.svc.toLowerCase()}')">
       <div class="res-top"><div class="res-ico" style="background:${rc.bg}">${rc.ico}</div></div>
-      <div class="res-count">${s.failed}</div>
+      <div class="res-count">${failCount}</div>
       <div class="res-name">${rc.name}</div>
       <div class="res-open">Open issues</div>
       <div class="sev-strip">
@@ -1060,11 +1366,34 @@ function render(d){
 
   // ── Reports (dynamic — based on live scan data) ───
   const rptDefs=[
-    {ico:'📋',name:'CIS Benchmark Report',   sub:'CIS AWS Foundations compliance assessment with remediation guidance.',       type:'cis',      filter:f=>!['ISO27001','NIST','GDPR','SOC2'].includes(f.service)},
+    {ico:'📋',name:'CIS Benchmark Report',   sub:'CIS AWS Foundations compliance assessment with remediation guidance.',       type:'cis',      filter:f=>!['ISO27001','NIST','GDPR','SOC2','ISO42001','ISO27017','AWSFTR','MVSP','TISAX','HIPAA','NIS2','PCIDSS','NIST80053','BSIC5','CSACCM','FEDRAMP','HITRUST','DORA','CRIPROFILE','EUAIACT','NISTAIRMF','ISO27701','ISO27018','SSPA','CISCTRL','NYDFS','CUSTOM','NISTPRIV'].includes(f.service)},
     {ico:'🛡', name:'ISO 27001:2022 Report', sub:'ISO 27001:2022 Annex A control mapping and compliance status overview.',     type:'iso',      filter:f=>f.service==='ISO27001'},
     {ico:'🔒',name:'NIST CSF v2.0 Report',   sub:'NIST Cybersecurity Framework v2.0 control assessment across all functions.',type:'nist',     filter:f=>f.service==='NIST'},
     {ico:'🔏',name:'GDPR Report',            sub:'EU GDPR Articles 25, 30 and 32 compliance status for AWS environment.',     type:'gdpr',     filter:f=>f.service==='GDPR'},
     {ico:'🏢',name:'SOC 2 Report',           sub:'SOC 2 Trust Services Criteria assessment across CC, A, C and PI categories.',type:'soc2',    filter:f=>f.service==='SOC2'},
+    {ico:'🤖',name:'ISO 42001 Report',       sub:'ISO/IEC 42001 AI Management System Annex A control assessment.',            type:'iso42001', filter:f=>f.service==='ISO42001'},
+    {ico:'☁', name:'ISO 27017 Report',       sub:'Cloud-specific information security controls assessment.',                  type:'iso27017', filter:f=>f.service==='ISO27017'},
+    {ico:'🅰',name:'AWS FTR Report',         sub:'AWS Foundational Technical Review security requirement areas.',             type:'awsftr',   filter:f=>f.service==='AWSFTR'},
+    {ico:'🔐',name:'MVSP Report',            sub:'Minimum Viable Secure Product control assessment.',                         type:'mvsp',     filter:f=>f.service==='MVSP'},
+    {ico:'🚗',name:'TISAX Report',           sub:'TISAX (VDA ISA) IT security chapter assessment.',                           type:'tisax',    filter:f=>f.service==='TISAX'},
+    {ico:'🩺',name:'HIPAA Report',           sub:'45 CFR Part 164 Administrative & Technical Safeguards assessment.',          type:'hipaa',    filter:f=>f.service==='HIPAA'},
+    {ico:'🇪🇺',name:'NIS2 Report',            sub:'EU NIS2 Directive Article 21 measures assessment.',                          type:'nis2',     filter:f=>f.service==='NIS2'},
+    {ico:'💳',name:'PCI DSS Report',         sub:'PCI DSS v4.0 payment card data security assessment.',                        type:'pcidss',   filter:f=>f.service==='PCIDSS'},
+    {ico:'🗝',name:'NIST SP 800-53 Report',  sub:'NIST SP 800-53 Rev 5 security & privacy controls assessment.',               type:'nist80053',filter:f=>f.service==='NIST80053'},
+    {ico:'🇩🇪',name:'BSI C5 Report',          sub:'BSI Cloud Computing Compliance Criteria Catalogue assessment.',              type:'bsic5',    filter:f=>f.service==='BSIC5'},
+    {ico:'☁',name:'CSA CCM Report',         sub:'Cloud Security Alliance Cloud Controls Matrix v4.0 assessment.',             type:'csaccm',   filter:f=>f.service==='CSACCM'},
+    {ico:'🇺🇸',name:'FedRAMP Report',         sub:'FedRAMP Moderate Baseline (NIST 800-53 Rev 4) assessment.',                  type:'fedramp',  filter:f=>f.service==='FEDRAMP'},
+    {ico:'🛡',name:'HITRUST CSF Report',   sub:'HITRUST CSF v11 Common Security Framework assessment.',                       type:'hitrust',  filter:f=>f.service==='HITRUST'},
+    {ico:'🇪🇺',name:'DORA Report',           sub:'Digital Operational Resilience Act ICT risk assessment.',                     type:'dora',     filter:f=>f.service==='DORA'},
+    {ico:'🏦',name:'CRI Profile Report',    sub:'Cyber Risk Institute Profile financial-sector assessment.',                   type:'criprofile',filter:f=>f.service==='CRIPROFILE'},
+    {ico:'🇪🇺',name:'EU AI Act Report',       sub:'Regulation (EU) 2024/1689 high-risk AI system assessment.',                   type:'euaiact',  filter:f=>f.service==='EUAIACT'},
+    {ico:'🧠',name:'NIST AI RMF Report',     sub:'NIST AI Risk Management Framework 1.0 assessment.',                           type:'nistairmf',filter:f=>f.service==='NISTAIRMF'},
+    {ico:'🔐',name:'ISO 27701 Report',      sub:'Privacy Information Management System assessment.',                          type:'iso27701', filter:f=>f.service==='ISO27701'},
+    {ico:'☁',name:'ISO 27018 Report',      sub:'PII Protection in Public Clouds assessment.',                                 type:'iso27018', filter:f=>f.service==='ISO27018'},
+    {ico:'🗄',name:'Microsoft SSPA Report', sub:'Supplier Security & Privacy Assurance Program assessment.',                   type:'sspa',     filter:f=>f.service==='SSPA'},
+    {ico:'🧱',name:'CIS Controls v8.1 Report', sub:'Vendor-neutral security program assessment.',                             type:'cisctrl',  filter:f=>f.service==='CISCTRL'},
+    {ico:'🏦',name:'23 NYCRR 500 (NYDFS) Report', sub:'NY Dept. of Financial Services cybersecurity regulation assessment.',   type:'nydfs',    filter:f=>f.service==='NYDFS'},
+    {ico:'🔏',name:'NIST Privacy Framework Report', sub:'Privacy risk management assessment.',                                type:'nistpriv', filter:f=>f.service==='NISTPRIV'},
     {ico:'📊',name:'Executive Summary',      sub:'High-level security posture overview for stakeholders and management.',      type:'exec',     filter:f=>true},
     {ico:'⚠', name:'Critical Issues Report', sub:'All critical and high severity findings requiring immediate attention.',     type:'critical', filter:f=>['CRITICAL','HIGH'].includes(f.severity)},
     {ico:'🔑',name:'IAM Access Report',      sub:'IAM user, role and policy audit with least-privilege recommendations.',      type:'iam',      filter:f=>f.service==='IAM'},
@@ -1121,6 +1450,115 @@ function render(d){
   document.getElementById('v-load').style.display='none';
   const view = getHashView();
   show(view, document.getElementById('ni-'+view));
+}
+
+// ── Cross-Compliance Heatmap ─────────────────────────────────────────────────
+function hmCellClass(score){
+  if(score===null||score===undefined) return 'hm-none';
+  if(score>=80) return 'hm-high';
+  if(score>=60) return 'hm-medh';
+  if(score>=40) return 'hm-med';
+  if(score>=20) return 'hm-low';
+  return 'hm-risk';
+}
+
+// Business Impact is an intrinsic property of the security domain (how critical
+// it is to the business), independent of the current compliance score — the cell
+// colours already convey the score. This keeps the H/M/L filter stable and useful.
+const DOMAIN_BI={
+  'Access & Identity':    'H',
+  'Data & Storage':       'H',
+  'Cryptography & Keys':  'M',
+  'Logging & Monitoring': 'L',
+  'Other Controls':       'L',
+};
+function hmDomainBi(label){
+  return DOMAIN_BI[label] || 'M';
+}
+
+function setHmBi(level){
+  hmBiF=level;
+  ['all','H','M','L'].forEach(k=>{
+    const b=document.getElementById('hm-bi-'+k);
+    if(b) b.className='hm-bi-btn'+(k===level?' hm-bi-active':'');
+  });
+  renderHeatmap();
+}
+
+function renderHeatmap(){
+  const cc=lastCrossCompliance;
+  if(!cc||!cc.domains||!cc.frameworks){
+    document.getElementById('hm-tbody').innerHTML='<tr><td colspan="99" style="text-align:center;padding:40px;color:#9ca3af;font-size:13px">No compliance data yet — run a scan first.</td></tr>';
+    return;
+  }
+
+  const fwSel=document.getElementById('hm-fw-filter');
+  if(fwSel&&fwSel.options.length<=1){
+    cc.frameworks.forEach(f=>{
+      const o=document.createElement('option');
+      o.value=f.id; o.textContent=f.label;
+      fwSel.appendChild(o);
+    });
+  }
+  const fwFilter=fwSel?fwSel.value:'';
+
+  const fws=fwFilter
+    ? cc.frameworks.filter(f=>f.id===fwFilter)
+    : cc.frameworks;
+  const fwIdxMap={};
+  cc.frameworks.forEach((f,i)=>fwIdxMap[f.id]=i);
+
+  const q=(document.getElementById('hm-q')||{}).value||'';
+  const ql=q.toLowerCase();
+  const domains=cc.domains.filter(row=>{
+    if(ql&&!row.label.toLowerCase().includes(ql)) return false;
+    if(hmBiF!=='all'&&hmDomainBi(row.label)!==hmBiF) return false;
+    return true;
+  });
+
+  const biLabel={H:'HBI',M:'MBI',L:'LBI'};
+  const biStyle={H:'background:#fef2f2;color:#b91c1c',M:'background:#fff7ed;color:#c2410c',L:'background:#eff6ff;color:#1d4ed8'};
+
+  document.getElementById('hm-thead').innerHTML=
+    '<tr><th class="hm-th row-hdr">Security Domain</th>'
+    +fws.map(f=>`<th class="hm-th">${f.label}</th>`).join('')
+    +'</tr>';
+
+  if(!domains.length){
+    document.getElementById('hm-tbody').innerHTML='<tr><td colspan="99" style="text-align:center;padding:32px;color:#475569;font-size:13px">No domains match the current filter.</td></tr>';
+  } else {
+    document.getElementById('hm-tbody').innerHTML=domains.map(row=>{
+      const bi=hmDomainBi(row.label);
+      const biTag=`<span class="hm-bi-tag" style="${biStyle[bi]}">${biLabel[bi]}</span>`;
+      const cells=fws.map(f=>{
+        const s=row.scores[fwIdxMap[f.id]];
+        const sc=s?Math.round(s.score):null;
+        const cls=hmCellClass(sc);
+        const inner=hmShowPct&&sc!==null?`<span class="hm-pct">${sc}%</span>`:`<span class="hm-dot"></span>`;
+        const tip=s?`title="${sc}% — ${s.passed}/${s.total} passing"`:'title="No data"';
+        return `<td class="hm-td"><div class="hm-cell ${cls}" ${tip}>${inner}</div></td>`;
+      }).join('');
+      return `<tr><td class="hm-td-label">${row.label}${biTag}</td>${cells}</tr>`;
+    }).join('');
+  }
+
+  const sumEl=document.getElementById('hm-summary');
+  sumEl.style.gridTemplateColumns=`repeat(${fws.length},1fr)`;
+  sumEl.innerHTML=fws.map(f=>{
+    const fi=fwIdxMap[f.id];
+    const vals=domains.map(d=>d.scores[fi]).filter(s=>s!=null);
+    const avg=vals.length?Math.round(vals.reduce((a,s)=>a+s.score,0)/vals.length):null;
+    const cls=avg!==null?hmCellClass(avg):'hm-none';
+    const col=avg===null?'#334155':avg>=80?'#22c55e':avg>=60?'#84cc16':avg>=40?'#eab308':avg>=20?'#f97316':'#ef4444';
+    return `<div class="hm-sum-card"><div class="hm-sum-n" style="color:${col}">${avg!==null?avg+'%':'—'}</div><div class="hm-sum-l">${f.label}</div></div>`;
+  }).join('');
+}
+
+function toggleHmPct(){
+  hmShowPct=!hmShowPct;
+  const btn=document.getElementById('hm-pct-btn');
+  if(btn){btn.textContent=hmShowPct?'Hide %':'Show %';btn.classList.toggle('on',hmShowPct);}
+  renderHeatmap();
 }
 
 function renderInv(){
@@ -1231,11 +1669,18 @@ function applyF(){
   const sv=document.getElementById('f-svc').value||svcF;
   const drBanner=document.getElementById('dr-evidence-banner');
   if(drBanner){drBanner.hidden=(sv!=='rds'); if(!drBanner.hidden)renderDrEvidence();}
+  // Like Prowler/Vanta: the Issues inbox shows each real, distinct
+  // technical finding once (the raw scanner output), not once per
+  // compliance framework that happens to also flag it — otherwise the
+  // same misconfiguration shows up as 20+ near-duplicate "Fix" cards.
+  // Picking a specific framework from the service dropdown is an
+  // explicit opt-in to see that framework's own (re-labelled) view.
+  const FRAMEWORK_SERVICES=['ISO27001','NIST','GDPR','SOC2','ISO42001','ISO27017','AWSFTR','MVSP','TISAX','HIPAA','NIS2','PCIDSS','NIST80053','BSIC5','CSACCM','FEDRAMP','HITRUST','DORA','CRIPROFILE','EUAIACT','NISTAIRMF','ISO27701','ISO27018','SSPA','CISCTRL','NYDFS','CUSTOM','NISTPRIV'];
   filtF=allF.filter(f=>{
     if(sev&&f.severity!==sev)return false;
     if(res&&f.result!==res)return false;
-    if(sv==='cis'&&['ISO27001','NIST','GDPR','SOC2'].includes(f.service))return false;
-    else if(sv&&sv!=='cis'&&(f.service||'').toLowerCase()!==sv)return false;
+    if(!sv||sv==='cis'){ if(FRAMEWORK_SERVICES.includes(f.service))return false; }
+    else if((f.service||'').toLowerCase()!==sv)return false;
     if(q){const h=[(f.title||''),(f.check_id||''),(f.resource_name||'')].join(' ').toLowerCase();if(!h.includes(q))return false;}
     return true;
   });

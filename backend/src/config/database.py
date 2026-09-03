@@ -181,6 +181,49 @@ class Database:
         self.conn.commit()
         logger.info(f"Database: last_scan_at updated for {cloud_account_id}")
 
+    def record_compliance_snapshot(self, cloud_account_id: str):
+        """
+        Records one 'scan' snapshot per completed orchestrator cycle — the
+        full current pass/fail state, by severity, plus the exact set of
+        currently-failing (check_id, resource_id) pairs. This is what lets
+        the monthly report see everything that happened across the month
+        (lowest point, highest point, mid-month regressions that got fixed
+        again) instead of only comparing two single points a month apart.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT f.check_id, f.result, f.severity, f.title, r.id, r.resource_name
+                FROM findings f
+                JOIN resources r ON r.id = f.resource_id
+                WHERE r.cloud_account_id = %s
+            """, (cloud_account_id,))
+            rows = cur.fetchall()
+
+            total = len(rows)
+            passed = sum(1 for r in rows if r[1] == "PASS")
+            failed = total - passed
+
+            by_severity = {}
+            failing = []
+            for check_id, result, severity, title, resource_id, resource_name in rows:
+                sev = severity or "MEDIUM"
+                by_severity.setdefault(sev, {"passed": 0, "failed": 0})
+                by_severity[sev]["passed" if result == "PASS" else "failed"] += 1
+                if result == "FAIL":
+                    failing.append({
+                        "check_id": check_id, "resource_id": str(resource_id),
+                        "resource_name": resource_name, "severity": sev, "title": title,
+                    })
+
+            cur.execute("""
+                INSERT INTO compliance_snapshots
+                    (cloud_account_id, total_checks, passed, failed, by_severity, failing_keys, snapshot_type)
+                VALUES (%s, %s, %s, %s, %s, %s, 'scan')
+            """, (cloud_account_id, total, passed, failed, json.dumps(by_severity), json.dumps(failing)))
+
+        self.conn.commit()
+        logger.info(f"Database: compliance snapshot recorded for {cloud_account_id} ({passed}/{total})")
+
     # ── utils ──────────────────────────────────────────────────────
 
     def close(self):

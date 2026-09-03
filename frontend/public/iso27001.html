@@ -30,7 +30,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .da{margin-left:auto;font-size:11px;transition:transform .2s;flex-shrink:0;color:#6b7280}
 .da.open{transform:rotate(180deg)}
 .drop-items{overflow:hidden;max-height:0;transition:max-height .28s ease}
-.drop-items.open{max-height:300px}
+.drop-items.open{max-height:1300px}
 .di{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 40px;font-size:12px;font-weight:500;color:#6b7280;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .12s;white-space:nowrap}
 .di:hover{background:#161b27;color:#e5e7eb}
 .di.on{color:#10b981;font-weight:600}
@@ -186,6 +186,12 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <span class="da open" id="drop-arrow">▾</span>
     </div>
     <div class="drop-items open" id="drop-items">
+      <div class="di" onclick="dashTo('heatmap')">
+        <span class="di-dot" style="background:#ef4444"></span>Cross-Compliance Heatmap
+      </div>
+      <div class="di" onclick="navTo('cis_controls.html')">
+        <span class="di-dot" style="background:#0d9488"></span>CIS Controls v8.1
+      </div>
       <div class="di" onclick="navTo('cis_benchmark.html')">
         <span class="di-dot" style="background:#3b82f6"></span>CIS Benchmark
       </div>
@@ -200,6 +206,75 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       </div>
       <div class="di" onclick="navTo('soc2.html')">
         <span class="di-dot" style="background:#ec4899"></span>SOC 2
+      </div>
+      <div class="di" onclick="navTo('iso42001.html')">
+        <span class="di-dot" style="background:#06b6d4"></span>ISO 42001:2023
+      </div>
+      <div class="di" onclick="navTo('iso27017.html')">
+        <span class="di-dot" style="background:#14b8a6"></span>ISO 27017:2015
+      </div>
+      <div class="di" onclick="navTo('aws_ftr.html')">
+        <span class="di-dot" style="background:#ff9900"></span>AWS FTR
+      </div>
+      <div class="di" onclick="navTo('mvsp.html')">
+        <span class="di-dot" style="background:#a855f7"></span>MVSP
+      </div>
+      <div class="di" onclick="navTo('tisax.html')">
+        <span class="di-dot" style="background:#f43f5e"></span>TISAX
+      </div>
+      <div class="di" onclick="navTo('nis2.html')">
+        <span class="di-dot" style="background:#14b8a6"></span>NIS2
+      </div>
+      <div class="di" onclick="navTo('nist_800_53.html')">
+        <span class="di-dot" style="background:#a78bfa"></span>NIST SP 800-53
+      </div>
+      <div class="di" onclick="navTo('hipaa.html')">
+        <span class="di-dot" style="background:#f87171"></span>HIPAA
+      </div>
+      <div class="di" onclick="navTo('pci_dss.html')">
+        <span class="di-dot" style="background:#fbbf24"></span>PCI DSS
+      </div>
+      <div class="di" onclick="navTo('c5.html')">
+        <span class="di-dot" style="background:#94a3b8"></span>BSI C5
+      </div>
+      <div class="di" onclick="navTo('csa_ccm.html')">
+        <span class="di-dot" style="background:#0ea5e9"></span>CSA CCM 4.0
+      </div>
+      <div class="di" onclick="navTo('fedramp.html')">
+        <span class="di-dot" style="background:#2563eb"></span>FedRAMP Moderate
+      </div>
+      <div class="di" onclick="navTo('hitrust.html')">
+        <span class="di-dot" style="background:#22c55e"></span>HITRUST CSF
+      </div>
+      <div class="di" onclick="navTo('dora.html')">
+        <span class="di-dot" style="background:#7c3aed"></span>DORA
+      </div>
+      <div class="di" onclick="navTo('cri_profile.html')">
+        <span class="di-dot" style="background:#0891b2"></span>CRI Profile
+      </div>
+      <div class="di" onclick="navTo('nydfs.html')">
+        <span class="di-dot" style="background:#be123c"></span>23 NYCRR 500 (NYDFS)
+      </div>
+      <div class="di" onclick="navTo('eu_ai_act.html')">
+        <span class="di-dot" style="background:#d946ef"></span>EU AI Act
+      </div>
+      <div class="di" onclick="navTo('nist_ai_rmf.html')">
+        <span class="di-dot" style="background:#eab308"></span>NIST AI RMF
+      </div>
+      <div class="di" onclick="navTo('iso27701.html')">
+        <span class="di-dot" style="background:#be185d"></span>ISO 27701
+      </div>
+      <div class="di" onclick="navTo('iso27018.html')">
+        <span class="di-dot" style="background:#7e22ce"></span>ISO 27018
+      </div>
+      <div class="di" onclick="navTo('sspa.html')">
+        <span class="di-dot" style="background:#4f46e5"></span>Microsoft SSPA
+      </div>
+      <div class="di" onclick="navTo('nist_privacy.html')">
+        <span class="di-dot" style="background:#0284c7"></span>NIST Privacy Framework
+      </div>
+      <div class="di" onclick="navTo('custom_frameworks.html')">
+        <span class="di-dot" style="background:#0284c7"></span>Custom Frameworks
       </div>
     </div>
 
@@ -354,7 +429,7 @@ async function loadData(){
     allF=(d.findings||[]).filter(f => {
       const svc=(f.service||'').toString().toUpperCase();
       const fw=(f.framework||'').toString().toUpperCase();
-      return fw.includes('ISO') || svc==='ISO27001';
+      return fw==='ISO 27001:2022' || svc==='ISO27001';
     });
     filtF=[...allF];
     render();
@@ -468,7 +543,7 @@ function openModal(id){
   document.getElementById('m-st').innerHTML=fail?`<span class="st-fail">FAIL (${fail}/${findings.length})</span>`:`<span class="st-pass">PASS</span>`;
   document.getElementById('m-desc').textContent=ctrl.desc||'—';
   document.getElementById('m-rem').textContent=f.remediation||'No remediation steps are currently available.';
-  const details=f.details?JSON.parse(f.details):{mapped_checks:[]};
+  const details=f.details||{mapped_checks:[]};
   document.getElementById('m-checks').innerHTML=(details.mapped_checks||[]).map(c=>`<span class="chk-tag">${c}</span>`).join('')||'<span style="color:#9ca3af;font-size:12px">No check data</span>';
   document.getElementById('overlay').classList.add('open');
 }

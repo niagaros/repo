@@ -195,16 +195,11 @@ def lambda_handler(event, context):
                     FROM (
                         SELECT
                             CASE
-                                WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
-                                WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
-                                WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
-                                WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
-                                WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
-                                WHEN f.check_id LIKE 'DynamoDB%%'   THEN 'RDS'
-                                WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
-                                WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
-                                WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
-                                WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
+                                -- Mapped-framework findings must resolve to their own
+                                -- framework FIRST — otherwise any framework's CloudWatch/
+                                -- IAM/S3/etc-based control gets swallowed into the generic
+                                -- raw-scan bucket below just because of its resource_type
+                                -- or check_id prefix.
                                 WHEN f.framework = 'ISO 27001:2022' THEN 'ISO27001'
                                 WHEN f.framework = 'NIST CSF v2.0'  THEN 'NIST'
                                 WHEN f.framework = 'GDPR'            THEN 'GDPR'
@@ -216,6 +211,31 @@ def lambda_handler(event, context):
                                 WHEN f.framework = 'BSI-C5'          THEN 'BSIC5'
                                 WHEN f.framework = 'CSA CCM 4.0'     THEN 'CSACCM'
                                 WHEN f.framework = 'FedRAMP Moderate Rev 4' THEN 'FEDRAMP'
+                                WHEN f.framework = 'ISO 42001'       THEN 'ISO42001'
+                                WHEN f.framework = 'ISO 27017'       THEN 'ISO27017'
+                                WHEN f.framework = 'AWS FTR'         THEN 'AWSFTR'
+                                WHEN f.framework = 'MVSP'            THEN 'MVSP'
+                                WHEN f.framework = 'TISAX'           THEN 'TISAX'
+                                WHEN f.framework = 'HITRUST CSF'     THEN 'HITRUST'
+                                WHEN f.framework = 'DORA'            THEN 'DORA'
+                                WHEN f.framework = 'CRI Profile'     THEN 'CRIPROFILE'
+                                WHEN f.framework = 'EU AI Act'       THEN 'EUAIACT'
+                                WHEN f.framework = 'NIST AI RMF'     THEN 'NISTAIRMF'
+                                WHEN f.framework = 'ISO 27701'       THEN 'ISO27701'
+                                WHEN f.framework = 'ISO 27018'       THEN 'ISO27018'
+                                WHEN f.framework = 'Microsoft SSPA'  THEN 'SSPA'
+                                -- Raw CIS/FSBP scan findings (no mapped framework above)
+                                -- fall back to service inferred from check_id/resource_type.
+                                WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
+                                WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
+                                WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
+                                WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
+                                WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
+                                WHEN f.check_id LIKE 'DynamoDB%%'   THEN 'RDS'
+                                WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
+                                WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
+                                WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
+                                WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
                                 ELSE 'Other'
                             END AS service,
                             f.result
@@ -244,7 +264,20 @@ def lambda_handler(event, context):
                         WHEN 'BSIC5'      THEN 16
                         WHEN 'CSACCM'     THEN 17
                         WHEN 'FEDRAMP'    THEN 18
-                        ELSE 19
+                        WHEN 'ISO42001'   THEN 19
+                        WHEN 'ISO27017'   THEN 20
+                        WHEN 'AWSFTR'     THEN 21
+                        WHEN 'MVSP'       THEN 22
+                        WHEN 'TISAX'      THEN 23
+                        WHEN 'HITRUST'    THEN 24
+                        WHEN 'DORA'       THEN 25
+                        WHEN 'CRIPROFILE' THEN 26
+                        WHEN 'EUAIACT'    THEN 27
+                        WHEN 'NISTAIRMF'  THEN 28
+                        WHEN 'ISO27701'   THEN 29
+                        WHEN 'ISO27018'   THEN 30
+                        WHEN 'SSPA'       THEN 31
+                        ELSE 32
                     END
                 """, (account_id,))
                 for row in cur.fetchall():
@@ -289,16 +322,8 @@ def lambda_handler(event, context):
                     SELECT
                         f.check_id,
                         CASE
-                            WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
-                            WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
-                            WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
-                            WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
-                            WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
-                            WHEN f.check_id LIKE 'DynamoDB%%'   THEN 'RDS'
-                            WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
-                            WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
-                            WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
-                            WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
+                            -- Mapped-framework findings resolve to their own framework
+                            -- first (see the identical fix in the per-service query above).
                             WHEN f.framework = 'ISO 27001:2022' THEN 'ISO27001'
                             WHEN f.framework = 'NIST CSF v2.0'  THEN 'NIST'
                             WHEN f.framework = 'GDPR'            THEN 'GDPR'
@@ -310,15 +335,40 @@ def lambda_handler(event, context):
                             WHEN f.framework = 'BSI-C5'          THEN 'BSIC5'
                             WHEN f.framework = 'CSA CCM 4.0'     THEN 'CSACCM'
                             WHEN f.framework = 'FedRAMP Moderate Rev 4' THEN 'FEDRAMP'
+                            WHEN f.framework = 'ISO 42001'       THEN 'ISO42001'
+                            WHEN f.framework = 'ISO 27017'       THEN 'ISO27017'
+                            WHEN f.framework = 'AWS FTR'         THEN 'AWSFTR'
+                            WHEN f.framework = 'MVSP'            THEN 'MVSP'
+                            WHEN f.framework = 'TISAX'           THEN 'TISAX'
+                            WHEN f.framework = 'HITRUST CSF'     THEN 'HITRUST'
+                            WHEN f.framework = 'DORA'            THEN 'DORA'
+                            WHEN f.framework = 'CRI Profile'     THEN 'CRIPROFILE'
+                            WHEN f.framework = 'EU AI Act'       THEN 'EUAIACT'
+                            WHEN f.framework = 'NIST AI RMF'     THEN 'NISTAIRMF'
+                            WHEN f.framework = 'ISO 27701'       THEN 'ISO27701'
+                            WHEN f.framework = 'ISO 27018'       THEN 'ISO27018'
+                            WHEN f.framework = 'Microsoft SSPA'  THEN 'SSPA'
+                            WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
+                            WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
+                            WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
+                            WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
+                            WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
+                            WHEN f.check_id LIKE 'DynamoDB%%'   THEN 'RDS'
+                            WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
+                            WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
+                            WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
+                            WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
                             ELSE r.resource_type
                         END AS service,
                         UPPER(f.severity) AS severity,
                         f.result,
                         f.title,
+                        f.description,
                         f.remediation,
                         r.resource_name,
                         r.resource_id,
-                        f.framework
+                        f.framework,
+                        f.details
                     FROM findings f
                     JOIN resources r ON f.resource_id = r.id
                     WHERE r.cloud_account_id = %s
@@ -339,10 +389,12 @@ def lambda_handler(event, context):
                         "severity":      row[2],
                         "result":        row[3],
                         "title":         row[4] or row[0],
-                        "remediation":   row[5] or "",
-                        "resource_name": row[6] or "",
-                        "resource_id":   row[7] or "",
-                        "framework":     row[8] or "",
+                        "description":   row[5] or "",
+                        "remediation":   row[6] or "",
+                        "resource_name": row[7] or "",
+                        "resource_id":   row[8] or "",
+                        "framework":     row[9] or "",
+                        "details":       row[10] or "",
                     }
                     for row in cur.fetchall()
                 ]
@@ -364,6 +416,19 @@ def lambda_handler(event, context):
                     ("BSI-C5",             "BSIC5",     "BSI C5"),
                     ("CSA CCM 4.0",        "CSACCM",    "CSA CCM 4.0"),
                     ("FedRAMP Moderate Rev 4", "FEDRAMP", "FedRAMP Moderate"),
+                    ("ISO 42001",          "ISO42001",  "ISO 42001:2023"),
+                    ("ISO 27017",          "ISO27017",  "ISO 27017:2015"),
+                    ("AWS FTR",            "AWSFTR",    "AWS Foundational Technical Review"),
+                    ("MVSP",               "MVSP",      "Minimum Viable Secure Product"),
+                    ("TISAX",              "TISAX",     "TISAX (VDA ISA)"),
+                    ("HITRUST CSF",        "HITRUST",   "HITRUST CSF"),
+                    ("DORA",               "DORA",      "DORA"),
+                    ("CRI Profile",        "CRIPROFILE","CRI Profile"),
+                    ("EU AI Act",          "EUAIACT",   "EU AI Act"),
+                    ("NIST AI RMF",        "NISTAIRMF", "NIST AI RMF"),
+                    ("ISO 27701",          "ISO27701",  "ISO 27701"),
+                    ("ISO 27018",          "ISO27018",  "ISO 27018"),
+                    ("Microsoft SSPA",     "SSPA",      "Microsoft SSPA"),
                 ]
                 fw_name_to_id    = {fw[0]: fw[1] for fw in COMPLIANCE_FWS}
                 fw_id_to_label   = {fw[1]: fw[2] for fw in COMPLIANCE_FWS}

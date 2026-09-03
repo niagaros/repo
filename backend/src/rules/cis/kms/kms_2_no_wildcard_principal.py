@@ -1,5 +1,29 @@
 import json
 
+# Condition keys AWS itself generates on the default key policy for service-linked
+# KMS access (e.g. "Allow access through Backup/Lambda/SNS/... for all principals
+# in the account that are authorized to use <service>"). These restrict a
+# wildcard "AWS": "*" principal to callers within the same account acting through
+# a specific service — they are not public/external access, so a wildcard
+# Principal scoped by one of these should not be flagged as a real KMS.2 finding.
+ACCOUNT_SCOPING_CONDITION_KEYS = (
+    "kms:calleraccount",
+    "aws:sourceaccount",
+    "aws:principalaccount",
+    "aws:principalorgid",
+)
+
+def _is_account_scoped(condition: dict) -> bool:
+    if not condition:
+        return False
+    for operator_block in condition.values():
+        if not isinstance(operator_block, dict):
+            continue
+        for key in operator_block:
+            if key.lower() in ACCOUNT_SCOPING_CONDITION_KEYS:
+                return True
+    return False
+
 class KMS2NoWildcardPrincipal:
 
     CONTROL_ID = "KMS.2"
@@ -27,7 +51,8 @@ class KMS2NoWildcardPrincipal:
                 principal = stmt.get("Principal")
 
                 if principal == "*" or principal == {"AWS": "*"}:
-                    wildcard_found = True
+                    if not _is_account_scoped(stmt.get("Condition")):
+                        wildcard_found = True
 
             findings.append({
                 "control_id": self.CONTROL_ID,

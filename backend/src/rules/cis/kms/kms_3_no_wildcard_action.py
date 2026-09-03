@@ -1,5 +1,14 @@
 import json
 
+# AWS auto-generates an "Enable IAM User Permissions" statement on every
+# customer-managed KMS key granting the account root "kms:*" so that IAM
+# policies (not the key policy) govern day-to-day access — this is the
+# documented, recommended default, not an open permission. A wildcard Action
+# is only a real risk when paired with a wildcard Principal on the same
+# statement (i.e. anyone, not just this account, can do anything).
+def _is_wildcard_principal(principal) -> bool:
+    return principal == "*" or principal == {"AWS": "*"}
+
 class KMS3NoWildcardAction:
 
     CONTROL_ID = "KMS.3"
@@ -25,6 +34,9 @@ class KMS3NoWildcardAction:
 
             for stmt in policy.get("Statement", []):
                 if stmt.get("Effect") != "Allow":
+                    continue
+
+                if not _is_wildcard_principal(stmt.get("Principal")):
                     continue
 
                 actions = stmt.get("Action")
