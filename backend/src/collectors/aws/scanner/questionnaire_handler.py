@@ -40,9 +40,11 @@ import json
 import logging
 import os
 import re
+import secrets
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+from datetime import datetime, timezone
 
 import boto3
 import psycopg2
@@ -109,10 +111,20 @@ CREATE TABLE IF NOT EXISTS questionnaire_item_history (
     actor_name    VARCHAR(120),
     changed_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS questionnaire_share_links (
+    id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    questionnaire_id UUID         NOT NULL REFERENCES questionnaires(id) ON DELETE CASCADE,
+    token            VARCHAR(64)  NOT NULL UNIQUE,
+    expires_at       TIMESTAMPTZ  NOT NULL,
+    revoked          BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
 CREATE INDEX IF NOT EXISTS questionnaires_account_idx ON questionnaires(cloud_account_id);
 CREATE INDEX IF NOT EXISTS questionnaire_items_questionnaire_idx ON questionnaire_items(questionnaire_id);
 CREATE INDEX IF NOT EXISTS questionnaire_item_comments_item_idx ON questionnaire_item_comments(item_id);
 CREATE INDEX IF NOT EXISTS questionnaire_item_history_item_idx ON questionnaire_item_history(item_id);
+CREATE INDEX IF NOT EXISTS questionnaire_share_links_token_idx ON questionnaire_share_links(token);
+CREATE INDEX IF NOT EXISTS questionnaire_share_links_questionnaire_idx ON questionnaire_share_links(questionnaire_id);
 """
 
 ADMIN_MIGRATION_SQL = BOOTSTRAP_SQL + """
@@ -121,6 +133,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaire_items TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON evidence_documents TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaire_item_comments TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaire_item_history TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON questionnaire_share_links TO cspm_lambda;
 """
 
 STOPWORDS = set("""
@@ -759,6 +772,75 @@ def _delete_questionnaire(conn, questionnaire_id):
             cur.execute("DELETE FROM questionnaires WHERE id = %s", (questionnaire_id,))
 
 
+# ── secure sharing ───────────────────────────────────────────────────
+
+SHARE_LINK_DEFAULT_DAYS = 7
+
+
+def _create_share_link(conn, questionnaire_id, days=SHARE_LINK_DEFAULT_DAYS):
+    token = secrets.token_urlsafe(32)
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO questionnaire_share_links (questionnaire_id, token, expires_at)
+                VALUES (%s, %s, NOW() + (%s || ' days')::interval)
+                RETURNING token, expires_at
+            """, (questionnaire_id, token, days))
+            token, expires_at = cur.fetchone()
+    return {"token": token, "expires_at": expires_at.isoformat()}
+
+
+def _list_share_links(cur, questionnaire_id):
+    cur.execute("""
+        SELECT token, expires_at, revoked, created_at FROM questionnaire_share_links
+        WHERE questionnaire_id = %s ORDER BY created_at DESC
+    """, (questionnaire_id,))
+    return [{
+        "token": r[0], "expires_at": r[1].isoformat(), "revoked": r[2], "created_at": r[3].isoformat(),
+        "active": (not r[2]) and r[1] > datetime.now(timezone.utc),
+    } for r in cur.fetchall()]
+
+
+def _revoke_share_link(conn, token):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE questionnaire_share_links SET revoked = TRUE WHERE token = %s", (token,))
+
+
+def _get_shared_questionnaire(cur, token):
+    """Public, unauthenticated read path for a share link. Only APPROVED
+    items are ever returned — an unreviewed AI draft or in-progress manual
+    note never leaves the building through a share link, regardless of how
+    much real evidence backs it. Unapproved items still appear, with the
+    answer withheld, so an external viewer sees the full question list and
+    an honest "pending internal review" status rather than silently
+    missing rows."""
+    cur.execute("""
+        SELECT q.id, q.name, q.created_at
+        FROM questionnaire_share_links sl
+        JOIN questionnaires q ON q.id = sl.questionnaire_id
+        WHERE sl.token = %s AND sl.revoked = FALSE AND sl.expires_at > NOW()
+    """, (token,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    questionnaire_id, name, created_at = row
+    cur.execute("""
+        SELECT row_number, question_text, answer_text, answer_status
+        FROM questionnaire_items WHERE questionnaire_id = %s ORDER BY row_number
+    """, (questionnaire_id,))
+    items = []
+    for row_number, question_text, answer_text, answer_status in cur.fetchall():
+        is_approved = answer_status == "approved"
+        items.append({
+            "row_number": row_number,
+            "question_text": question_text,
+            "answer_text": answer_text if is_approved else None,
+            "status": "answered" if is_approved else "pending_internal_review",
+        })
+    return {"name": name, "created_at": created_at.isoformat(), "items": items}
+
+
 # ── entrypoint ────────────────────────────────────────────────────────
 
 def _resp(status, body):
@@ -813,10 +895,18 @@ def handler(event, context):
     conn = _get_connection()
     try:
         if method == "GET":
+            if qs.get("share_token"):
+                with conn.cursor() as cur:
+                    shared = _get_shared_questionnaire(cur, qs["share_token"])
+                if not shared:
+                    return _resp(404, {"error": "This share link is invalid, expired, or has been revoked."})
+                return _resp(200, shared)
             if qs.get("questionnaire_id"):
-                q = _get_questionnaire(conn.cursor(), qs["questionnaire_id"])
-                if not q:
-                    return _resp(404, {"error": "not found"})
+                with conn.cursor() as cur:
+                    q = _get_questionnaire(cur, qs["questionnaire_id"])
+                    if not q:
+                        return _resp(404, {"error": "not found"})
+                    q["share_links"] = _list_share_links(cur, qs["questionnaire_id"])
                 return _resp(200, q)
             account_id = qs.get("cloud_account_id")
             if not account_id:
@@ -868,6 +958,12 @@ def handler(event, context):
             if action == "add_comment":
                 comment = _add_comment(conn, body["item_id"], body.get("author_name", "Anonymous"), body["comment_text"])
                 return _resp(200, comment)
+            if action == "create_share_link":
+                link = _create_share_link(conn, body["questionnaire_id"], body.get("days", SHARE_LINK_DEFAULT_DAYS))
+                return _resp(200, link)
+            if action == "revoke_share_link":
+                _revoke_share_link(conn, body["token"])
+                return _resp(200, {"revoked": True})
             return _resp(400, {"error": f"unknown action: {action}"})
 
         if method == "DELETE":

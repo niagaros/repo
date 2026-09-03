@@ -158,6 +158,18 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .comment-input input{flex:1;border:1px solid #e5e7eb;border-radius:7px;padding:6px 10px;font-size:11.5px;font-family:'Inter',sans-serif}
 .history-trail{font-size:10.5px;color:#9ca3af;margin-top:6px}
 .outstanding-pill{background:#fffbeb;color:#d97706;border:1px solid #fde68a;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.share-link-row{display:flex;align-items:center;gap:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:11.5px}
+.share-link-url{flex:1;font-family:monospace;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.share-link-exp{color:#9ca3af;flex-shrink:0}
+.share-link-revoked{color:#ef4444;font-weight:600;flex-shrink:0}
+.print-only-answer{display:none}
+@media print{
+  .sb,.topbar,.back-link,#bedrock-notice,.item-actions,.thread,.thread-toggle,.item-answer,.evidence-wrap{display:none!important}
+  body,.content{background:#fff!important;overflow:visible!important;height:auto!important}
+  .main{height:auto!important}
+  .item-card{border:1px solid #ccc;break-inside:avoid;box-shadow:none}
+  .print-only-answer{display:block;font-size:12px;color:#111827;white-space:pre-wrap;margin-top:6px}
+}
 </style>
 </head>
 <body>
@@ -236,6 +248,8 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
           <div class="page-sub" id="d-sub"></div>
         </div>
         <div style="display:flex;gap:8px">
+          <button class="btn-ghost" onclick="window.print()">🖨 Print / PDF</button>
+          <button class="btn-ghost" onclick="openShareModal()">🔗 Share</button>
           <button class="btn-ghost" onclick="exportCsv()">⭳ Export CSV</button>
           <button class="btn-primary" id="btn-genall" onclick="generateAll()">✨ Generate AI Drafts</button>
         </div>
@@ -286,6 +300,24 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="modal-foot">
       <button class="btn-ghost" onclick="closeOvDirect('ov-upload')">Cancel</button>
       <button class="btn-primary" id="btn-submit-upload" onclick="submitUpload()" disabled>Upload</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share modal -->
+<div class="overlay" id="ov-share" onclick="closeOv(event,'ov-share')">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Share Questionnaire</div>
+      <button class="modal-close" onclick="closeOvDirect('ov-share')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="f-hint" style="margin:0 0 4px">Anyone with the link can view this questionnaire — without a Niagaros login — until it expires or you revoke it. Only internally-approved answers are ever visible; unapproved items show as "pending internal review".</div>
+      <div id="share-links-list"></div>
+      <button class="btn-primary" onclick="createShareLink()">+ Create New Link (expires in 7 days)</button>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" onclick="closeOvDirect('ov-share')">Close</button>
     </div>
   </div>
 </div>
@@ -535,6 +567,7 @@ function renderDetail(){
       </div>
       ${evHtml}
       <textarea class="item-answer" id="ans-${item.id}" placeholder="No answer yet — click Generate or type one manually…">${esc(item.answer_text||'')}</textarea>
+      <div class="print-only-answer">${esc(item.answer_text||'(no answer yet)')}</div>
       <div class="item-foot">
         <span style="font-size:10px;color:#9ca3af">${item.ai_generated?'✨ AI draft — review before approving':(item.answer_text?'Manually entered':'')}</span>
         <div class="item-actions">
@@ -588,6 +621,47 @@ async function saveItem(itemId,status){
   await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'update_item',item_id:itemId,answer_text:text,answer_status:status,actor_name:myDisplayName()})});
   showToast(status==='approved'?'Goedgekeurd':'Opgeslagen');
   await openDetail(activeQuestionnaire.id);
+}
+
+function shareUrl(token){ return location.origin+location.pathname.replace('questionnaire_automation.html','questionnaire_share_view.html')+'?token='+token; }
+
+function renderShareLinks(){
+  const links=activeQuestionnaire.share_links||[];
+  document.getElementById('share-links-list').innerHTML = links.length ? links.map(l=>{
+    const url=shareUrl(l.token);
+    const status=l.revoked?'<span class="share-link-revoked">Revoked</span>':(l.active?'<span class="share-link-exp">Expires '+new Date(l.expires_at).toLocaleDateString()+'</span>':'<span class="share-link-revoked">Expired</span>');
+    return `<div class="share-link-row">
+      <span class="share-link-url">${esc(url)}</span>
+      ${status}
+      ${(!l.revoked && l.active) ? `<button class="btn-ghost btn-sm" onclick="copyShareLink('${url}')">Copy</button>
+      <button class="btn-danger-txt" onclick="revokeShareLink('${l.token}')">Revoke</button>` : ''}
+    </div>`;
+  }).join('') : '<div class="no-evidence-note">No share links yet.</div>';
+}
+
+async function openShareModal(){
+  const r=await fetch(QNR_API+'?questionnaire_id='+encodeURIComponent(activeQuestionnaire.id));
+  activeQuestionnaire=await r.json();
+  renderShareLinks();
+  document.getElementById('ov-share').classList.add('open');
+}
+async function createShareLink(){
+  await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'create_share_link',questionnaire_id:activeQuestionnaire.id,days:7})});
+  const r=await fetch(QNR_API+'?questionnaire_id='+encodeURIComponent(activeQuestionnaire.id));
+  activeQuestionnaire=await r.json();
+  renderShareLinks();
+  showToast('Link aangemaakt');
+}
+async function revokeShareLink(token){
+  if(!confirm('Deze link intrekken? Hij werkt dan niet meer.')) return;
+  await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'revoke_share_link',token})});
+  const r=await fetch(QNR_API+'?questionnaire_id='+encodeURIComponent(activeQuestionnaire.id));
+  activeQuestionnaire=await r.json();
+  renderShareLinks();
+  showToast('Link ingetrokken');
+}
+function copyShareLink(url){
+  navigator.clipboard.writeText(url).then(()=>showToast('Link gekopieerd')).catch(()=>showToast(url));
 }
 
 function exportCsv(){
