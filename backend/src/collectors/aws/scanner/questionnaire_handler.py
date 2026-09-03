@@ -572,6 +572,55 @@ def _list_questionnaires(cur, cloud_account_id):
     } for r in cur.fetchall()]
 
 
+def _evidence_tags(evidence):
+    """Real tags derived from what an answer actually cites — a control's
+    framework, or a doc's category — never an invented taxonomy."""
+    tags = set()
+    for e in evidence or []:
+        if e.get("type") == "control" and e.get("framework"):
+            tags.add(e["framework"])
+        elif e.get("type") == "doc" and e.get("category"):
+            tags.add(e["category"])
+    return sorted(tags)
+
+
+def _get_answer_library(cur, cloud_account_id, search=None):
+    """Knowledge Base section from issue #259: a centralized, searchable,
+    tagged library of approved answers, with version history. Grouped by
+    exact question text — a real repeat of the same question across
+    questionnaires — rather than fuzzy-matching, so "version history" only
+    ever shows genuinely-the-same question answered more than once, not a
+    guess at similarity."""
+    cur.execute("""
+        SELECT qi.question_text, qi.answer_text, qi.evidence, qi.reviewed_at, q.name
+        FROM questionnaire_items qi
+        JOIN questionnaires q ON q.id = qi.questionnaire_id
+        WHERE q.cloud_account_id = %s AND qi.answer_status = 'approved' AND qi.answer_text IS NOT NULL
+        ORDER BY qi.reviewed_at DESC NULLS LAST
+    """, (cloud_account_id,))
+
+    grouped = {}
+    for question_text, answer_text, evidence, reviewed_at, questionnaire_name in cur.fetchall():
+        entry = grouped.setdefault(question_text, {"question_text": question_text, "tags": set(), "versions": []})
+        entry["tags"].update(_evidence_tags(evidence))
+        entry["versions"].append({
+            "answer_text": answer_text,
+            "questionnaire_name": questionnaire_name,
+            "approved_at": reviewed_at.isoformat() if reviewed_at else None,
+        })
+
+    results = []
+    needle = (search or "").strip().lower()
+    for entry in grouped.values():
+        entry["tags"] = sorted(entry["tags"])
+        if needle and needle not in entry["question_text"].lower() and needle not in entry["versions"][0]["answer_text"].lower() and not any(needle in t.lower() for t in entry["tags"]):
+            continue
+        results.append(entry)
+
+    results.sort(key=lambda e: e["versions"][0]["approved_at"] or "", reverse=True)
+    return results
+
+
 def _get_analytics(cur, cloud_account_id):
     """Acceptance criterion from issue #259: "automation rates, review
     times, and completion metrics are displayed." Every number here is a
@@ -914,6 +963,9 @@ def handler(event, context):
             if qs.get("analytics"):
                 with conn.cursor() as cur:
                     return _resp(200, _get_analytics(cur, account_id))
+            if qs.get("library"):
+                with conn.cursor() as cur:
+                    return _resp(200, {"entries": _get_answer_library(cur, account_id, qs.get("q"))})
             with conn.cursor() as cur:
                 return _resp(200, {"questionnaires": _list_questionnaires(cur, account_id)})
 

@@ -162,6 +162,14 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .share-link-url{flex:1;font-family:monospace;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .share-link-exp{color:#9ca3af;flex-shrink:0}
 .share-link-revoked{color:#ef4444;font-weight:600;flex-shrink:0}
+.lib-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:12px}
+.lib-q{font-size:13px;font-weight:700;color:#111827;margin-bottom:8px}
+.lib-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.lib-tag{font-size:10px;font-weight:600;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;padding:2px 9px;border-radius:6px}
+.lib-a{font-size:12.5px;color:#374151;line-height:1.6;white-space:pre-wrap;margin-bottom:8px}
+.lib-meta{font-size:10.5px;color:#9ca3af}
+.lib-versions-toggle{font-size:11px;color:#059669;cursor:pointer;font-weight:600;margin-top:6px}
+.lib-version{border-top:1px solid #f3f4f6;padding-top:8px;margin-top:8px;font-size:12px}
 .print-only-answer{display:none}
 @media print{
   .sb,.topbar,.back-link,#bedrock-notice,.item-actions,.thread,.thread-toggle,.item-answer,.evidence-wrap{display:none!important}
@@ -221,6 +229,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       </div>
     </div>
     <div class="tp-right">
+      <button class="btn-ghost" onclick="openLibrary()">📚 Answer Library</button>
       <button class="btn-ghost" onclick="openAnalytics()">📈 Analytics</button>
       <button class="btn-primary" id="btn-upload" onclick="openUploadModal()">+ Upload Questionnaire</button>
       <div class="avatar">DN</div>
@@ -270,6 +279,18 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         </div>
       </div>
       <div id="analytics-body"></div>
+    </div>
+
+    <div id="v-library" hidden>
+      <div class="back-link" onclick="backToList()">← All questionnaires</div>
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Answer Library</div>
+          <div class="page-sub">Every internally-approved answer ever given, across every questionnaire on this account — searchable, tagged by the framework/category its evidence actually came from, with full version history when a question was answered more than once.</div>
+        </div>
+      </div>
+      <input class="f-in" id="library-search" placeholder="Search questions, answers, or tags…" style="margin-bottom:16px" oninput="renderLibrary()">
+      <div id="library-body"></div>
     </div>
   </div>
 </div>
@@ -402,12 +423,14 @@ function renderList(){
   document.getElementById('v-list').hidden=false;
   document.getElementById('v-detail').hidden=true;
   document.getElementById('v-analytics').hidden=true;
+  document.getElementById('v-library').hidden=true;
 }
 
 async function openAnalytics(){
   document.getElementById('v-load').style.display='flex';
   document.getElementById('v-list').hidden=true;
   document.getElementById('v-detail').hidden=true;
+  document.getElementById('v-library').hidden=true;
   const r=await fetch(QNR_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&analytics=1');
   const a=await r.json();
   renderAnalytics(a);
@@ -450,6 +473,50 @@ function renderAnalytics(a){
   `;
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-analytics').hidden=false;
+}
+
+let libraryEntries=[];
+async function openLibrary(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-list').hidden=true;
+  document.getElementById('v-detail').hidden=true;
+  const r=await fetch(QNR_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&library=1');
+  const d=await r.json();
+  libraryEntries=d.entries||[];
+  document.getElementById('library-search').value='';
+  renderLibrary();
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-analytics').hidden=true;
+  document.getElementById('v-library').hidden=false;
+}
+
+function toggleVersions(idx){
+  const el=document.getElementById('lib-versions-'+idx);
+  el.hidden=!el.hidden;
+}
+
+function renderLibrary(){
+  const needle=document.getElementById('library-search').value.trim().toLowerCase();
+  const filtered=libraryEntries.filter(e=>!needle || e.question_text.toLowerCase().includes(needle) || e.versions[0].answer_text.toLowerCase().includes(needle) || e.tags.some(t=>t.toLowerCase().includes(needle)));
+  const body=document.getElementById('library-body');
+  if(!filtered.length){
+    body.innerHTML=`<div class="empty-state"><div class="es-ic">📚</div><div class="es-t">No approved answers ${needle?'match your search':'yet'}</div><div class="es-d">Approve items in a questionnaire and they'll show up here automatically.</div></div>`;
+    return;
+  }
+  body.innerHTML=filtered.map((e,idx)=>{
+    const latest=e.versions[0];
+    const older=e.versions.slice(1);
+    return `<div class="lib-card">
+      <div class="lib-q">${esc(e.question_text)}</div>
+      ${e.tags.length?`<div class="lib-tags">${e.tags.map(t=>`<span class="lib-tag">${esc(t)}</span>`).join('')}</div>`:''}
+      <div class="lib-a">${esc(latest.answer_text)}</div>
+      <div class="lib-meta">Latest — approved for "${esc(latest.questionnaire_name)}"${latest.approved_at?' on '+new Date(latest.approved_at).toLocaleDateString():''}</div>
+      ${older.length?`<div class="lib-versions-toggle" onclick="toggleVersions(${idx})">↕ ${older.length} earlier version${older.length===1?'':'s'}</div>
+      <div id="lib-versions-${idx}" hidden>
+        ${older.map(v=>`<div class="lib-version"><div>${esc(v.answer_text)}</div><div class="lib-meta">"${esc(v.questionnaire_name)}"${v.approved_at?' · '+new Date(v.approved_at).toLocaleDateString():''}</div></div>`).join('')}
+      </div>`:''}
+    </div>`;
+  }).join('');
 }
 
 function openUploadModal(){
@@ -504,6 +571,7 @@ async function openDetail(id){
   document.getElementById('v-load').style.display='flex';
   document.getElementById('v-list').hidden=true;
   document.getElementById('v-analytics').hidden=true;
+  document.getElementById('v-library').hidden=true;
   const r=await fetch(QNR_API+'?questionnaire_id='+encodeURIComponent(id));
   activeQuestionnaire=await r.json();
   renderDetail();
