@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timezone
+
 import boto3
 import psycopg2
 
@@ -7,6 +9,22 @@ CORS = {
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
+
+# Real scan cadence: EventBridge rule "cspm-weekly-orchestrator" runs
+# cron(0 18 ? * MON *) — every Monday. 10 days gives room for one run to
+# land a bit late before data is flagged stale, without waiting almost a
+# full extra week (this is the same "actualiteit" concept the Trust
+# Center's per-framework last_verified and the Questionnaire Automation
+# answer-staleness check already use, generalized here to the main
+# dashboard and every framework page that reads this same API).
+STALE_THRESHOLD_DAYS = 10
+
+
+def _is_stale(last_scan_at):
+    if not last_scan_at:
+        return None  # never scanned — not "stale", just unknown
+    age_days = (datetime.now(timezone.utc) - last_scan_at).total_seconds() / 86400
+    return age_days > STALE_THRESHOLD_DAYS
 
 
 def get_db_connection():
@@ -176,9 +194,14 @@ def lambda_handler(event, context):
                 """, (account_id,))
                 row = cur.fetchone()
                 if row:
-                    data["last_scan_at"]   = str(row[0]) if row[0] else "Unknown"
-                    data["account_name"]   = row[1] if row[1] else account_id[:8]
-                    data["aws_account_id"] = row[2] if row[2] else ""
+                    last_scan_at = row[0]
+                    if last_scan_at and last_scan_at.tzinfo is None:
+                        last_scan_at = last_scan_at.replace(tzinfo=timezone.utc)
+                    data["last_scan_at"]        = str(row[0]) if row[0] else "Unknown"
+                    data["account_name"]        = row[1] if row[1] else account_id[:8]
+                    data["aws_account_id"]      = row[2] if row[2] else ""
+                    data["is_stale"]            = _is_stale(last_scan_at)
+                    data["stale_threshold_days"] = STALE_THRESHOLD_DAYS
             except Exception as e:
                 data["_debug"]["meta"] = str(e)
                 conn.rollback()
@@ -191,7 +214,8 @@ def lambda_handler(event, context):
                         COUNT(*) AS total,
                         COUNT(*) FILTER (WHERE result = 'PASS') AS passed,
                         COUNT(*) FILTER (WHERE result = 'FAIL') AS failed,
-                        ROUND(COUNT(*) FILTER (WHERE result = 'PASS') * 100.0 / COUNT(*), 1) AS score
+                        ROUND(COUNT(*) FILTER (WHERE result = 'PASS') * 100.0 / COUNT(*), 1) AS score,
+                        MAX(detected_at) AS last_verified
                     FROM (
                         SELECT
                             CASE
@@ -238,7 +262,8 @@ def lambda_handler(event, context):
                                 WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
                                 ELSE 'Other'
                             END AS service,
-                            f.result
+                            f.result,
+                            f.detected_at
                         FROM findings f
                         JOIN resources r ON f.resource_id = r.id
                         WHERE r.cloud_account_id = %s
@@ -281,12 +306,17 @@ def lambda_handler(event, context):
                     END
                 """, (account_id,))
                 for row in cur.fetchall():
+                    last_verified = row[5]
+                    if last_verified and last_verified.tzinfo is None:
+                        last_verified = last_verified.replace(tzinfo=timezone.utc)
                     entry = {
-                        "service": row[0],
-                        "total":   row[1],
-                        "passed":  row[2],
-                        "failed":  row[3],
-                        "score":   float(row[4]),
+                        "service":      row[0],
+                        "total":        row[1],
+                        "passed":       row[2],
+                        "failed":       row[3],
+                        "score":        float(row[4]),
+                        "last_verified": row[5].isoformat() if row[5] else None,
+                        "is_stale":     _is_stale(last_verified),
                     }
                     if row[0] == "TOTAL":
                         data["total"] = entry

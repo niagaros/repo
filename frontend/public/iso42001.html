@@ -441,7 +441,7 @@ async function loadData(){
     if(r.status===401){location.href='/';return;}
     if(d.accounts&&d.accounts.length){allAccounts=d.accounts;if(!currentAccountId)currentAccountId=d.accounts[0].id;renderAcctList();}
     if(d.account_name) document.getElementById('chip-account').textContent='🏢 '+d.account_name+' ▾';
-    if(d.last_scan_at) document.getElementById('last-scan').textContent='Last scan: '+d.last_scan_at.substring(0,16);
+    if(d.last_scan_at) document.getElementById('last-scan').innerHTML='Last scan: '+d.last_scan_at.substring(0,16)+(d.is_stale?' <span style="color:#f59e0b;font-weight:700">⚠ stale (>'+d.stale_threshold_days+'d)</span>':'');
     allF=(d.findings||[]).filter(f => {
       const svc=(f.service||'').toString().toUpperCase();
       const fw=(f.framework||'').toString().toUpperCase();
