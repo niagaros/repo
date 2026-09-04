@@ -90,17 +90,55 @@ line and against how Vanta/Drata Trust Centers actually work:
   disclosure policy" from the issue have no corresponding published doc
   yet, so they are not included as topics rather than faked.
 
-**Known, deliberate differences from a real Vanta/Drata Trust Center:**
-- **No NDA click-through before seeing restricted document titles** —
-  titles are visible to any public visitor; only the file itself is
-  gated. Real products often gate the title list too. Not built because
-  it adds a step with no real security value here (a title alone isn't
-  sensitive) — but worth reconsidering if a customer specifically asks.
-- **"Authenticates" (AC #2) is a manual admin-approval + time-limited
-  token, not a real login/SSO flow** — there is no identity provider
-  wired into this codebase to authenticate against. This is an honest
-  approximation of the acceptance criterion's intent (controlled,
-  auditable access) rather than a literal implementation of it.
+## NDA click-through and real approval email (closed for real, not documented around)
+
+The user pushed back on both items below being left as "deliberate
+differences" — correctly: neither is actually blocked by anything, so
+both are now built for real (migration `012_trust_center_nda_and_email.sql`).
+
+- **NDA click-through**: `trust_document_access_requests` now has
+  `nda_accepted_name` + `nda_accepted_at`. The public request modal
+  requires a checked confidentiality box and a typed full legal name
+  before `request_access` is accepted at all — the backend rejects the
+  request with 400 if either is missing (verified live). Every acceptance
+  is also written to `trust_document_audit_log` as `nda_accepted`, with
+  the requester's email as actor and a real timestamp.
+- **Real approval email**: `_send_approval_email()` calls `ses:SendEmail`
+  (IAM permission `TrustCenterApprovalEmail` added to
+  `CSPMScannerLambdaRole`) with the actual download link on approval.
+  This is not simulated — verified live against two real cases:
+  - Approving a request from the one SES-verified address
+    (`bottomclipzz@gmail.com`) → `email_status: "sent"`, real email
+    delivered, audit log shows `approved_email_sent`.
+  - Approving a request from an arbitrary external address
+    (`someexternalauditor@example.com`) → SES genuinely rejects it
+    (`"Email address is not verified..."` — the account is still in
+    SES sandbox mode), and the handler records `email_status: "failed"`
+    with AWS's own error text rather than pretending to have sent it.
+    The admin UI (`trust_center.html`) shows this honestly and falls
+    back to the manual copy-link prompt only in that case.
+
+**Why not every external recipient can be emailed automatically yet —
+a real, currently-open blocker, not a design choice:**
+SES production access was actually requested via `aws sesv2
+put-account-details` (case `178854954000928`) and was **denied
+instantly**, almost certainly because the only verified sending identity
+is a personal Gmail address rather than a company domain. Domain
+verification for `niagaros.com` was started (`create-email-identity`,
+DKIM tokens generated) — DNS for that domain is hosted at SiteGround
+(`ns1/ns2.siteground.net`, confirmed via NS lookup), and adding the 3 DKIM
+CNAME records there is a prerequisite for resubmitting production access
+credibly. This is tracked as open follow-up work, not silently accepted:
+until it lands, automatic email only reaches SES-verified test addresses,
+and the manual copy-link fallback (already built, now clearly labeled
+in the UI) remains the real path for everyone else.
+
+**Still true, and still a deliberate simplification rather than a gap:**
+"Authenticates" (AC #2) is approval + a time-limited token, not a real
+login/SSO flow — there is no identity provider wired into this codebase.
+Combined with the NDA acknowledgement and audit trail above, this is a
+reasonable approximation of the acceptance criterion's intent (controlled,
+auditable, non-anonymous access), not a corner cut for convenience.
 
 **Deliberately not built — no real data source exists for these, and
 fabricating one would violate this codebase's core rule:**

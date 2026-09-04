@@ -265,7 +265,10 @@ async function loadRequests(){
   const reqs=d.requests||[];
   document.getElementById('req-list').innerHTML=reqs.length?reqs.map(req=>`
     <div class="req-row">
-      <div class="req-meta"><b>${esc(req.requester_name)}</b> (${esc(req.requester_email)})<div>vraagt toegang tot "${esc(req.document_title)}" — ${esc(req.reason||'')}</div></div>
+      <div class="req-meta"><b>${esc(req.requester_name)}</b> (${esc(req.requester_email)})<div>vraagt toegang tot "${esc(req.document_title)}" — ${esc(req.reason||'')}</div>
+      <div>${req.nda_accepted_name?`✓ geheimhouding bevestigd door "${esc(req.nda_accepted_name)}" op ${new Date(req.nda_accepted_at).toLocaleString()}`:'geen geheimhoudingsbevestiging'}</div>
+      ${req.email_status?`<div>${req.email_status==='sent'?'✓ mail automatisch verstuurd':'⚠ automatische mail mislukt: '+esc(req.email_error||'')}</div>`:''}
+      </div>
       <span class="badge b-${req.status}">${req.status}</span>
       ${req.status==='pending'?`<button class="btn-primary btn-sm" onclick="decide('${req.id}',true,'${req.document_id}')">Goedkeuren</button><button class="btn-ghost btn-sm" onclick="decide('${req.id}',false,'${req.document_id}')">Weigeren</button>`:''}
     </div>
@@ -329,7 +332,11 @@ async function decide(requestId,approve,documentId){
   const d=await r.json();
   if(approve && d.access_token){
     const link=location.origin+location.pathname.replace('trust_center.html','trust_center_public.html')+'?download='+documentId+'&token='+d.access_token;
-    prompt('Goedgekeurd. Stuur deze downloadlink naar de aanvrager (geldig 30 dagen):', link);
+    if(d.email_status==='sent'){
+      showToast('Goedgekeurd — downloadlink automatisch gemaild naar de aanvrager');
+    } else {
+      prompt('Goedgekeurd, maar de automatische mail is niet gelukt ('+(d.email_error||'onbekende fout')+'). Stuur deze downloadlink zelf naar de aanvrager (geldig 30 dagen):', link);
+    }
   } else {
     showToast('Geweigerd');
   }

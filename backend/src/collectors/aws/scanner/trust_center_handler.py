@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 
 import boto3
 import psycopg2
+from botocore.exceptions import ClientError
 from psycopg2.extras import Json
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,15 @@ CORS_HEADERS = {
 
 DOCS_BUCKET = os.environ.get("TRUST_CENTER_BUCKET", "niagaros-trust-center-documents")
 ACCESS_TOKEN_DAYS = 30
+
+# Real SES sending. The account's SES production access request was
+# submitted and denied (case 178854954000928) because no sending domain is
+# verified yet — only this one personal address. Until a verified
+# niagaros.com identity + a re-approved production access request land,
+# this can only deliver to SES-verified recipients; every attempt's real
+# outcome (sent/failed + AWS's own error) is recorded rather than assumed.
+SES_SENDER_EMAIL = os.environ.get("SES_SENDER_EMAIL", "bottomclipzz@gmail.com")
+FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "https://main.d3joqokkaynfaq.amplifyapp.com")
 
 # Matches the "Trust Documents" list in issue #258's proposed solution.
 DOCUMENT_CATEGORIES = {
@@ -186,6 +196,11 @@ CREATE INDEX IF NOT EXISTS trust_document_audit_log_doc_idx ON trust_document_au
 """
 
 ADMIN_MIGRATION_SQL = BOOTSTRAP_SQL + """
+ALTER TABLE trust_document_access_requests
+    ADD COLUMN IF NOT EXISTS nda_accepted_name VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS nda_accepted_at   TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS email_status      VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS email_error       TEXT;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_center_settings TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_documents TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_document_versions TO cspm_lambda;
@@ -207,6 +222,33 @@ def _get_connection():
 
 def _s3():
     return boto3.client("s3", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+
+
+def _ses():
+    return boto3.client("ses", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+
+
+def _send_approval_email(requester_email, requester_name, document_title, company_name, download_url):
+    """Real SES send attempt. Returns (status, error) — never fakes success;
+    a sandbox rejection is recorded as 'failed' with AWS's own error text so
+    the admin UI can fall back to the manual copy-link honestly."""
+    subject = f"Access approved: {document_title}"
+    body = (
+        f"Hi {requester_name},\n\n"
+        f"Your request to access \"{document_title}\" from the "
+        f"{company_name or 'Trust Center'} has been approved.\n\n"
+        f"Download it here (link expires in {ACCESS_TOKEN_DAYS} days):\n{download_url}\n\n"
+        f"If you didn't request this, you can ignore this email.\n"
+    )
+    try:
+        _ses().send_email(
+            Source=SES_SENDER_EMAIL,
+            Destination={"ToAddresses": [requester_email]},
+            Message={"Subject": {"Data": subject}, "Body": {"Text": {"Data": body}}},
+        )
+        return "sent", None
+    except ClientError as e:
+        return "failed", e.response.get("Error", {}).get("Message", str(e))
 
 
 # ── settings ──────────────────────────────────────────────────────────
@@ -360,16 +402,23 @@ def _presign_latest(cur, document_id, expires_in=900):
 
 # ── access requests ───────────────────────────────────────────────────
 
-def _request_access(conn, document_id, requester_name, requester_email, reason):
+def _request_access(conn, document_id, requester_name, requester_email, reason, nda_accepted_name):
+    """nda_accepted_name is the requester's typed full legal name, captured as
+    a real, timestamped confidentiality acknowledgement — the click-through
+    step issue #258's restricted-document flow was missing entirely."""
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO trust_document_access_requests (document_id, requester_name, requester_email, reason)
-                VALUES (%s, %s, %s, %s) RETURNING id
-            """, (document_id, requester_name, requester_email, reason))
+                INSERT INTO trust_document_access_requests
+                    (document_id, requester_name, requester_email, reason, nda_accepted_name, nda_accepted_at)
+                VALUES (%s, %s, %s, %s, %s, NOW()) RETURNING id
+            """, (document_id, requester_name, requester_email, reason, nda_accepted_name))
             request_id = str(cur.fetchone()[0])
             cur.execute("""
                 INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'requested')
+            """, (document_id, requester_email))
+            cur.execute("""
+                INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'nda_accepted')
             """, (document_id, requester_email))
     return request_id
 
@@ -377,7 +426,8 @@ def _request_access(conn, document_id, requester_name, requester_email, reason):
 def _list_access_requests(cur, cloud_account_id):
     cur.execute("""
         SELECT ar.id, ar.document_id, td.title, ar.requester_name, ar.requester_email, ar.reason,
-               ar.status, ar.requested_at, ar.access_token, ar.token_expires_at
+               ar.status, ar.requested_at, ar.access_token, ar.token_expires_at,
+               ar.nda_accepted_name, ar.nda_accepted_at, ar.email_status, ar.email_error
         FROM trust_document_access_requests ar
         JOIN trust_documents td ON td.id = ar.document_id
         WHERE td.cloud_account_id = %s
@@ -387,17 +437,26 @@ def _list_access_requests(cur, cloud_account_id):
         "id": str(r[0]), "document_id": str(r[1]), "document_title": r[2], "requester_name": r[3],
         "requester_email": r[4], "reason": r[5], "status": r[6], "requested_at": r[7].isoformat(),
         "access_token": r[8], "token_expires_at": r[9].isoformat() if r[9] else None,
+        "nda_accepted_name": r[10], "nda_accepted_at": r[11].isoformat() if r[11] else None,
+        "email_status": r[12], "email_error": r[13],
     } for r in cur.fetchall()]
 
 
 def _decide_access_request(conn, request_id, approve, decided_by):
     with conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT document_id FROM trust_document_access_requests WHERE id = %s", (request_id,))
+            cur.execute("""
+                SELECT ar.document_id, ar.requester_name, ar.requester_email, td.title, tcs.company_name
+                FROM trust_document_access_requests ar
+                JOIN trust_documents td ON td.id = ar.document_id
+                LEFT JOIN trust_center_settings tcs ON tcs.cloud_account_id = td.cloud_account_id
+                WHERE ar.id = %s
+            """, (request_id,))
             row = cur.fetchone()
             if not row:
                 return None
-            document_id = row[0]
+            document_id, requester_name, requester_email, doc_title, company_name = row
+            token, email_status, email_error = None, None, None
             if approve:
                 token = secrets.token_urlsafe(24)
                 cur.execute("""
@@ -406,19 +465,24 @@ def _decide_access_request(conn, request_id, approve, decided_by):
                         access_token = %s, token_expires_at = NOW() + (%s || ' days')::interval
                     WHERE id = %s
                 """, (decided_by, token, ACCESS_TOKEN_DAYS, request_id))
-                action = "approved"
+                download_url = f"{FRONTEND_BASE_URL}/trust_center_public.html?download={document_id}&token={token}"
+                email_status, email_error = _send_approval_email(
+                    requester_email, requester_name, doc_title, company_name, download_url)
+                cur.execute("""
+                    UPDATE trust_document_access_requests SET email_status = %s, email_error = %s WHERE id = %s
+                """, (email_status, email_error, request_id))
+                action = "approved_email_sent" if email_status == "sent" else "approved_email_failed"
             else:
                 cur.execute("""
                     UPDATE trust_document_access_requests
                     SET status = 'denied', decided_at = NOW(), decided_by = %s
                     WHERE id = %s
                 """, (decided_by, request_id))
-                token = None
                 action = "denied"
             cur.execute("""
                 INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, %s)
             """, (document_id, decided_by, action))
-    return token
+    return {"access_token": token, "email_status": email_status, "email_error": email_error}
 
 
 def _get_audit_log(cur, cloud_account_id, document_id=None):
@@ -608,12 +672,17 @@ def handler(event, context):
                                          body["file_base64"], body.get("changelog"), body.get("actor_name", "Admin"))
                 return _resp(200, {"version_number": v})
             if action == "request_access":
+                nda_name = (body.get("nda_accepted_name") or "").strip()
+                if not nda_name:
+                    return _resp(400, {"error": "Confidentiality acknowledgement (typed full name) is required."})
                 req_id = _request_access(conn, body["document_id"], body["requester_name"], body["requester_email"],
-                                          body.get("reason", ""))
+                                          body.get("reason", ""), nda_name)
                 return _resp(200, {"id": req_id})
             if action == "decide_access_request":
-                token = _decide_access_request(conn, body["request_id"], body["approve"], body.get("actor_name", "Admin"))
-                return _resp(200, {"access_token": token})
+                result = _decide_access_request(conn, body["request_id"], body["approve"], body.get("actor_name", "Admin"))
+                if result is None:
+                    return _resp(404, {"error": "access request not found"})
+                return _resp(200, result)
             return _resp(400, {"error": f"unknown action: {action}"})
 
         return _resp(405, {"error": "method not allowed"})
