@@ -248,6 +248,9 @@ def lambda_handler(event, context):
                                 WHEN f.framework = 'ISO 27701'       THEN 'ISO27701'
                                 WHEN f.framework = 'ISO 27018'       THEN 'ISO27018'
                                 WHEN f.framework = 'Microsoft SSPA'  THEN 'SSPA'
+                            WHEN f.framework = 'CIS Controls v8.1' THEN 'CISCTRL'
+                            WHEN f.framework = '23 NYCRR 500 (NYDFS)' THEN 'NYDFS'
+                            WHEN f.framework = 'NIST Privacy Framework' THEN 'NISTPRIV'
                                 -- Raw CIS/FSBP scan findings (no mapped framework above)
                                 -- fall back to service inferred from check_id/resource_type.
                                 WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
@@ -378,6 +381,9 @@ def lambda_handler(event, context):
                             WHEN f.framework = 'ISO 27701'       THEN 'ISO27701'
                             WHEN f.framework = 'ISO 27018'       THEN 'ISO27018'
                             WHEN f.framework = 'Microsoft SSPA'  THEN 'SSPA'
+                            WHEN f.framework = 'CIS Controls v8.1' THEN 'CISCTRL'
+                            WHEN f.framework = '23 NYCRR 500 (NYDFS)' THEN 'NYDFS'
+                            WHEN f.framework = 'NIST Privacy Framework' THEN 'NISTPRIV'
                             WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
                             WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
                             WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
