@@ -562,6 +562,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="tp-right">
       <div class="tp-scan-info"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
       <button class="btn-primary" id="btn-scan" onclick="triggerScan()">↻ Scan Now</button>
+      <button class="btn-primary" id="btn-report" onclick="runReportPreview()" style="background:#fff;color:#374151;border:1px solid #e5e7eb" title="Genereert en verstuurt direct een rapport, zonder de geplande maandelijkse periode te verstoren">✉ Run Report Now</button>
       <div class="btn-icon">🔔</div>
       <div class="avatar" onclick="logout()" title="Uitloggen" style="cursor:pointer">DN</div>
     </div>
@@ -1016,6 +1017,33 @@ async function triggerScan(){
     btn.textContent = '↻ Scan Now';
     closeToast();
     alert('Failed to trigger scan: ' + e.message);
+  }
+}
+
+// ── On-demand report preview ──────────────────────────
+// Deliberately calls the preview endpoint, not the scheduled monthly
+// action — a preview can be run as often as you like because it never
+// writes a new monthly-report snapshot, so it can't shorten or distort
+// the real month-over-month trend the scheduled report relies on.
+const REPORT_PREVIEW_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/monthly-report-preview';
+async function runReportPreview(){
+  if(!currentAccountId){ alert('Selecteer eerst een account.'); return; }
+  const btn=document.getElementById('btn-report');
+  btn.disabled=true; btn.textContent='✉ Bezig…';
+  try{
+    const r=await fetch(REPORT_PREVIEW_API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({cloud_account_id:currentAccountId})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'onbekende fout');
+    if(d.email && d.email.sent){
+      alert('Rapport verstuurd — score '+d.score+'%, '+d.new_findings+' nieuw, '+d.resolved_findings+' opgelost sinds de laatste sluiting.');
+    } else {
+      alert('Rapport gegenereerd (score '+d.score+'%), maar de mail kon niet worden verstuurd: '+((d.email&&d.email.reason)||'onbekende reden'));
+    }
+  }catch(e){
+    alert('Rapport genereren mislukt: '+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent='✉ Run Report Now';
   }
 }
 
