@@ -68,8 +68,39 @@ deliver. Built for real, matching real acceptance criteria:
 | Restricted docs need authorization | ✅ approval + token-gated download |
 | Compliance status reflects changes automatically | ✅ inherent — it's a live query, not a cached cert |
 | Admin-approved access request with audit logging | ✅ `trust_document_access_requests` + `trust_document_audit_log` |
-| Questionnaire responses reused automatically | ✅ links to the existing Answer Library (Questionnaire Automation) rather than duplicating it |
+| Questionnaire responses reused automatically | ✅ `_get_public_qa_highlights()` surfaces the account's approved Questionnaire Automation answers directly on the public page — genuinely queries the same data, not a link out to a separate page (an earlier version of this doc claimed this was "linked" when it hadn't actually been wired in yet; fixed) |
 | Document versions archived, audit retained | ✅ every upload is a new `trust_document_versions` row, never overwritten |
+
+## Security Posture and document categories (added after gap review)
+
+Two gaps found by comparing the built version against the issue line by
+line and against how Vanta/Drata Trust Centers actually work:
+
+- **Document categories were incomplete.** The issue's Trust Documents
+  list names SOC reports, ISO certificates, subprocessor lists, and BC/DR
+  documentation explicitly; the first pass only had policy/privacy/dpa/
+  whitepaper/pentest/other. `DOCUMENT_CATEGORIES` now matches the issue's
+  list.
+- **No "Security Posture" section existed at all.** `_get_security_posture()`
+  pulls real content for encryption, IAM, infrastructure security, and
+  vulnerability management from `evidence_documents` — the same table
+  Questionnaire Automation seeds from `docs/public/security/**/*.md`. A
+  topic with no matching real document shows "not yet published" rather
+  than guessing at content; "Secure SDLC overview" and "Responsible
+  disclosure policy" from the issue have no corresponding published doc
+  yet, so they are not included as topics rather than faked.
+
+**Known, deliberate differences from a real Vanta/Drata Trust Center:**
+- **No NDA click-through before seeing restricted document titles** —
+  titles are visible to any public visitor; only the file itself is
+  gated. Real products often gate the title list too. Not built because
+  it adds a step with no real security value here (a title alone isn't
+  sensitive) — but worth reconsidering if a customer specifically asks.
+- **"Authenticates" (AC #2) is a manual admin-approval + time-limited
+  token, not a real login/SSO flow** — there is no identity provider
+  wired into this codebase to authenticate against. This is an honest
+  approximation of the acceptance criterion's intent (controlled,
+  auditable access) rather than a literal implementation of it.
 
 **Deliberately not built — no real data source exists for these, and
 fabricating one would violate this codebase's core rule:**

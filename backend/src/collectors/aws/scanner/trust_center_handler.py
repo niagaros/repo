@@ -51,6 +51,32 @@ CORS_HEADERS = {
 DOCS_BUCKET = os.environ.get("TRUST_CENTER_BUCKET", "niagaros-trust-center-documents")
 ACCESS_TOKEN_DAYS = 30
 
+# Matches the "Trust Documents" list in issue #258's proposed solution.
+DOCUMENT_CATEGORIES = {
+    "policy": "Security Policy",
+    "privacy": "Privacy Policy",
+    "dpa": "Data Processing Agreement (DPA)",
+    "whitepaper": "Security Whitepaper",
+    "pentest": "Penetration Test Summary",
+    "soc_report": "SOC Report",
+    "iso_certificate": "ISO Certificate",
+    "subprocessor_list": "Subprocessor List",
+    "bcdr": "Business Continuity & Disaster Recovery",
+    "other": "Other",
+}
+
+# "Security Posture" section from issue #258 — built only from real,
+# already-published security documentation (the same evidence_documents
+# table Questionnaire Automation seeds from docs/public/security/**/*.md).
+# A topic with no matching real document shows as not yet published
+# instead of guessing at content that doesn't exist.
+SECURITY_POSTURE_TOPICS = [
+    ("Encryption & Data Protection", "docs/public/security/data_protection/data_protection.md"),
+    ("Identity & Access Management", "docs/public/security/identity_and_access_management/identity_and_access_management.md"),
+    ("Infrastructure Security", "docs/public/security/blue_team/infrastructure_protection.md"),
+    ("Vulnerability Management", "docs/public/security/red_team/penetration_tests.md"),
+]
+
 # Identical to the CASE mapping in get-dashboard-data's per-service query —
 # copied verbatim rather than reimplemented, so a Trust Center score can
 # never silently disagree with the dashboard's own number for the same
@@ -121,6 +147,8 @@ CREATE TABLE IF NOT EXISTS trust_documents (
     visibility       VARCHAR(20)  NOT NULL DEFAULT 'restricted',
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+-- category values: policy, privacy, dpa, whitepaper, pentest, soc_report,
+-- iso_certificate, subprocessor_list, bcdr, other -- see DOCUMENT_CATEGORIES
 CREATE TABLE IF NOT EXISTS trust_document_versions (
     id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id    UUID         NOT NULL REFERENCES trust_documents(id) ON DELETE CASCADE,
@@ -410,6 +438,42 @@ def _get_audit_log(cur, cloud_account_id, document_id=None):
             for r in cur.fetchall()]
 
 
+# ── security posture (reused from evidence_documents) ───────────────────
+
+def _get_security_posture(cur):
+    out = []
+    for topic, source_path in SECURITY_POSTURE_TOPICS:
+        cur.execute("""
+            SELECT content FROM evidence_documents
+            WHERE source_path = %s
+            ORDER BY (section_title = '(intro)') DESC, id
+            LIMIT 1
+        """, (source_path,))
+        row = cur.fetchone()
+        out.append({"topic": topic, "content": row[0] if row else None})
+    return out
+
+
+# ── questionnaire answer reuse (AC #5) ──────────────────────────────────
+# Reuses the same grouping shape as questionnaire_handler.py's answer
+# library (group approved answers by exact question, newest first) rather
+# than importing across Lambdas — each mapper/handler in this codebase is
+# already self-contained. Only ever approved, human-reviewed answers;
+# never a draft.
+
+def _get_public_qa_highlights(cur, cloud_account_id, limit=12):
+    cur.execute("""
+        SELECT DISTINCT ON (qi.question_text) qi.question_text, qi.answer_text, qi.reviewed_at
+        FROM questionnaire_items qi
+        JOIN questionnaires q ON q.id = qi.questionnaire_id
+        WHERE q.cloud_account_id = %s AND qi.answer_status = 'approved' AND qi.answer_text IS NOT NULL
+        ORDER BY qi.question_text, qi.reviewed_at DESC NULLS LAST
+        LIMIT %s
+    """, (cloud_account_id, limit))
+    return [{"question": r[0], "answer": r[1], "approved_at": r[2].isoformat() if r[2] else None}
+            for r in cur.fetchall()]
+
+
 # ── public view ───────────────────────────────────────────────────────
 
 def _get_public_view(cur, slug):
@@ -430,16 +494,21 @@ def _get_public_view(cur, slug):
     """, (cloud_account_id,))
     documents = []
     for doc_id, title, category, visibility in cur.fetchall():
-        entry = {"id": str(doc_id), "title": title, "category": category, "visibility": visibility}
+        entry = {"id": str(doc_id), "title": title, "category": DOCUMENT_CATEGORIES.get(category, category),
+                  "visibility": visibility}
         if visibility == "public":
             entry["download_url"] = _presign_latest(cur, doc_id)
             cur.execute("INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'viewed')",
                         (doc_id, "public"))
         documents.append(entry)
 
+    security_posture = _get_security_posture(cur)
+    qa_highlights = _get_public_qa_highlights(cur, cloud_account_id)
+
     return {
         "company_name": company_name, "intro_text": intro_text, "contact_email": contact_email,
         "compliance": compliance, "documents": documents,
+        "security_posture": security_posture, "qa_highlights": qa_highlights,
     }
 
 
