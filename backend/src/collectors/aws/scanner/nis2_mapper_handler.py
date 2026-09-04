@@ -129,8 +129,11 @@ NIS2_MAPPING = {
             "Ensure a security audit role exists with read-only permissions. "
             "Review and remove unused credentials regularly."
         ),
+        # Was ["IAM.2", "IAM.6", "CloudWatch.1"] — IAM.2 (policy attachment)
+        # and IAM.6 (root hardware MFA) don't match "rotate access keys" /
+        # "remove unused credentials"; that's IAM.3 and IAM.8.
         "checks": [
-            "IAM.2", "IAM.6", "CloudWatch.1",
+            "IAM.3", "IAM.8", "CloudWatch.1",
         ],
     },
 
@@ -368,8 +371,11 @@ NIS2_MAPPING = {
             "Ensure KMS keys are not publicly accessible. "
             "Remove root access keys. Disable unused access keys."
         ),
+        # Was ["IAM.2", "IAM.6", ...] — policy attachment / root hardware MFA
+        # don't match "rotate access keys" / "remove root access keys" /
+        # "disable unused access keys"; those are IAM.3 / IAM.4 / IAM.8.
         "checks": [
-            "IAM.2", "IAM.6",
+            "IAM.3", "IAM.4", "IAM.8",
             "KMS.1", "KMS.2", "KMS.3", "KMS.4",
         ],
     },
@@ -389,8 +395,10 @@ NIS2_MAPPING = {
             "Set minimum length of 14 characters. "
             "Prevent reuse of the last 24 passwords."
         ),
+        # Was ["IAM.1", "IAM.2"] (full-admin policies / policy attachment) —
+        # this control is entirely about password policy, i.e. IAM.7.
         "checks": [
-            "IAM.1", "IAM.2",
+            "IAM.7",
         ],
     },
 
@@ -433,8 +441,13 @@ NIS2_MAPPING = {
             "Remove unused IAM users and access keys. "
             "Review and restrict policies allowing privilege escalation."
         ),
+        # Was ["IAM.5", "IAM.7", "IAM.8", "IAM.9"] — console MFA, password
+        # policy, and root MFA don't test policy attachment or admin-privilege
+        # policies. IAM.1 (full-admin '*') and IAM.2 (direct policy attachment)
+        # are what the remediation actually describes; IAM.8 (unused
+        # users/keys) was already correct and is kept.
         "checks": [
-            "IAM.5", "IAM.7", "IAM.8", "IAM.9",
+            "IAM.1", "IAM.2", "IAM.8",
         ],
     },
 
@@ -453,8 +466,13 @@ NIS2_MAPPING = {
             "Enable CloudWatch alarm for root account usage. "
             "Remove inline policies with administrative privileges."
         ),
+        # Was ["IAM.3", "IAM.4", "IAM.7", "IAM.9", "CloudWatch.1"] — IAM.3
+        # (key rotation) and IAM.7 (password policy) aren't mentioned in the
+        # remediation; IAM.5 (console MFA) and IAM.1 (admin '*' policies) are
+        # what's actually described but were missing. IAM.4/IAM.9/CloudWatch.1
+        # were already correct.
         "checks": [
-            "IAM.3", "IAM.4", "IAM.7", "IAM.9",
+            "IAM.1", "IAM.4", "IAM.5", "IAM.9",
             "CloudWatch.1",
         ],
     },
@@ -474,8 +492,12 @@ NIS2_MAPPING = {
             "Remove IAM users who no longer require access. "
             "Rotate access keys and enforce password expiry."
         ),
+        # Was ["IAM.2", "IAM.6", "IAM.8", "IAM.9"] — policy attachment and
+        # root MFA don't relate to reviewing/deactivating stale identities.
+        # The remediation explicitly calls for key rotation (IAM.3) and
+        # password expiry (IAM.7); IAM.8 (unused creds) was already correct.
         "checks": [
-            "IAM.2", "IAM.6", "IAM.8", "IAM.9",
+            "IAM.3", "IAM.7", "IAM.8",
         ],
     },
 
@@ -494,8 +516,14 @@ NIS2_MAPPING = {
             "Enable CloudWatch alarm for sign-in without MFA. "
             "Configure Cognito user pools to require MFA."
         ),
+        # Was ["IAM.3", "IAM.4", "CloudWatch.3"] — key rotation / root key
+        # existence aren't authentication-procedure checks. IAM.6 (root
+        # hardware MFA) and IAM.5 (console MFA) are what's described;
+        # CloudWatch.3 was already correct. No Cognito-MFA check exists in
+        # this codebase's check set, so that part of the remediation has no
+        # corresponding check — left uncovered rather than guessed at.
         "checks": [
-            "IAM.3", "IAM.4",
+            "IAM.5", "IAM.6",
             "CloudWatch.3",
         ],
     },
@@ -516,8 +544,14 @@ NIS2_MAPPING = {
             "Configure CloudWatch alarm for console sign-in without MFA. "
             "Enforce MFA for all administrator access."
         ),
+        # Was ["IAM.3", "IAM.4", "CloudWatch.3"] — a CRITICAL control titled
+        # "Multi-Factor Authentication" tested key rotation and root-key
+        # existence, never MFA. IAM.5/IAM.6/IAM.9 cover console MFA, root
+        # hardware MFA, and root MFA generally; CloudWatch.3 was already
+        # correct. No S3 MFA-delete check exists in this codebase's check
+        # set, so that part of the remediation has no corresponding check.
         "checks": [
-            "IAM.3", "IAM.4",
+            "IAM.5", "IAM.6", "IAM.9",
             "CloudWatch.3",
         ],
     },

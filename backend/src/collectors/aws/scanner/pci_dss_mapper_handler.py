@@ -214,9 +214,12 @@ PCI_MAPPING = {
             "Ensure each user has unique credentials and that shared accounts are removed. "
             "Remove unused credentials older than 90 days."
         ),
+        # Added IAM.5 (console-user MFA) — remediation explicitly calls for
+        # "MFA for ... all IAM users with console access", which none of the
+        # other checks here (key rotation/root keys/unused creds/root MFA) test.
         "checks": [
             "IAM.1", "IAM.2", "IAM.3", "IAM.4",
-            "IAM.8", "IAM.9",
+            "IAM.5", "IAM.8", "IAM.9",
         ],
     },
 
@@ -234,8 +237,10 @@ PCI_MAPPING = {
             "and one non-alphanumeric character. Enforce password rotation every 90 days "
             "and prevent reuse of the last 24 passwords."
         ),
+        # Was ["IAM.1", "IAM.2"] — full-admin policies / policy attachment,
+        # neither about passwords. IAM.7 is the actual password-policy check.
         "checks": [
-            "IAM.1", "IAM.2",
+            "IAM.7",
         ],
     },
 
@@ -253,8 +258,10 @@ PCI_MAPPING = {
             "Configure IAM policies to deny access to the CDE without active MFA. "
             "Use virtual or hardware MFA devices."
         ),
+        # Was ["IAM.3", "IAM.4"] (key rotation / root key existence) — a
+        # CRITICAL control titled "MFA for All Access" never tested MFA at all.
         "checks": [
-            "IAM.3", "IAM.4",
+            "IAM.5", "IAM.6", "IAM.9",
         ],
     },
 

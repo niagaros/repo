@@ -300,7 +300,10 @@ NIST_800_53_MAPPING = {
             "Enable MFA for root account. "
             "Use IAM roles for programmatic access where possible."
         ),
-        "checks": ["IAM.3", "IAM.4"],
+        # Was ["IAM.3", "IAM.4"] — IAM.3 is access-key rotation, unrelated to
+        # identification/authentication. IAM.4 (root has no access keys) stays;
+        # added IAM.6/IAM.9 for the remediation's explicit "enable MFA for root".
+        "checks": ["IAM.4", "IAM.6", "IAM.9"],
     },
 
     "NIST-IA-2.1": {
@@ -317,7 +320,10 @@ NIST_800_53_MAPPING = {
             "Enable virtual or hardware MFA for all IAM users with console access. "
             "Consider hardware security keys for privileged administrators."
         ),
-        "checks": ["IAM.3", "IAM.4"],
+        # Was ["IAM.3", "IAM.4"] (key rotation / root key existence — neither
+        # is an MFA check). A control titled "MFA for Privileged Accounts"
+        # was never actually testing whether MFA was enabled anywhere.
+        "checks": ["IAM.5", "IAM.6"],
     },
 
     "NIST-IA-2.2": {
@@ -334,7 +340,8 @@ NIST_800_53_MAPPING = {
             "Configure IAM policies to deny console access without MFA. "
             "Enable CloudWatch alarm for sign-in without MFA."
         ),
-        "checks": ["IAM.3", "IAM.4"],
+        # Was ["IAM.3", "IAM.4"] — same wrong-check-ID error as NIST-IA-2.1.
+        "checks": ["IAM.5", "CloudWatch.3"],
     },
 
     "NIST-IA-5": {
@@ -351,7 +358,11 @@ NIST_800_53_MAPPING = {
             "and reuse prevention. Rotate access keys every 90 days. "
             "Disable unused access keys and console credentials."
         ),
-        "checks": ["IAM.1", "IAM.2", "IAM.6", "IAM.8", "IAM.9"],
+        # Was ["IAM.1", "IAM.2", "IAM.6", "IAM.8", "IAM.9"] — IAM.1 (full-admin
+        # policies), IAM.2 (policy attachment) and IAM.6/IAM.9 (root MFA) don't
+        # test any of the password-policy/key-rotation/unused-credential
+        # behavior the remediation actually describes.
+        "checks": ["IAM.3", "IAM.7", "IAM.8"],
     },
 
     "NIST-IA-5.1": {
@@ -368,7 +379,10 @@ NIST_800_53_MAPPING = {
             "lowercase, numbers, and symbols. Set maximum password age to 90 days. "
             "Prevent reuse of the last 24 passwords."
         ),
-        "checks": ["IAM.1"],
+        # Was ["IAM.1"] (full-admin '*' policies — completely unrelated to
+        # password policy). The actual password-policy check is IAM.7, whose
+        # own description matches this remediation text word for word.
+        "checks": ["IAM.7"],
     },
 
     # ── SA — System and Services Acquisition ─────────────────────────────────
