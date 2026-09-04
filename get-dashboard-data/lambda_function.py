@@ -340,11 +340,47 @@ def lambda_handler(event, context):
                         "is_stale":     _is_stale(last_verified),
                     }
                     if row[0] == "TOTAL":
-                        data["total"] = entry
+                        pass  # replaced below by the deduplicated headline total
                     else:
                         data["services"].append(entry)
             except Exception as e:
                 data["_debug"]["services"] = str(e)
+                conn.rollback()
+
+            # ── 3b. Headline score — deduplicated, like Wiz/Vanta/AWS Security
+            # Hub show it: one real misconfiguration counted once, not once per
+            # compliance framework that also happens to cite it. The per-
+            # framework cards above (data["services"]) intentionally keep
+            # every framework's own citation — that's the correct, standard
+            # way to show "NIST 800-53: 94%" next to "PCI DSS: 95%" separately.
+            # The headline "X of Y checks passing" gauge is a different number
+            # with a different job (overall real posture), so it uses the same
+            # raw-only scope as the severity cards and Issues list instead of
+            # summing every framework's duplicate copy of the same finding.
+            try:
+                cur.execute("""
+                    SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS'), MAX(f.detected_at)
+                    FROM findings f
+                    JOIN resources r ON f.resource_id = r.id
+                    WHERE r.cloud_account_id = %s
+                      AND (f.framework IS NULL OR f.framework NOT IN %s)
+                """, (account_id, MAPPED_FRAMEWORK_NAMES))
+                total, passed, last_verified = cur.fetchone()
+                total = total or 0
+                passed = passed or 0
+                if last_verified and last_verified.tzinfo is None:
+                    last_verified = last_verified.replace(tzinfo=timezone.utc)
+                data["total"] = {
+                    "service":       "TOTAL",
+                    "total":         total,
+                    "passed":        passed,
+                    "failed":        total - passed,
+                    "score":         round(passed * 100.0 / total, 1) if total else 0,
+                    "last_verified": last_verified.isoformat() if last_verified else None,
+                    "is_stale":      _is_stale(last_verified),
+                }
+            except Exception as e:
+                data["_debug"]["total"] = str(e)
                 conn.rollback()
 
             # ── 4. Severity breakdown ────────────────────────────────
