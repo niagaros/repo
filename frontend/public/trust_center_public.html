@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trust Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f5f6f8;color:#111827;font-size:14px;min-height:100vh}
+.wrap{max-width:820px;margin:0 auto;padding:48px 24px 80px}
+.hdr{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.hdr-icon{width:36px;height:36px;background:#16a34a;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px}
+.company{font-size:22px;font-weight:800}
+.powered{font-size:11px;color:#9ca3af;margin-top:2px}
+.intro{font-size:13.5px;color:#374151;line-height:1.6;margin-bottom:28px;max-width:70ch}
+.section{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:22px 24px;margin-bottom:16px}
+.section h2{font-size:14px;font-weight:700;margin-bottom:4px}
+.section .sub{font-size:11.5px;color:#9ca3af;margin-bottom:16px}
+.compliance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.fw-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+.fw-score{font-size:20px;font-weight:800;color:#16a34a}
+.fw-name{font-size:11.5px;font-weight:600;color:#374151;margin-top:2px}
+.fw-verified{font-size:9.5px;color:#9ca3af;margin-top:4px}
+.doc-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f3f4f6}
+.doc-row:last-child{border-bottom:none}
+.doc-icon{font-size:18px}
+.doc-title{font-size:13px;font-weight:600;flex:1}
+.doc-cat{font-size:10.5px;color:#9ca3af;text-transform:capitalize}
+.btn{background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-outline{background:#fff;color:#16a34a;border:1px solid #16a34a;padding:7px 14px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.contact{font-size:12.5px;color:#374151}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#16a34a;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-box{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:24px;text-align:center;color:#991b1b;margin-top:60px}
+[hidden]{display:none!important}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:all}
+.modal{background:#fff;border-radius:16px;width:420px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hdr{display:flex;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #f3f4f6}
+.modal-title{font-size:14px;font-weight:700}
+.modal-close{width:26px;height:26px;border:none;background:#f3f4f6;border-radius:6px;cursor:pointer}
+.modal-body{padding:16px 18px}
+.f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block}
+.f-in,.f-ta{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:'Inter',sans-serif;margin-bottom:10px}
+.f-ta{resize:vertical;min-height:60px}
+.modal-foot{padding:14px 18px;border-top:1px solid #f3f4f6;display:flex;justify-content:flex-end;gap:8px}
+.toast{position:fixed;bottom:22px;right:22px;background:#111827;color:#fff;padding:11px 18px;border-radius:9px;font-size:12.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Laden…</span></div>
+  <div id="v-error" hidden class="error-box"></div>
+  <div id="v-content" hidden></div>
+</div>
+
+<div class="overlay" id="ov-request" onclick="if(event.target===this)closeOv()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Toegang aanvragen</div><button class="modal-close" onclick="closeOv()">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Naam</label>
+      <input class="f-in" id="req-name">
+      <label class="f-lbl">E-mailadres</label>
+      <input class="f-in" id="req-email">
+      <label class="f-lbl">Reden (optioneel)</label>
+      <textarea class="f-ta" id="req-reason" placeholder="bv. onderdeel van leveranciersbeoordeling"></textarea>
+    </div>
+    <div class="modal-foot"><button class="btn-outline" onclick="closeOv()">Annuleren</button><button class="btn" onclick="submitRequest()">Aanvraag versturen</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TC_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trust-center';
+let data=null, requestingDocId=null;
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&lt;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
+function closeOv(){document.getElementById('ov-request').classList.remove('open');}
+
+async function load(){
+  const slug=new URLSearchParams(location.search).get('slug');
+  const downloadDoc=new URLSearchParams(location.search).get('download');
+  const token=new URLSearchParams(location.search).get('token');
+  if(downloadDoc && token){
+    const r=await fetch(TC_API+'?download_document='+encodeURIComponent(downloadDoc)+'&access_token='+encodeURIComponent(token));
+    const d=await r.json();
+    if(r.ok && d.download_url){ location.href=d.download_url; return; }
+    showError(d.error||'Deze link werkt niet meer.');
+    return;
+  }
+  if(!slug){ showError('Geen Trust Center opgegeven.'); return; }
+  try{
+    const r=await fetch(TC_API+'?slug='+encodeURIComponent(slug));
+    const d=await r.json();
+    if(!r.ok){ showError(d.error||'Deze pagina bestaat niet.'); return; }
+    data=d;
+    render();
+  }catch(e){
+    showError('Kon deze pagina niet laden.');
+  }
+}
+function showError(msg){
+  document.getElementById('v-load').hidden=true;
+  document.getElementById('v-error').hidden=false;
+  document.getElementById('v-error').textContent=msg;
+}
+function render(){
+  document.getElementById('v-content').innerHTML=`
+    <div class="hdr">
+      <div class="hdr-icon">🛡</div>
+      <div><div class="company">${esc(data.company_name||'Trust Center')}</div><div class="powered">Aangedreven door Niagaros — live compliance data, geen momentopname</div></div>
+    </div>
+    ${data.intro_text?`<div class="intro">${esc(data.intro_text)}</div>`:''}
+
+    <div class="section">
+      <h2>Compliance-status</h2>
+      <div class="sub">Continu gemeten, niet een eenmalig certificaat — elke score toont wanneer hij voor het laatst is geverifieerd.</div>
+      <div class="compliance-grid">
+        ${data.compliance.map(c=>`
+          <div class="fw-card">
+            <div class="fw-score">${c.score}%</div>
+            <div class="fw-name">${esc(c.framework)}</div>
+            <div class="fw-verified">Geverifieerd: ${c.last_verified?new Date(c.last_verified).toLocaleDateString():'onbekend'}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Documenten</h2>
+      <div class="sub">Openbare documenten zijn direct te downloaden. Voor overige documenten kun je toegang aanvragen.</div>
+      ${data.documents.length?data.documents.map(d=>`
+        <div class="doc-row">
+          <div class="doc-icon">📄</div>
+          <div class="doc-title">${esc(d.title)}<div class="doc-cat">${esc(d.category)}</div></div>
+          ${d.visibility==='public'
+            ? `<a class="btn" href="${d.download_url}" style="text-decoration:none">Download</a>`
+            : `<button class="btn-outline" onclick="openRequest('${d.id}')">Toegang aanvragen</button>`}
+        </div>
+      `).join(''):'<div style="color:#9ca3af;font-size:12.5px">Nog geen documenten beschikbaar.</div>'}
+    </div>
+
+    ${data.contact_email?`<div class="section"><h2>Contact</h2><div class="contact">Vragen over deze compliance-informatie? Neem contact op via <a href="mailto:${esc(data.contact_email)}">${esc(data.contact_email)}</a>.</div></div>`:''}
+  `;
+  document.getElementById('v-load').hidden=true;
+  document.getElementById('v-content').hidden=false;
+}
+function openRequest(docId){
+  requestingDocId=docId;
+  document.getElementById('req-name').value='';
+  document.getElementById('req-email').value='';
+  document.getElementById('req-reason').value='';
+  document.getElementById('ov-request').classList.add('open');
+}
+async function submitRequest(){
+  const name=document.getElementById('req-name').value.trim();
+  const email=document.getElementById('req-email').value.trim();
+  if(!name||!email){showToast('Naam en e-mailadres zijn verplicht');return;}
+  await fetch(TC_API,{method:'POST',body:JSON.stringify({
+    action:'request_access',document_id:requestingDocId,requester_name:name,requester_email:email,
+    reason:document.getElementById('req-reason').value.trim(),
+  })});
+  closeOv();
+  showToast('Aanvraag verstuurd — je ontvangt bericht zodra deze is beoordeeld.');
+}
+load();
+</script>
+</body>
+</html>
