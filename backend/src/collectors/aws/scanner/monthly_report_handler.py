@@ -36,6 +36,18 @@ REPORT_RECIPIENT_EMAILS = [
     e.strip() for e in os.environ.get("REPORT_RECIPIENT_EMAILS", "").split(",") if e.strip()
 ]
 
+# Mapped-compliance-framework names — see the identical constant and
+# rationale in backend/src/config/database.py's record_compliance_snapshot.
+# Without this exclusion, every emailed report would count each real
+# misconfiguration once per compliance framework that also cites it.
+MAPPED_FRAMEWORK_NAMES = (
+    'ISO 27001:2022', 'NIST CSF v2.0', 'GDPR', 'SOC2', 'PCI DSS v4.0', 'NIS2', 'HIPAA',
+    'NIST 800-53 Rev 5', 'BSI-C5', 'CSA CCM 4.0', 'FedRAMP Moderate Rev 4', 'ISO 42001',
+    'ISO 27017', 'AWS FTR', 'MVSP', 'TISAX', 'HITRUST CSF', 'DORA', 'CRI Profile',
+    'EU AI Act', 'NIST AI RMF', 'ISO 27701', 'ISO 27018', 'Microsoft SSPA',
+    'CIS Controls v8.1', '23 NYCRR 500 (NYDFS)', 'NIST Privacy Framework',
+)
+
 
 def _get_connection():
     secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -55,7 +67,8 @@ def _current_state(cur, cloud_account_id):
         FROM findings f
         JOIN resources r ON r.id = f.resource_id
         WHERE r.cloud_account_id = %s
-    """, (cloud_account_id,))
+          AND (f.framework IS NULL OR f.framework NOT IN %s)
+    """, (cloud_account_id, MAPPED_FRAMEWORK_NAMES))
     rows = cur.fetchall()
 
     total = len(rows)

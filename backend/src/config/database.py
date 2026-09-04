@@ -8,6 +8,24 @@ from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
+# Mapped-compliance-framework names (findings.framework values written by the
+# framework mapper Lambdas). Excluded here for the same reason they're
+# excluded from the dashboard's headline score and severity cards
+# (get-dashboard-data/lambda_function.py): each real misconfiguration gets
+# one row per framework that also cites it, so counting every row here would
+# report a client's total/passed/failed and by-severity numbers inflated by
+# roughly the number of frameworks that happen to cite each check — this is
+# what the monthly report emails and the dashboard's compliance_snapshots
+# trend data are built from, so getting this wrong here means every scan
+# snapshot and every emailed report carries the same inflated numbers.
+MAPPED_FRAMEWORK_NAMES = (
+    'ISO 27001:2022', 'NIST CSF v2.0', 'GDPR', 'SOC2', 'PCI DSS v4.0', 'NIS2', 'HIPAA',
+    'NIST 800-53 Rev 5', 'BSI-C5', 'CSA CCM 4.0', 'FedRAMP Moderate Rev 4', 'ISO 42001',
+    'ISO 27017', 'AWS FTR', 'MVSP', 'TISAX', 'HITRUST CSF', 'DORA', 'CRI Profile',
+    'EU AI Act', 'NIST AI RMF', 'ISO 27701', 'ISO 27018', 'Microsoft SSPA',
+    'CIS Controls v8.1', '23 NYCRR 500 (NYDFS)', 'NIST Privacy Framework',
+)
+
 
 def _get_credentials() -> dict:
     secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -196,7 +214,8 @@ class Database:
                 FROM findings f
                 JOIN resources r ON r.id = f.resource_id
                 WHERE r.cloud_account_id = %s
-            """, (cloud_account_id,))
+                  AND (f.framework IS NULL OR f.framework NOT IN %s)
+            """, (cloud_account_id, MAPPED_FRAMEWORK_NAMES))
             rows = cur.fetchall()
 
             total = len(rows)
