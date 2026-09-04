@@ -20,6 +20,24 @@ CORS = {
 STALE_THRESHOLD_DAYS = 10
 
 
+# Mapped-compliance-framework names (findings.framework values written by
+# the framework mapper Lambdas). The Issues list already excludes these by
+# default so the same real misconfiguration doesn't show up as 20+ near-
+# duplicate "Fix" cards, one per framework that happens to also flag it
+# (see FRAMEWORK_SERVICES in niagaros-dashboard.html). The severity-
+# breakdown cards (section 4 below) summed every framework's own copy of
+# the same finding instead, so "High Severity: 197" and the Issues list's
+# actual 6 real HIGH/FAIL issues silently disagreed. Excluding the same
+# framework names here keeps both counts consistent.
+MAPPED_FRAMEWORK_NAMES = (
+    'ISO 27001:2022', 'NIST CSF v2.0', 'GDPR', 'SOC2', 'PCI DSS v4.0', 'NIS2', 'HIPAA',
+    'NIST 800-53 Rev 5', 'BSI-C5', 'CSA CCM 4.0', 'FedRAMP Moderate Rev 4', 'ISO 42001',
+    'ISO 27017', 'AWS FTR', 'MVSP', 'TISAX', 'HITRUST CSF', 'DORA', 'CRI Profile',
+    'EU AI Act', 'NIST AI RMF', 'ISO 27701', 'ISO 27018', 'Microsoft SSPA',
+    'CIS Controls v8.1', '23 NYCRR 500 (NYDFS)', 'NIST Privacy Framework',
+)
+
+
 def _is_stale(last_scan_at):
     if not last_scan_at:
         return None  # never scanned — not "stale", just unknown
@@ -339,8 +357,9 @@ def lambda_handler(event, context):
                     FROM findings f
                     JOIN resources r ON f.resource_id = r.id
                     WHERE r.cloud_account_id = %s
+                      AND (f.framework IS NULL OR f.framework NOT IN %s)
                     GROUP BY UPPER(f.severity)
-                """, (account_id,))
+                """, (account_id, MAPPED_FRAMEWORK_NAMES))
                 data["by_severity"] = {
                     row[0]: {"total": row[1], "passed": row[2], "failed": row[3]}
                     for row in cur.fetchall()
