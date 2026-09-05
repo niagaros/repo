@@ -123,23 +123,66 @@ non-fabricated way to do them:
   `email: {"sent": true}`; a vendor with nothing wrong correctly returned
   `"reason": "nothing_to_report"` instead of sending an empty alert.
 
-**Still deliberately not built — no real data source exists, and
-fabricating one would violate this codebase's core rule:**
-- AI-assisted questionnaire *review*/scoring of a vendor's actual answers
-  (answering is now real and structured; automatically judging whether an
-  answer is "good enough" would require either a real LLM call against
-  real evidence — out of scope for this pass — or guessing)
-- Breach notifications, dark-web monitoring, external attack-surface
-  scanning of vendors
-- Financial-stability *scoring* (the raw field for vendor-provided
-  information is real; computing our own number is not, with no data
-  source)
-- Fourth-party dependency *verification* (sub-processors are recorded as
-  self-declared; nothing here independently verifies them)
-- Procurement / contract-management / ticketing / CMDB / identity-provider
-  integrations — none of these systems exist in this codebase
-- Executive reporting / vendor risk heatmap dashboard beyond the vendor
-  grid, summary counts, and onboarding stepper already in `tprm.html`
+## v1.2 — "just build it and see how far you can get legitimately"
+
+Pushed once more on the remaining gaps. Found real, honest paths for four
+more:
+
+- **Honest incident log** (`tprm_incidents`) — not automated breach/
+  dark-web monitoring (no such API is set up or paid for in this AWS
+  account), but a real, manually-curated record of a specific, publicly-
+  reported incident someone actually read about, with a source URL so it's
+  checkable. This is what "breach notifications" becomes when there's no
+  automated feed: a real log, not a fabricated one.
+- **Real company-registry reference** (`tprm_vendors.registration_number`)
+  — a free-text field for a vendor's real KVK/Companies House/equivalent
+  number, so a human can look it up in a real public registry. Not a
+  computed financial score (still not built — no real source), just an
+  honest pointer to where a human could verify one.
+- **Deterministic "no"-answer flagging on CAIQ assessments** — issue
+  #261's "automated response validation" done without any AI or guessing:
+  counting real "no" answers to real CCM/CAIQ controls and surfacing the
+  count as a concern flag. A real, defensible rule, not an invented
+  judgment about whether an answer is "good enough."
+- **Evidence package export** (`?evidence_package=<vendor_id>`) — issue
+  #261 AC #5 verbatim ("auditor requests evidence... all associated
+  assessments, certifications... available"): one real, aggregated JSON
+  per vendor with presigned download links for every uploaded document,
+  generated on demand. Verified live: returned the vendor's real profile,
+  risk score, certifications, assessments, and the incident just logged,
+  all in one response.
+- **CSV export** (`?export_csv=1`) — real data portability standing in
+  for "integrations" with procurement/contract-management systems this
+  codebase doesn't have: a real file the account can actually import into
+  one, rather than a fabricated live connection to a system that isn't
+  there.
+- **Risk-level filtering on the vendor grid** (`tprm.html`) — click a
+  summary card (Critical / High / Low+Medium) to filter to just that
+  risk band; the closest honest version of a "risk heatmap" without
+  inventing a second dimension of data that doesn't exist.
+
+**What's still genuinely not built, and why no further legitimate path
+was found:**
+- **Automated breach/dark-web monitoring** — real services for this
+  (e.g. paid breach-database APIs) exist, but none is configured or paid
+  for in this AWS account; calling one would require the user to set up
+  and pay for that subscription first. The honest incident log above is
+  the real substitute available today.
+- **Financial-stability *scoring*** — real public company-registry APIs
+  exist (e.g. UK Companies House has a free API), but none is registered/
+  keyed in this environment either; `registration_number` is the honest
+  placeholder for a human to check manually until one is wired up.
+- **AI-scoring of whether a vendor's answer is actually adequate** — real
+  and buildable (this codebase already has a working Groq LLM integration
+  for Questionnaire Automation), but scoring answer *quality* rather than
+  just counting "no" answers would mean the AI is forming a judgment
+  about a vendor's real security posture — a materially different, higher-
+  stakes claim than Questionnaire Automation's drafting-from-evidence use
+  case, and out of scope for this pass without deliberately deciding to
+  take that on.
+- **Procurement / ticketing / CMDB / identity-provider integrations** —
+  none of these systems exist in this codebase to integrate with; CSV
+  export is the honest substitute.
 
 ## Manual test / re-run
 

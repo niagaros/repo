@@ -33,7 +33,7 @@ import base64
 import json
 import logging
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 
 import boto3
 import psycopg2
@@ -232,6 +232,19 @@ CREATE TABLE IF NOT EXISTS tprm_assessment_items (
     answered_at     TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS tprm_assessment_items_assessment_idx ON tprm_assessment_items(assessment_id);
+CREATE TABLE IF NOT EXISTS tprm_incidents (
+    id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    vendor_id      UUID         NOT NULL REFERENCES tprm_vendors(id) ON DELETE CASCADE,
+    title          VARCHAR(255) NOT NULL,
+    description    TEXT,
+    source_url     VARCHAR(500),
+    occurred_date  DATE,
+    reported_by    VARCHAR(255),
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+ALTER TABLE tprm_vendors
+    ADD COLUMN IF NOT EXISTS registration_number VARCHAR(100);
+CREATE INDEX IF NOT EXISTS tprm_incidents_vendor_idx ON tprm_incidents(vendor_id);
 """
 
 ADMIN_MIGRATION_SQL = BOOTSTRAP_SQL + """
@@ -239,6 +252,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_vendors TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_certifications TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_assessments TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_assessment_items TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_incidents TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_audit_log TO cspm_lambda;
 """
 
@@ -299,7 +313,7 @@ def _list_vendors(cur, cloud_account_id):
     cur.execute("""
         SELECT id, name, category, criticality, business_owner, contact_email,
                website, status, notes, created_at, onboarding_stage, country,
-               subprocessors, financial_notes
+               subprocessors, financial_notes, registration_number
         FROM tprm_vendors WHERE cloud_account_id = %s ORDER BY name
     """, (cloud_account_id,))
     vendors = [{
@@ -307,7 +321,7 @@ def _list_vendors(cur, cloud_account_id):
         "business_owner": r[4], "contact_email": r[5], "website": r[6],
         "status": r[7], "notes": r[8], "created_at": r[9].isoformat(),
         "onboarding_stage": r[10], "country": r[11],
-        "subprocessors": r[12], "financial_notes": r[13],
+        "subprocessors": r[12], "financial_notes": r[13], "registration_number": r[14],
         "is_adequate_country": _is_adequate_country(r[11]),
     } for r in cur.fetchall()]
 
@@ -339,13 +353,29 @@ def _list_vendors(cur, cloud_account_id):
         } for r in cur.fetchall()]
         for a in assessments:
             cur.execute("""
-                SELECT COUNT(*), COUNT(*) FILTER (WHERE answer IS NOT NULL)
+                SELECT COUNT(*), COUNT(*) FILTER (WHERE answer IS NOT NULL),
+                       COUNT(*) FILTER (WHERE answer = 'no')
                 FROM tprm_assessment_items WHERE assessment_id = %s
             """, (a["id"],))
-            total_items, answered_items = cur.fetchone()
+            total_items, answered_items, no_answers = cur.fetchone()
             a["total_items"] = total_items
             a["answered_items"] = answered_items
+            # Real, deterministic rule (no AI, no guessing): any "no" answer
+            # to a real CCM/CAIQ control is a concrete gap worth a human's
+            # attention. This is issue #261's "automated response
+            # validation" done honestly — flagging, not auto-judging intent.
+            a["flagged_no_count"] = no_answers
         v["assessments"] = assessments
+
+        cur.execute("""
+            SELECT id, title, description, source_url, occurred_date, reported_by, created_at
+            FROM tprm_incidents WHERE vendor_id = %s ORDER BY occurred_date DESC NULLS LAST
+        """, (v["id"],))
+        v["incidents"] = [{
+            "id": str(r[0]), "title": r[1], "description": r[2], "source_url": r[3],
+            "occurred_date": r[4].isoformat() if r[4] else None, "reported_by": r[5],
+            "created_at": r[6].isoformat(),
+        } for r in cur.fetchall()]
 
         raw_certs = [{"expiry_date": r[3]} for r in cert_raw_rows]
         v["risk"] = _compute_risk(v["criticality"], raw_certs, assessments, v["country"])
@@ -354,16 +384,17 @@ def _list_vendors(cur, cloud_account_id):
 
 
 def _create_vendor(conn, cloud_account_id, name, category, criticality, business_owner,
-                    contact_email, website, notes, country, subprocessors, financial_notes, actor):
+                    contact_email, website, notes, country, subprocessors, financial_notes,
+                    registration_number, actor):
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO tprm_vendors
                     (cloud_account_id, name, category, criticality, business_owner, contact_email,
-                     website, notes, country, subprocessors, financial_notes, onboarding_stage)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'registered') RETURNING id
+                     website, notes, country, subprocessors, financial_notes, registration_number, onboarding_stage)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'registered') RETURNING id
             """, (cloud_account_id, name, category, criticality, business_owner, contact_email,
-                  website, notes, country, subprocessors, financial_notes))
+                  website, notes, country, subprocessors, financial_notes, registration_number))
             vendor_id = str(cur.fetchone()[0])
             cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'created')",
                         (vendor_id, actor))
@@ -372,7 +403,8 @@ def _create_vendor(conn, cloud_account_id, name, category, criticality, business
 
 def _update_vendor(conn, vendor_id, fields, actor):
     allowed = {"name", "category", "criticality", "business_owner", "contact_email",
-               "website", "status", "notes", "country", "subprocessors", "financial_notes"}
+               "website", "status", "notes", "country", "subprocessors", "financial_notes",
+               "registration_number"}
     sets, params = [], []
     for k, v in fields.items():
         if k in allowed:
@@ -532,6 +564,110 @@ def _update_assessment(conn, assessment_id, vendor_id, status, filename, file_ba
                         (vendor_id, actor, f"assessment_{status}"))
 
 
+# ── incidents (honest manual log — see migration 016 for why this is a ───
+# ── real, curated record rather than automated breach/dark-web monitoring)
+
+def _create_incident(conn, vendor_id, title, description, source_url, occurred_date, actor):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO tprm_incidents (vendor_id, title, description, source_url, occurred_date, reported_by)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+            """, (vendor_id, title, description, source_url, occurred_date, actor))
+            incident_id = str(cur.fetchone()[0])
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'incident_logged')",
+                        (vendor_id, actor))
+    return incident_id
+
+
+# ── evidence package (issue #261 AC: "auditor requests evidence... all ──
+# ── associated assessments, certifications... available") ───────────────
+
+def _get_evidence_package(cur, vendor_id):
+    cur.execute("""
+        SELECT id, name, category, criticality, business_owner, contact_email, website,
+               status, onboarding_stage, country, registration_number, created_at
+        FROM tprm_vendors WHERE id = %s
+    """, (vendor_id,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    vendor = {
+        "id": str(row[0]), "name": row[1], "category": row[2], "criticality": row[3],
+        "business_owner": row[4], "contact_email": row[5], "website": row[6],
+        "status": row[7], "onboarding_stage": row[8], "country": row[9],
+        "registration_number": row[10], "created_at": row[11].isoformat(),
+    }
+
+    cur.execute("""
+        SELECT id, certification_type, issued_date, expiry_date, s3_key, filename
+        FROM tprm_certifications WHERE vendor_id = %s
+    """, (vendor_id,))
+    certifications = []
+    for r in cur.fetchall():
+        entry = {"certification_type": r[1], "issued_date": r[2].isoformat() if r[2] else None,
+                  "expiry_date": r[3].isoformat() if r[3] else None,
+                  "status": _cert_status({"expiry_date": r[3]}), "filename": r[5]}
+        if r[4]:
+            entry["download_url"] = _s3().generate_presigned_url(
+                "get_object", Params={"Bucket": DOCS_BUCKET, "Key": r[4],
+                                       "ResponseContentDisposition": f'attachment; filename="{r[5]}"'},
+                ExpiresIn=900)
+        certifications.append(entry)
+
+    cur.execute("""
+        SELECT id, questionnaire_type, domain, status, approved_at, s3_key, filename
+        FROM tprm_assessments WHERE vendor_id = %s
+    """, (vendor_id,))
+    assessments = []
+    for r in cur.fetchall():
+        entry = {"questionnaire_type": r[1], "domain": r[2], "status": r[3],
+                  "approved_at": r[4].isoformat() if r[4] else None, "filename": r[6]}
+        if r[5]:
+            entry["download_url"] = _s3().generate_presigned_url(
+                "get_object", Params={"Bucket": DOCS_BUCKET, "Key": r[5],
+                                       "ResponseContentDisposition": f'attachment; filename="{r[6]}"'},
+                ExpiresIn=900)
+        assessments.append(entry)
+
+    cur.execute("""
+        SELECT title, description, source_url, occurred_date FROM tprm_incidents WHERE vendor_id = %s
+    """, (vendor_id,))
+    incidents = [{"title": r[0], "description": r[1], "source_url": r[2],
+                  "occurred_date": r[3].isoformat() if r[3] else None} for r in cur.fetchall()]
+
+    raw_certs = [{"expiry_date": c.get("expiry_date") and date.fromisoformat(c["expiry_date"])} for c in certifications]
+    risk = _compute_risk(vendor["criticality"], raw_certs,
+                          [{"status": a["status"]} for a in assessments], vendor["country"])
+
+    return {"vendor": vendor, "risk": risk, "certifications": certifications,
+            "assessments": assessments, "incidents": incidents,
+            "generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+# ── CSV export (honest data-portability — real "integration" with ───────
+# ── procurement/contract-management systems this codebase doesn't have: ─
+# ── hand the account a real file it can import into one) ────────────────
+
+def _export_csv(cur, cloud_account_id):
+    import csv
+    import io
+    vendors = _list_vendors(cur, cloud_account_id)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["Name", "Category", "Criticality", "Business Owner", "Contact Email",
+                      "Country", "Onboarding Stage", "Status", "Risk Score", "Risk Level",
+                      "Valid Certifications", "Approved Assessments", "Registration Number"])
+    for v in vendors:
+        valid_certs = sum(1 for c in v["certifications"] if c["computed_status"] == "valid")
+        approved = sum(1 for a in v["assessments"] if a["status"] == "approved")
+        writer.writerow([v["name"], v["category"] or "", v["criticality"], v["business_owner"] or "",
+                          v["contact_email"] or "", v["country"] or "", v["onboarding_stage"], v["status"],
+                          v["risk"]["score"], v["risk"]["level"], valid_certs, approved,
+                          v["registration_number"] or ""])
+    return out.getvalue()
+
+
 # ── audit log ────────────────────────────────────────────────────────────
 
 def _get_audit_log(cur, cloud_account_id, vendor_id=None):
@@ -668,6 +804,18 @@ def handler(event, context):
                     return _resp(200, {"download_url": url})
                 if qs.get("assessment_items"):
                     return _resp(200, {"items": _list_assessment_items(cur, qs["assessment_items"])})
+                if qs.get("evidence_package"):
+                    pkg = _get_evidence_package(cur, qs["evidence_package"])
+                    if not pkg:
+                        return _resp(404, {"error": "vendor not found"})
+                    return _resp(200, pkg)
+                if qs.get("export_csv"):
+                    csv_text = _export_csv(cur, account_id)
+                    return {"statusCode": 200, "headers": {
+                        "Content-Type": "text/csv",
+                        "Content-Disposition": 'attachment; filename="tprm_vendors.csv"',
+                        "Access-Control-Allow-Origin": "*",
+                    }, "body": csv_text}
                 vendors = _list_vendors(cur, account_id)
                 return _resp(200, {"vendors": vendors})
 
@@ -683,9 +831,18 @@ def handler(event, context):
                     conn, body["cloud_account_id"], body["name"], body.get("category"),
                     body.get("criticality", "medium"), body.get("business_owner"),
                     body.get("contact_email"), body.get("website"), body.get("notes"),
-                    body.get("country"), body.get("subprocessors"), body.get("financial_notes"), actor,
+                    body.get("country"), body.get("subprocessors"), body.get("financial_notes"),
+                    body.get("registration_number"), actor,
                 )
                 return _resp(200, {"id": vendor_id})
+            if action == "create_incident":
+                if not body.get("title"):
+                    return _resp(400, {"error": "title is required"})
+                incident_id = _create_incident(
+                    conn, body["vendor_id"], body["title"], body.get("description"),
+                    body.get("source_url"), body.get("occurred_date"), actor,
+                )
+                return _resp(200, {"id": incident_id})
             if action == "update_vendor":
                 _update_vendor(conn, body["vendor_id"], body.get("fields", {}), actor)
                 return _resp(200, {"updated": True})

@@ -112,7 +112,10 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
           <div class="page-title">Vendors</div>
           <div class="page-sub">Risicoscore berekend uit echte, verifieerbare factoren: criticaliteit, certificaat-vervaldatum, en of er een goedgekeurde beveiligingsassessment is — geen externe of verzonnen data.</div>
         </div>
-        <button class="btn-primary" onclick="openAddVendor()">+ Vendor toevoegen</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn-ghost" onclick="exportCsv()">⬇ Export CSV</button>
+          <button class="btn-primary" onclick="openAddVendor()">+ Vendor toevoegen</button>
+        </div>
       </div>
 
       <div class="summary-row" id="summary-row"></div>
@@ -148,6 +151,8 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <input class="f-in" id="add-country" placeholder="bv. Germany, India, United States">
       <label class="f-lbl">Sub-processors (door vendor zelf opgegeven)</label>
       <input class="f-in" id="add-subprocessors" placeholder="bv. AWS (hosting), Twilio (SMS)">
+      <label class="f-lbl">Registratienummer (bv. KVK, Companies House — voor handmatige verificatie)</label>
+      <input class="f-in" id="add-regnum" placeholder="bv. KVK 12345678">
       <label class="f-lbl">Notities</label>
       <textarea class="f-ta" id="add-notes"></textarea>
     </div>
@@ -216,6 +221,25 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
   </div>
 </div>
 
+<!-- Log incident modal -->
+<div class="overlay" id="ov-incident" onclick="if(event.target===this)closeIncidentModal()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Bekend incident loggen</div><button class="modal-close" onclick="closeIncidentModal()">✕</button></div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:10px">Alleen voor een echt, publiek gerapporteerd incident dat je zelf hebt gelezen — geen automatische monitoring, dus een bron-URL wordt aangeraden.</div>
+      <label class="f-lbl">Titel *</label>
+      <input class="f-in" id="inc-title" placeholder="bv. Data breach reported by vendor">
+      <label class="f-lbl">Omschrijving</label>
+      <textarea class="f-ta" id="inc-desc"></textarea>
+      <label class="f-lbl">Bron-URL</label>
+      <input class="f-in" id="inc-url" placeholder="https://...">
+      <label class="f-lbl">Datum van het incident</label>
+      <input class="f-in" type="date" id="inc-date">
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeIncidentModal()">Annuleren</button><button class="btn-primary" onclick="submitIncident()">Loggen</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -247,17 +271,19 @@ async function loadAll(){
   render();
 }
 
+let riskFilter=null;
 function render(){
   const counts={low:0,medium:0,high:0,critical:0};
   vendors.forEach(v=>counts[v.risk.level]=(counts[v.risk.level]||0)+1);
-  document.getElementById('summary-row').innerHTML=`
-    <div class="sum-card"><div class="sum-n">${vendors.length}</div><div class="sum-l">Totaal vendors</div></div>
-    <div class="sum-card"><div class="sum-n" style="color:#ef4444">${counts.critical}</div><div class="sum-l">Critical risk</div></div>
-    <div class="sum-card"><div class="sum-n" style="color:#d97706">${counts.high}</div><div class="sum-l">High risk</div></div>
-    <div class="sum-card"><div class="sum-n" style="color:#16a34a">${counts.low+counts.medium}</div><div class="sum-l">Low/Medium risk</div></div>
-  `;
+  const sc=(level,label,color,levels)=>`<div class="sum-card" style="cursor:pointer;${riskFilter&&JSON.stringify(riskFilter)===JSON.stringify(levels)?'outline:2px solid '+color:''}" onclick='toggleRiskFilter(${JSON.stringify(levels)})'><div class="sum-n" style="color:${color}">${level}</div><div class="sum-l">${label}</div></div>`;
+  document.getElementById('summary-row').innerHTML=
+    `<div class="sum-card" style="cursor:pointer;${!riskFilter?'outline:2px solid #1d4ed8':''}" onclick="toggleRiskFilter(null)"><div class="sum-n">${vendors.length}</div><div class="sum-l">Totaal vendors (klik om filter te wissen)</div></div>` +
+    sc(counts.critical,'Critical risk','#ef4444',['critical']) +
+    sc(counts.high,'High risk','#d97706',['high']) +
+    sc(counts.low+counts.medium,'Low/Medium risk','#16a34a',['low','medium']);
 
-  document.getElementById('vendor-grid').innerHTML = vendors.length ? vendors.map(v=>{
+  const visibleVendors = riskFilter ? vendors.filter(v=>riskFilter.includes(v.risk.level)) : vendors;
+  document.getElementById('vendor-grid').innerHTML = visibleVendors.length ? visibleVendors.map(v=>{
     const validCerts=v.certifications.filter(c=>c.computed_status==='valid').length;
     const expiringCerts=v.certifications.filter(c=>c.computed_status==='expiring_soon').length;
     const expiredCerts=v.certifications.filter(c=>c.computed_status==='expired').length;
@@ -278,14 +304,38 @@ function render(){
         ${v.is_adequate_country===true?`<span class="chip ok">🌍 ${esc(v.country)} — adequaat land</span>`:''}
       </div>
     </div>`;
-  }).join('') : '<div class="empty">Nog geen vendors toegevoegd. Klik op "+ Vendor toevoegen" om te beginnen.</div>';
+  }).join('') : (riskFilter ? '<div class="empty">Geen vendors met dit risiconiveau.</div>' : '<div class="empty">Nog geen vendors toegevoegd. Klik op "+ Vendor toevoegen" om te beginnen.</div>');
 
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-content').hidden=false;
 }
 
+function toggleRiskFilter(levels){
+  riskFilter = (levels && JSON.stringify(riskFilter)===JSON.stringify(levels)) ? null : levels;
+  render();
+}
+async function exportCsv(){
+  const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&export_csv=1');
+  const text=await r.text();
+  const blob=new Blob([text],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='tprm_vendors.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+async function downloadEvidencePackage(vendorId){
+  const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&evidence_package='+vendorId);
+  const pkg=await r.json();
+  const blob=new Blob([JSON.stringify(pkg,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='evidence_package_'+(pkg.vendor?pkg.vendor.name:vendorId)+'.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  showToast('Evidence package gedownload');
+}
+
 function openAddVendor(){
-  ['add-name','add-category','add-owner','add-email','add-website','add-country','add-subprocessors','add-notes'].forEach(id=>document.getElementById(id).value='');
+  ['add-name','add-category','add-owner','add-email','add-website','add-country','add-subprocessors','add-regnum','add-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('add-criticality').value='medium';
   document.getElementById('ov-add').classList.add('open');
 }
@@ -302,6 +352,7 @@ async function submitAddVendor(){
     website:document.getElementById('add-website').value.trim(),
     country:document.getElementById('add-country').value.trim(),
     subprocessors:document.getElementById('add-subprocessors').value.trim(),
+    registration_number:document.getElementById('add-regnum').value.trim(),
     notes:document.getElementById('add-notes').value.trim(),
     actor_name:actorName(),
   })});
@@ -326,7 +377,7 @@ function openDetail(id){
     <div class="row-item" style="flex-direction:column;align-items:stretch;gap:6px">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="chip ${a.status==='approved'?'ok':a.status==='received'?'warn':''}">${a.status}</span>
-        <div style="flex:1"><b>${a.questionnaire_type.toUpperCase()}</b> · ${a.domain.replace('_',' ')} ${a.total_items?` · ${a.answered_items}/${a.total_items} beantwoord`:''}</div>
+        <div style="flex:1"><b>${a.questionnaire_type.toUpperCase()}</b> · ${a.domain.replace('_',' ')} ${a.total_items?` · ${a.answered_items}/${a.total_items} beantwoord`:''} ${a.flagged_no_count?`<span class="chip bad">⚠ ${a.flagged_no_count}x "no"</span>`:''}</div>
         ${a.status!=='approved'?`<select class="f-sel" style="width:auto" onchange="updateAssessmentStatus('${a.id}', this.value)">
           <option value="">Status wijzigen…</option>
           <option value="in_progress">In progress</option>
@@ -341,13 +392,21 @@ function openDetail(id){
   const nextStage=ONBOARDING_STAGES[stageIdx+1];
   const stepper=ONBOARDING_STAGES.map((s,i)=>`<span style="font-size:9.5px;font-weight:700;padding:3px 8px;border-radius:5px;margin-right:4px;margin-bottom:4px;display:inline-block;background:${i<=stageIdx?'#dbeafe':'#f3f4f6'};color:${i<=stageIdx?'#1d4ed8':'#9ca3af'}">${i+1}. ${s.replace('_',' ')}</span>`).join('');
 
+  const incidentRows=(v.incidents||[]).map(i=>`
+    <div class="row-item" style="flex-direction:column;align-items:stretch;gap:2px">
+      <div style="font-size:12px;font-weight:600">${esc(i.title)} ${i.occurred_date?'· '+i.occurred_date:''}</div>
+      ${i.description?`<div style="font-size:11.5px;color:#6b7280">${esc(i.description)}</div>`:''}
+      ${i.source_url?`<a href="${esc(i.source_url)}" target="_blank" style="font-size:11px;color:#1d4ed8">Bron ↗</a>`:''}
+    </div>`).join('') || '<div class="empty">Geen bekende incidenten gelogd.</div>';
+
   document.getElementById('detail-body').innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
       <span class="risk-badge r-${v.risk.level}">${v.risk.level} risk · score ${v.risk.score}</span>
       <span class="crit-pill">${v.criticality} criticality</span>
       ${v.country?`<span class="crit-pill" style="background:${v.is_adequate_country===false?'#fee2e2':'#eef2ff'};color:${v.is_adequate_country===false?'#991b1b':'#4338ca'}">${esc(v.country)}</span>`:''}
+      <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="downloadEvidencePackage('${v.id}')">📦 Evidence package</button>
     </div>
-    <div style="font-size:11.5px;color:#6b7280;margin-bottom:14px">${esc(v.category||'')} ${v.business_owner?' · Owner: '+esc(v.business_owner):''} ${v.contact_email?' · '+esc(v.contact_email):''}</div>
+    <div style="font-size:11.5px;color:#6b7280;margin-bottom:14px">${esc(v.category||'')} ${v.business_owner?' · Owner: '+esc(v.business_owner):''} ${v.contact_email?' · '+esc(v.contact_email):''} ${v.registration_number?' · Reg: '+esc(v.registration_number):''}</div>
     ${v.subprocessors?`<div style="font-size:11.5px;color:#6b7280;margin-bottom:10px"><b>Sub-processors (zelf opgegeven door vendor):</b> ${esc(v.subprocessors)}</div>`:''}
 
     <div class="sec-hdr">Onboarding-voortgang</div>
@@ -358,6 +417,8 @@ function openDetail(id){
     ${certRows}
     <div class="sec-hdr">Assessments <button class="btn-ghost btn-sm" onclick="openAssessModal()">+ Versturen</button></div>
     ${assessRows}
+    <div class="sec-hdr">Bekende incidenten (handmatig gelogd, echte bron vereist) <button class="btn-ghost btn-sm" onclick="openIncidentModal()">+ Loggen</button></div>
+    ${incidentRows}
   `;
   document.getElementById('ov-detail').classList.add('open');
 }
@@ -429,6 +490,27 @@ async function submitCert(){
   })});
   closeCertModal();
   showToast('Certificaat toegevoegd');
+  await loadAll();
+  openDetail(activeVendorId);
+}
+
+function openIncidentModal(){
+  ['inc-title','inc-desc','inc-url','inc-date'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ov-incident').classList.add('open');
+}
+function closeIncidentModal(){document.getElementById('ov-incident').classList.remove('open');}
+async function submitIncident(){
+  const title=document.getElementById('inc-title').value.trim();
+  if(!title){showToast('Titel is verplicht');return;}
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
+    action:'create_incident',vendor_id:activeVendorId,title,
+    description:document.getElementById('inc-desc').value.trim(),
+    source_url:document.getElementById('inc-url').value.trim(),
+    occurred_date:document.getElementById('inc-date').value||null,
+    actor_name:actorName(),
+  })});
+  closeIncidentModal();
+  showToast('Incident gelogd');
   await loadAll();
   openDetail(activeVendorId);
 }
