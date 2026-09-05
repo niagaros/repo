@@ -49,8 +49,12 @@ CCM_MAPPING = {
             "calls, root account usage, CloudTrail configuration changes and "
             "failed console authentication so that audit evidence is captured."
         ),
+        # Was [CW.2, CW.4, CW.6, CW.7] — CW.4 (IAM policy changes) and CW.7
+        # (KMS CMK deletion) aren't in this control's text at all; CW.1 (root
+        # usage) and CW.5 (CloudTrail config changes) are explicitly named
+        # but were missing.
         "checks": [
-            "CloudWatch.2", "CloudWatch.4", "CloudWatch.6", "CloudWatch.7",
+            "CloudWatch.1", "CloudWatch.2", "CloudWatch.5", "CloudWatch.6",
         ],
     },
 
@@ -144,8 +148,10 @@ CCM_MAPPING = {
             "IAM policy changes, CloudTrail and Config changes, CMK changes, "
             "S3 policy changes and network ACL / gateway / route table changes."
         ),
+        # Was missing CloudWatch.1 (root usage) despite the text explicitly
+        # naming "root usage" and claiming "the full CIS set".
         "checks": [
-            "CloudWatch.2", "CloudWatch.3", "CloudWatch.4", "CloudWatch.5",
+            "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4", "CloudWatch.5",
             "CloudWatch.6", "CloudWatch.7", "CloudWatch.8", "CloudWatch.9",
             "CloudWatch.10", "CloudWatch.11", "CloudWatch.12", "CloudWatch.13",
             "CloudWatch.14",
@@ -165,8 +171,12 @@ CCM_MAPPING = {
             "sign-in without MFA, root usage and failed authentication, and "
             "ensure a dedicated IAM support role exists for AWS Support escalation."
         ),
+        # Was [CW.2, CW.3, CW.4, CW.7] — CW.4 (IAM policy changes) and CW.7
+        # (KMS CMK deletion) aren't mentioned in this control's text; CW.1
+        # (root usage) and CW.6 (failed authentication) are explicitly named
+        # but were missing.
         "checks": [
-            "CloudWatch.2", "CloudWatch.3", "CloudWatch.4", "CloudWatch.7",
+            "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.6",
             "IAM.18",
         ],
     },
@@ -184,9 +194,12 @@ CCM_MAPPING = {
             "changes, AWS Config changes, security group changes and network "
             "ACL changes to detect threats and unauthorised modifications."
         ),
+        # Was missing CloudWatch.7 (CMK disable/deletion) despite it being
+        # the first thing named in the text; CloudWatch.12 (network gateway
+        # changes) isn't mentioned (text says "network ACL changes", CW.11).
         "checks": [
-            "CloudWatch.8", "CloudWatch.9", "CloudWatch.10",
-            "CloudWatch.11", "CloudWatch.12",
+            "CloudWatch.7", "CloudWatch.8", "CloudWatch.9", "CloudWatch.10",
+            "CloudWatch.11",
         ],
     },
 }

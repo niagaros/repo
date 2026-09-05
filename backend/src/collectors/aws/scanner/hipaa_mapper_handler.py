@@ -41,7 +41,9 @@ HIPAA_MAPPING = {
             "Enable S3 server-side encryption. Enable KMS key rotation. "
             "Attach IAM policies to groups or roles only, not individual users."
         ),
-        "checks": ["IAM.4", "IAM.7", "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4", "S3.3.5", "KMS.1"],
+        # Was IAM.7 (password policy, not mentioned) instead of IAM.2
+        # ("Attach IAM policies to groups or roles only").
+        "checks": ["IAM.2", "IAM.4", "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4", "S3.3.5", "KMS.1"],
     },
 
     "HIPAA-308.a.1.ii.d": {
@@ -79,7 +81,9 @@ HIPAA_MAPPING = {
             "Enable virtual or hardware MFA for all IAM users with console access. "
             "Enable CloudWatch alarm for sign-in without MFA."
         ),
-        "checks": ["IAM.3", "IAM.4"],
+        # Was [IAM.3, IAM.4] (key rotation / root key existence) — this
+        # control is entirely about MFA and never actually tested it.
+        "checks": ["IAM.5", "IAM.6", "CloudWatch.3"],
     },
 
     "HIPAA-308.a.3.ii.b": {
@@ -96,7 +100,9 @@ HIPAA_MAPPING = {
             "Remove unused IAM users and access keys. "
             "Disable IAM users with no console activity in 90 or more days."
         ),
-        "checks": ["IAM.4", "IAM.7", "IAM.8", "IAM.9"],
+        # Was also listing IAM.7 (password policy) and IAM.9 (root MFA) —
+        # neither is mentioned; IAM.2 ("groups or roles only") was missing.
+        "checks": ["IAM.2", "IAM.4", "IAM.8"],
     },
 
     "HIPAA-308.a.3.ii.c": {
@@ -113,7 +119,10 @@ HIPAA_MAPPING = {
             "Disable or delete access keys that have not been used in more than 90 days. "
             "Remove console access for inactive users immediately upon departure."
         ),
-        "checks": ["IAM.2", "IAM.6"],
+        # Was [IAM.2, IAM.6] (policy attachment / root hardware MFA) — this
+        # text is entirely about key rotation and terminating unused access,
+        # i.e. IAM.3 and IAM.8.
+        "checks": ["IAM.3", "IAM.8"],
     },
 
     "HIPAA-308.a.4.i": {
@@ -130,7 +139,10 @@ HIPAA_MAPPING = {
             "Remove inline policies with administrative privileges. "
             "Apply least privilege across all IAM assignments."
         ),
-        "checks": ["IAM.5", "IAM.7"],
+        # Was [IAM.5, IAM.7] (MFA / password policy) — text is "groups or
+        # roles only" (IAM.2) and "remove inline admin-privilege policies"
+        # (IAM.1).
+        "checks": ["IAM.1", "IAM.2"],
     },
 
     "HIPAA-308.a.4.ii.b": {
@@ -147,7 +159,10 @@ HIPAA_MAPPING = {
             "Attach policies only to groups or roles. "
             "Remove unused IAM users with console or programmatic access."
         ),
-        "checks": ["IAM.7", "IAM.9"],
+        # Was [IAM.7, IAM.9] (password policy / root MFA) — unrelated. Text
+        # is "remove admin-privilege policies" (IAM.1), "groups/roles only"
+        # (IAM.2), "remove unused users" (IAM.8).
+        "checks": ["IAM.1", "IAM.2", "IAM.8"],
     },
 
     "HIPAA-308.a.4.ii.c": {
@@ -164,7 +179,10 @@ HIPAA_MAPPING = {
             "Rotate access keys every 90 days. Remove root access keys. "
             "Disable unused access keys and console passwords."
         ),
-        "checks": ["IAM.1", "IAM.2", "IAM.4", "IAM.6", "IAM.8", "IAM.9"],
+        # Was missing IAM.3 (key rotation) and IAM.7 (password policy)
+        # despite both being explicitly named; IAM.1/IAM.2/IAM.6/IAM.9
+        # (admin policies/attachment/root MFA) aren't mentioned in this text.
+        "checks": ["IAM.3", "IAM.4", "IAM.7", "IAM.8"],
     },
 
     "HIPAA-308.a.5.ii.c": {
@@ -181,7 +199,10 @@ HIPAA_MAPPING = {
             "Enable metric filter and alarm for authentication failures and sign-in without MFA. "
             "Ensure all SNS subscriptions are active."
         ),
-        "checks": ["CloudWatch.1", "CloudWatch.3"],
+        # Added CloudWatch.6 — text explicitly names "authentication
+        # failures" (CW.6's real title), separate from "sign-in without MFA"
+        # (CW.3), which was already correct.
+        "checks": ["CloudWatch.1", "CloudWatch.3", "CloudWatch.6"],
     },
 
     "HIPAA-308.a.5.ii.d": {
@@ -198,7 +219,11 @@ HIPAA_MAPPING = {
             "numbers, symbols, expire in 90 days, prevent reuse of last 24 passwords. "
             "Rotate access keys every 90 days. Disable unused credentials."
         ),
-        "checks": ["IAM.1", "IAM.2", "IAM.6", "IAM.8", "IAM.9"],
+        # Was [IAM.1, IAM.2, IAM.6, IAM.9] (admin policies/attachment/root
+        # MFA — none mentioned here). Text needs the password policy (IAM.7,
+        # missing) and key rotation (IAM.3, missing); IAM.8 was already
+        # correct.
+        "checks": ["IAM.3", "IAM.7", "IAM.8"],
     },
 
     "HIPAA-308.a.6.i": {
@@ -215,8 +240,10 @@ HIPAA_MAPPING = {
             "authentication failures, network ACL changes, network gateway changes, "
             "route table changes, and VPC changes. Ensure SNS notifications are active."
         ),
+        # Was CloudWatch.3 (sign-in without MFA) — text names "authentication
+        # failures" specifically, which is CloudWatch.6.
         "checks": [
-            "CloudWatch.1", "CloudWatch.3",
+            "CloudWatch.1", "CloudWatch.6",
             "CloudWatch.11", "CloudWatch.12", "CloudWatch.13", "CloudWatch.14",
         ],
     },
@@ -236,9 +263,15 @@ HIPAA_MAPPING = {
             "Configure SNS subscriptions for all alarms. "
             "Review and act on all triggered alarms promptly."
         ),
+        # Was only 8 of 14 despite claiming "all CloudWatch metric filters
+        # and alarms for security events" — contrast with HIPAA-312.b below,
+        # which correctly lists the full CloudWatch.1-14 set for the same
+        # kind of "all events" claim.
         "checks": [
             "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4",
             "CloudWatch.5", "CloudWatch.6", "CloudWatch.7", "CloudWatch.8",
+            "CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12",
+            "CloudWatch.13", "CloudWatch.14",
         ],
     },
 
@@ -257,9 +290,12 @@ HIPAA_MAPPING = {
             "Enable S3 server-side encryption with KMS. "
             "Enable KMS key rotation for all encryption keys."
         ),
+        # Was missing S3.3.3 (versioning) and KMS.1 (key rotation) despite
+        # both being explicitly named ("Enable S3 versioning...", "Enable
+        # KMS key rotation...").
         "checks": [
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
-            "S3.3.1", "S3.3.2", "S3.3.5",
+            "S3.3.1", "S3.3.2", "S3.3.3", "S3.3.5", "KMS.1",
         ],
     },
 
@@ -280,8 +316,11 @@ HIPAA_MAPPING = {
             "Remove root access keys. "
             "Attach IAM policies only to groups or roles."
         ),
+        # Was IAM.3 (key rotation, not mentioned) and IAM.7 (password
+        # policy, not mentioned) instead of IAM.5 (console MFA) and IAM.2
+        # (groups/roles only), both explicitly named.
         "checks": [
-            "IAM.3", "IAM.4", "IAM.7",
+            "IAM.2", "IAM.4", "IAM.5",
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
         ],
     },
@@ -319,8 +358,12 @@ HIPAA_MAPPING = {
             "Ensure KMS keys are not publicly accessible or scheduled for deletion. "
             "Block public access to all S3 buckets."
         ),
+        # Was KMS.4 ("key not disabled", not mentioned) instead of KMS.5
+        # ("scheduled for deletion", explicitly named); also missing S3.2.x
+        # ("Block public access to all S3 buckets", explicit).
         "checks": [
-            "KMS.1", "KMS.2", "KMS.3", "KMS.4",
+            "KMS.1", "KMS.2", "KMS.3", "KMS.5",
+            "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
             "S3.3.1", "S3.3.2", "S3.3.5",
         ],
     },
@@ -363,8 +406,10 @@ HIPAA_MAPPING = {
             "Enforce HTTPS-only access with S3 bucket policies. "
             "Enable KMS key rotation to protect encryption keys."
         ),
+        # Was S3.3.1 (public ACL, not mentioned) instead of S3.3.3
+        # (versioning — "Enable S3 versioning..." is explicit).
         "checks": [
-            "S3.3.1", "S3.3.2", "S3.3.5",
+            "S3.3.2", "S3.3.3", "S3.3.5",
             "KMS.1", "KMS.2",
         ],
     },
@@ -383,7 +428,10 @@ HIPAA_MAPPING = {
             "Enable MFA for all IAM users with console access. "
             "Configure IAM password policy with expiry, complexity, and reuse prevention."
         ),
-        "checks": ["IAM.1", "IAM.3", "IAM.4"],
+        # Was [IAM.1, IAM.3, IAM.4] (admin policies/key rotation/root keys —
+        # none of that is in this text). Entirely about MFA (hardware MFA
+        # for root = IAM.6, console MFA = IAM.5) and password policy = IAM.7.
+        "checks": ["IAM.5", "IAM.6", "IAM.7"],
     },
 
     "HIPAA-312.e.1": {
@@ -400,7 +448,11 @@ HIPAA_MAPPING = {
             "Enable server-side encryption for all S3 buckets containing ePHI. "
             "Block public access at account and bucket level."
         ),
-        "checks": ["S3.2.1", "S3.2.2", "S3.3.5"],
+        # S3.2.1/S3.2.2 are block-public-access settings, not "deny
+        # non-HTTPS requests" — that's S3.3.2, which was missing entirely.
+        # Completed the block-public-access set (S3.2.3/S3.2.4) to match
+        # "at account and bucket level".
+        "checks": ["S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4", "S3.3.2", "S3.3.5"],
     },
 
     "HIPAA-312.e.2.ii": {
@@ -418,8 +470,12 @@ HIPAA_MAPPING = {
             "Block public access to all S3 buckets. "
             "Enforce HTTPS transport with bucket policies."
         ),
+        # Was also listing KMS.3/KMS.4 (key-policy wildcard action / key not
+        # disabled — neither mentioned here); missing S3.2.x ("Block public
+        # access to all S3 buckets", explicit).
         "checks": [
-            "KMS.1", "KMS.2", "KMS.3", "KMS.4",
+            "KMS.1", "KMS.2",
+            "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
             "S3.3.1", "S3.3.2", "S3.3.5",
         ],
     },

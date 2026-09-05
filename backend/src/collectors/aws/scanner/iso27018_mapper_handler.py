@@ -73,7 +73,9 @@ ISO27018_MAPPING = {
             "notification obligations."
         ),
         "remediation": "Ensure CloudTrail is enabled and CloudWatch alarms for unauthorized API calls and root usage are active with a confirmed SNS subscription.",
-        "checks": ["CloudWatch.1", "CloudWatch.3"],
+        # Was CloudWatch.3 (console sign-in without MFA) — "unauthorized API
+        # calls" is CloudWatch.2.
+        "checks": ["CloudWatch.1", "CloudWatch.2"],
     },
 }
 

@@ -67,7 +67,9 @@ NIST_AI_RMF_MAPPING = {
             "and recovery of the AI system and its supporting data."
         ),
         "remediation": "Ensure CloudWatch alarms for unauthorized activity are active, and enable automated backups with tested restore procedures.",
-        "checks": ["CloudWatch.1", "CloudWatch.3", "RDS.DR.1", "RDS.DR.2", "RDS.DR.3", "RDS.DR.4", "DynamoDB.DR.1", "DynamoDB.DR.2", "DynamoDB.DR.3"],
+        # Was CloudWatch.3 (console sign-in without MFA) — "unauthorized
+        # activity" is CloudWatch.2 (unauthorized API calls).
+        "checks": ["CloudWatch.1", "CloudWatch.2", "RDS.DR.1", "RDS.DR.2", "RDS.DR.3", "RDS.DR.4", "DynamoDB.DR.1", "DynamoDB.DR.2", "DynamoDB.DR.3"],
     },
 }
 

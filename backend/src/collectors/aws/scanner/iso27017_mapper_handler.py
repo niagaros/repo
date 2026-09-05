@@ -74,7 +74,9 @@ ISO27017_MAPPING = {
             "be controlled by a management process."
         ),
         "remediation": "Enable MFA for the root account and all IAM console users. Remove root access keys.",
-        "checks": ["IAM.1", "IAM.2", "IAM.3", "IAM.6"],
+        # Was [IAM.1, IAM.2, IAM.3, IAM.6] — IAM.1/2/3 don't match this text;
+        # IAM.4 (root keys) and IAM.5 (console MFA) do, and were missing.
+        "checks": ["IAM.4", "IAM.5", "IAM.6"],
     },
     "ISO27017.A.5.18": {
         "title": "Access Rights",
@@ -86,7 +88,9 @@ ISO27017_MAPPING = {
             "with an access control policy."
         ),
         "remediation": "Remove administrative privileges from IAM users; attach policies only to groups/roles.",
-        "checks": ["IAM.5", "IAM.7", "IAM.8", "IAM.9"],
+        # Was ["IAM.5","IAM.7","IAM.8","IAM.9"] — unrelated to admin
+        # privileges/policy attachment. IAM.1 + IAM.2 match the text.
+        "checks": ["IAM.1", "IAM.2"],
     },
     "ISO27017.A.8.2": {
         "title": "Privileged Access Rights",
@@ -94,7 +98,9 @@ ISO27017_MAPPING = {
         "section": "Shared ISO 27001 Annex A control, applied to cloud",
         "description": "The allocation and use of privileged access rights should be restricted and managed.",
         "remediation": "Remove administrative privileges from IAM users, groups, and roles.",
-        "checks": ["IAM.5", "IAM.7", "IAM.8", "IAM.9"],
+        # Was ["IAM.5","IAM.7","IAM.8","IAM.9"] — this text is entirely
+        # about admin privileges, i.e. IAM.1.
+        "checks": ["IAM.1"],
     },
     "ISO27017.A.8.3": {
         "title": "Information Access Restriction",
@@ -187,7 +193,10 @@ ISO27017_MAPPING = {
             "environment should be defined, documented and monitored."
         ),
         "remediation": "Remove standing administrative privileges from individual IAM users; require MFA for privileged access.",
-        "checks": ["IAM.5", "IAM.6", "IAM.7", "IAM.8", "IAM.9"],
+        # Was missing IAM.1 (full-admin '*' policies) despite "administrative
+        # privileges" being explicitly named; IAM.7/IAM.8 (password policy /
+        # unused credentials) aren't mentioned in this text.
+        "checks": ["IAM.1", "IAM.5", "IAM.6", "IAM.9"],
     },
     "CLD.12.4.5": {
         "title": "Monitoring of Cloud Services",

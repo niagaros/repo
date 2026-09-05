@@ -282,10 +282,13 @@ NIS2_MAPPING = {
             "Enable KMS key rotation for all keys used to encrypt backups. "
             "Ensure backup vaults are encrypted. Implement RDS automated backups."
         ),
+        # Was also listing KMS.2/3/4 — this text only names "Enable KMS key
+        # rotation", which is KMS.1; KMS.2-4 (key-policy/disabled checks)
+        # aren't mentioned here.
         "checks": [
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
             "S3.3.1", "S3.3.2", "S3.3.5",
-            "KMS.1", "KMS.2", "KMS.3", "KMS.4",
+            "KMS.1",
         ],
     },
 
@@ -304,10 +307,12 @@ NIS2_MAPPING = {
             "Enable KMS key rotation. "
             "Set CloudWatch log group retention policies meeting regulatory requirements."
         ),
+        # Was also listing KMS.2 — only "Enable KMS key rotation" (KMS.1) is
+        # named in this text.
         "checks": [
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
             "S3.3.1", "S3.3.2", "S3.3.5",
-            "KMS.1", "KMS.2",
+            "KMS.1",
         ],
     },
 
@@ -350,8 +355,12 @@ NIS2_MAPPING = {
             "Ensure KMS keys are not publicly accessible or scheduled for deletion. "
             "Block public access to all S3 buckets."
         ),
+        # Was KMS.4 (key not disabled — not mentioned) instead of KMS.5
+        # ("scheduled for deletion", explicitly named); also missing S3.2.x
+        # (block public access), which the text explicitly asks for.
         "checks": [
-            "KMS.1", "KMS.2", "KMS.3", "KMS.4",
+            "KMS.1", "KMS.2", "KMS.3", "KMS.5",
+            "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
             "S3.3.1", "S3.3.2", "S3.3.5",
         ],
     },
@@ -374,9 +383,10 @@ NIS2_MAPPING = {
         # Was ["IAM.2", "IAM.6", ...] — policy attachment / root hardware MFA
         # don't match "rotate access keys" / "remove root access keys" /
         # "disable unused access keys"; those are IAM.3 / IAM.4 / IAM.8.
+        # KMS.4 (key not disabled) isn't mentioned in this text either.
         "checks": [
             "IAM.3", "IAM.4", "IAM.8",
-            "KMS.1", "KMS.2", "KMS.3", "KMS.4",
+            "KMS.1", "KMS.2", "KMS.3",
         ],
     },
 

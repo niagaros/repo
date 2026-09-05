@@ -74,7 +74,10 @@ HITRUST_MAPPING = {
             "configuration changes detected and alerted on."
         ),
         "remediation": "Enable CloudWatch alarms for S3 bucket policy changes, network ACL/gateway/route table changes, and CloudTrail configuration changes.",
-        "checks": ["CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12", "CloudWatch.13", "CloudWatch.14"],
+        # Was CW.9 (AWS Config changes) and CW.10 (security groups) — neither
+        # mentioned. Text names S3 bucket policy changes (CW.8, missing) and
+        # CloudTrail configuration changes (CW.5, missing).
+        "checks": ["CloudWatch.5", "CloudWatch.8", "CloudWatch.11", "CloudWatch.12", "CloudWatch.13", "CloudWatch.14"],
     },
     "HITRUST.07": {
         "title": "Vulnerability Management",
@@ -109,7 +112,10 @@ HITRUST_MAPPING = {
             "protected against unauthorized use."
         ),
         "remediation": "Configure IAM password policy with complexity and expiry requirements. Rotate access keys regularly and remove unused credentials.",
-        "checks": ["IAM.1", "IAM.6", "IAM.8", "IAM.9"],
+        # Was [IAM.1, IAM.6, IAM.9] (admin policies/root MFA — not
+        # mentioned) instead of IAM.7 (password policy, missing) and IAM.3
+        # (key rotation, missing); IAM.8 (unused credentials) was correct.
+        "checks": ["IAM.3", "IAM.7", "IAM.8"],
     },
     "HITRUST.11": {
         "title": "Access Control",
@@ -121,7 +127,10 @@ HITRUST_MAPPING = {
             "authorized identities only."
         ),
         "remediation": "Attach IAM policies to groups/roles only, not individual users. Remove administrative privileges from individual users. Enable MFA for all console access.",
-        "checks": ["IAM.2", "IAM.3", "IAM.4", "IAM.5", "IAM.7"],
+        # Was also listing IAM.3/IAM.4/IAM.7 (key rotation/root
+        # keys/password policy — not mentioned); IAM.1 (admin privileges,
+        # explicit) was missing.
+        "checks": ["IAM.1", "IAM.2", "IAM.5"],
     },
     "HITRUST.12": {
         "title": "Audit Logging and Monitoring",
@@ -143,7 +152,9 @@ HITRUST_MAPPING = {
             "incidents so that a response can be initiated."
         ),
         "remediation": "Ensure CloudTrail is enabled and CloudWatch alarms for unauthorized API calls and root account usage are active with a confirmed SNS subscription.",
-        "checks": ["CloudWatch.1", "CloudWatch.3"],
+        # Was CloudWatch.3 (console sign-in without MFA) — "unauthorized API
+        # calls" is CloudWatch.2.
+        "checks": ["CloudWatch.1", "CloudWatch.2"],
     },
     "HITRUST.16": {
         "title": "Business Continuity and Disaster Recovery",

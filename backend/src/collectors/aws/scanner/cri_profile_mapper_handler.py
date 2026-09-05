@@ -85,7 +85,9 @@ CRI_MAPPING = {
             "on unauthorized access and root account usage."
         ),
         "remediation": "Ensure CloudWatch alarms for unauthorized API calls and root usage are active with a confirmed SNS subscription.",
-        "checks": ["CloudWatch.1", "CloudWatch.3"],
+        # Was CloudWatch.3 (console sign-in without MFA) — the text asks for
+        # "unauthorized API calls", which is CloudWatch.2.
+        "checks": ["CloudWatch.1", "CloudWatch.2"],
     },
     "CRI.RECOVER": {
         "title": "Recover",

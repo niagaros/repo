@@ -71,8 +71,13 @@ ISO_MAPPING = {
             "Require two-factor authentication for all GitHub organization members "
             "and outside collaborators."
         ),
+        # Was [IAM.1, IAM.2, IAM.3, IAM.6] — IAM.1 (admin policies) and IAM.2
+        # (policy attachment) aren't in this text; IAM.3 (key rotation) isn't
+        # either. IAM.4 (root keys), IAM.5 (console MFA), IAM.7 (password
+        # policy) are explicitly named but were missing; IAM.6 (root
+        # hardware MFA) was already correct.
         "checks": [
-            "IAM.1", "IAM.2", "IAM.3", "IAM.6",
+            "IAM.4", "IAM.5", "IAM.6", "IAM.7",
             "github_1.3.4", "github_1.3.5",
         ],
     },
@@ -89,8 +94,12 @@ ISO_MAPPING = {
             "Attach policies only to groups or roles, not directly to users. "
             "Review and remove overly permissive inline and managed policies."
         ),
+        # Was ["IAM.5","IAM.7","IAM.8","IAM.9"] (MFA/password/unused-creds/
+        # root-MFA — none of it about admin privileges or policy attachment).
+        # IAM.1 (full-admin '*' policies) and IAM.2 (direct attachment) match
+        # the text.
         "checks": [
-            "IAM.5", "IAM.7", "IAM.8", "IAM.9",
+            "IAM.1", "IAM.2",
         ],
     },
 
@@ -108,8 +117,11 @@ ISO_MAPPING = {
             "Do not attach policies with full administrative access. "
             "Review and remove inline policies with administrative privileges."
         ),
+        # Was the same copy-pasted ["IAM.5","IAM.7","IAM.8","IAM.9"] list as
+        # A.5.18 above — this text is entirely about full-admin policies,
+        # i.e. IAM.1, which never appeared.
         "checks": [
-            "IAM.5", "IAM.7", "IAM.8", "IAM.9",
+            "IAM.1",
         ],
     },
     "A.8.3": {

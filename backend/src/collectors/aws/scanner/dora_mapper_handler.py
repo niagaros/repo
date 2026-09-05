@@ -90,7 +90,9 @@ DORA_MAPPING = {
             "recovery plans."
         ),
         "remediation": "Ensure CloudWatch alarms for unauthorized API calls and root usage are active with a confirmed SNS subscription for rapid response.",
-        "checks": ["CloudWatch.1", "CloudWatch.3"],
+        # Was CloudWatch.3 (console sign-in without MFA) — "unauthorized API
+        # calls" is CloudWatch.2.
+        "checks": ["CloudWatch.1", "CloudWatch.2"],
     },
     "DORA.12": {
         "title": "Backup Policies and Recovery Methods",

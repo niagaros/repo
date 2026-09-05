@@ -121,8 +121,10 @@ FEDRAMP_MAPPING = {
             "for unauthorised API calls, sign-in anomalies, root usage, IAM/CMK/"
             "S3 policy changes and network ACL/gateway/route/VPC changes."
         ),
+        # Was missing CloudWatch.1 (root usage) despite the remediation text
+        # explicitly naming "root usage".
         "checks": [
-            "CloudWatch.2", "CloudWatch.3", "CloudWatch.4", "CloudWatch.5",
+            "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4", "CloudWatch.5",
             "CloudWatch.6", "CloudWatch.7", "CloudWatch.8", "CloudWatch.9",
             "CloudWatch.10", "CloudWatch.11", "CloudWatch.12", "CloudWatch.13",
             "CloudWatch.14",
@@ -174,8 +176,10 @@ FEDRAMP_MAPPING = {
             "Enforce a strong IAM password policy, enable MFA for all console "
             "users, and ensure IAM policies are scoped to groups/roles."
         ),
+        # Was IAM.9 (root MFA) — the text asks for "MFA for all console
+        # users", which is IAM.5.
         "checks": [
-            "IAM.2", "IAM.9", "IAM.15",
+            "IAM.2", "IAM.5", "IAM.15",
         ],
     },
 

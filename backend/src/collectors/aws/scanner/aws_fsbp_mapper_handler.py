@@ -170,8 +170,14 @@ FSBP_MAPPING = {
             "Do not schedule KMS keys for deletion. Cancel deletion if initiated. "
             "Ensure key retention period allows recovery."
         ),
+        # Was self-referencing checks: ["KMS.3"] — but this codebase's own
+        # rule engine (backend/src/rules/cis/kms/) uses its own internal
+        # numbering where KMS.3 = "no wildcard actions in key policy", a
+        # completely different check. The real "pending deletion" check is
+        # internal KMS.5 (kms_5_key_not_pending_deletion.py). This control
+        # was silently showing PASS/FAIL for the wrong underlying property.
         "checks": [
-            "KMS.3",
+            "KMS.5",
         ],
     },
     "KMS.4": {
@@ -185,8 +191,13 @@ FSBP_MAPPING = {
             "Enable automatic key rotation for all KMS customer managed keys. "
             "Rotation should happen annually."
         ),
+        # Was self-referencing checks: ["KMS.4"] — internal KMS.4 is actually
+        # "key not disabled" (kms_4_key_not_disabled.py), not rotation. The
+        # real rotation check is internal KMS.1 (kms_1_rotation_enabled.py).
+        # This control was showing PASS as long as keys weren't disabled,
+        # regardless of whether rotation was ever turned on.
         "checks": [
-            "KMS.4",
+            "KMS.1",
         ],
     },
 

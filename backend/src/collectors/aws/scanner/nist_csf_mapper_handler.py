@@ -95,8 +95,11 @@ NIST_MAPPING = {
             "Ensure CloudWatch alarms cover all critical API and configuration events. "
             "Enable CloudTrail in all regions."
         ),
+        # Added IAM.5/6/9 (console MFA, root hardware MFA, root MFA) — the
+        # remediation opens with "Enable MFA for root and all IAM users",
+        # but no MFA check was actually present.
         "checks": [
-            "IAM.1", "IAM.2",
+            "IAM.1", "IAM.2", "IAM.5", "IAM.6", "IAM.9",
             "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4",
             "CloudWatch.5", "CloudWatch.6", "CloudWatch.7", "CloudWatch.8",
             "CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12",
@@ -140,8 +143,12 @@ NIST_MAPPING = {
             "Attach policies to groups/roles, not directly to users. "
             "Review and remove overly broad permissions."
         ),
+        # Was ["IAM.5","IAM.7","IAM.8","IAM.9"] (MFA/password/unused-creds/
+        # root-MFA — a recurring copy-pasted list, none of it about groups/
+        # roles/broad permissions). IAM.1 (full-admin '*' policies) and IAM.2
+        # (direct policy attachment) are what the remediation describes.
         "checks": [
-            "IAM.5", "IAM.7", "IAM.8", "IAM.9",
+            "IAM.1", "IAM.2",
         ],
     },
     "ID.RA-1": {

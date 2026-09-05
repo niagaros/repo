@@ -81,9 +81,11 @@ SOC2_MAPPING = {
             "Ensure IAM password policy enforces complexity and rotation. "
             "Enable CloudWatch metric filters for root account usage."
         ),
+        # Was also listing IAM.1/2/3 (admin policies/attachment/key rotation
+        # — not mentioned here) and missing IAM.5 (console MFA) despite "MFA
+        # for ... all IAM users" being explicit.
         "checks": [
-            "IAM.1", "IAM.2", "IAM.3", "IAM.4",
-            "IAM.6", "IAM.7",
+            "IAM.4", "IAM.5", "IAM.6", "IAM.7",
             "CloudWatch.1", "CloudWatch.3",
         ],
     },
@@ -162,8 +164,11 @@ SOC2_MAPPING = {
             "Attach policies to groups or roles only, not directly to users. "
             "Review and remove overly permissive inline and managed policies."
         ),
+        # Was ["IAM.5","IAM.7","IAM.8","IAM.9"] — same recurring copy-pasted
+        # list, unrelated to admin privileges/policy attachment. IAM.1 + IAM.2
+        # match this text.
         "checks": [
-            "IAM.5", "IAM.7", "IAM.8", "IAM.9",
+            "IAM.1", "IAM.2",
         ],
     },
 
@@ -217,9 +222,12 @@ SOC2_MAPPING = {
             "Enable CloudTrail in all regions. Configure CloudWatch alarms for "
             "config changes to security groups, network ACLs, and IAM policies."
         ),
+        # Was also listing CW.5/6/7/8/9 (CloudTrail config/auth failures/CMK/
+        # S3 policy/AWS Config — none named here). This text names exactly
+        # three things: IAM policy changes (CW.4), security groups (CW.10),
+        # network ACLs (CW.11, missing).
         "checks": [
-            "CloudWatch.4", "CloudWatch.5", "CloudWatch.6", "CloudWatch.7",
-            "CloudWatch.8", "CloudWatch.9", "CloudWatch.10",
+            "CloudWatch.4", "CloudWatch.10", "CloudWatch.11",
         ],
     },
 
@@ -254,9 +262,12 @@ SOC2_MAPPING = {
             "Enable CloudWatch alarms for root account usage, IAM policy changes, "
             "and unauthorized API calls. Ensure alarms notify via SNS."
         ),
+        # Was also listing CW.3 (console sign-in without MFA) and CW.11-14
+        # (network ACL/gateway/route/VPC changes) — none of that is in this
+        # text, which names exactly root usage (CW.1), API calls (CW.2), and
+        # IAM policy changes (CW.4, was missing).
         "checks": [
-            "CloudWatch.1", "CloudWatch.2", "CloudWatch.3",
-            "CloudWatch.11", "CloudWatch.12", "CloudWatch.13", "CloudWatch.14",
+            "CloudWatch.1", "CloudWatch.2", "CloudWatch.4",
         ],
     },
 
@@ -372,9 +383,11 @@ SOC2_MAPPING = {
             "Enable KMS key rotation. Enable S3 versioning on buckets storing "
             "processing outputs and audit logs."
         ),
+        # Was missing S3.3.3 (versioning) despite "Enable S3 versioning on
+        # buckets storing processing outputs and audit logs" being explicit.
         "checks": [
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
-            "S3.3.1", "S3.3.2", "S3.3.5",
+            "S3.3.1", "S3.3.2", "S3.3.3", "S3.3.5",
             "KMS.1", "KMS.2",
         ],
     },

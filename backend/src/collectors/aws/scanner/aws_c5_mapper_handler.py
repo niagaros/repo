@@ -46,10 +46,13 @@ C5_MAPPING = {
             "Enable KMS CMK automatic rotation for all customer-managed keys. "
             "Ensure a dedicated IAM support role exists for incident management."
         ),
+        # Was KMS.4 ("key not disabled", not mentioned) instead of KMS.1
+        # ("automatic rotation"); IAM.8 (unused credentials) instead of
+        # IAM.18 (the actual "dedicated support role" check).
         "checks": [
             "CloudWatch.11", "CloudWatch.12", "CloudWatch.14",
-            "IAM.8",
-            "KMS.4",
+            "IAM.18",
+            "KMS.1",
         ],
     },
 
@@ -66,9 +69,11 @@ C5_MAPPING = {
             "to detect unauthorised modifications by personnel. "
             "Ensure a dedicated IAM support role is available for escalation."
         ),
+        # IAM.8 (unused credentials) was standing in for "a dedicated IAM
+        # support role" — that's IAM.18.
         "checks": [
             "CloudWatch.11", "CloudWatch.12", "CloudWatch.14",
-            "IAM.8",
+            "IAM.18",
         ],
     },
 
@@ -123,10 +128,14 @@ C5_MAPPING = {
             "Enable S3 default encryption. "
             "Ensure a dedicated IAM support role exists."
         ),
+        # Was IAM.1/IAM.2 (admin policies/policy attachment, not mentioned)
+        # instead of IAM.5 (console MFA, explicitly named alongside root
+        # MFA); S3.3.1 (public ACL) instead of S3.3.5 ("S3 default
+        # encryption"); missing IAM.18 ("a dedicated IAM support role").
         "checks": [
             "CloudWatch.11", "CloudWatch.12", "CloudWatch.14",
-            "IAM.1", "IAM.2", "IAM.6", "IAM.8",
-            "S3.3.1",
+            "IAM.5", "IAM.6", "IAM.8", "IAM.18",
+            "S3.3.5",
         ],
     },
 
@@ -147,10 +156,15 @@ C5_MAPPING = {
             "Ensure a dedicated IAM support role exists. "
             "Block public S3 access and enable bucket encryption."
         ),
+        # Was also listing IAM.1/IAM.2 (admin policies/attachment, not
+        # mentioned) and S3.3.1 (public ACL) instead of S3.3.5 ("enable
+        # bucket encryption"); missing IAM.3 ("rotate active access keys
+        # every 90 days") and IAM.18 ("a dedicated IAM support role"),
+        # both explicitly named. IAM.5 (console MFA) was also missing.
         "checks": [
-            "IAM.1", "IAM.2", "IAM.4", "IAM.6", "IAM.7", "IAM.8", "IAM.9",
+            "IAM.3", "IAM.4", "IAM.5", "IAM.6", "IAM.7", "IAM.8", "IAM.9", "IAM.18",
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
-            "S3.3.1",
+            "S3.3.5",
         ],
     },
 
@@ -167,10 +181,15 @@ C5_MAPPING = {
             "Enable S3 default server-side encryption on all buckets. "
             "Remove root access keys and rotate IAM access keys every 90 days."
         ),
+        # Was KMS.4 ("key not disabled") instead of KMS.1 ("automatic
+        # rotation"); IAM.6/IAM.7 (root hardware MFA / password policy)
+        # aren't mentioned — this text needs IAM.3 ("rotate IAM access keys
+        # every 90 days"), which was missing. S3.3.1 (public ACL) isn't
+        # mentioned either.
         "checks": [
-            "IAM.4", "IAM.6", "IAM.7",
-            "KMS.4",
-            "S3.3.1", "S3.3.5",
+            "IAM.3", "IAM.4",
+            "KMS.1",
+            "S3.3.5",
         ],
     },
 
@@ -205,8 +224,10 @@ C5_MAPPING = {
             "Ensure a dedicated IAM support role exists that allows authorised "
             "personnel to manage incidents without using root credentials."
         ),
+        # IAM.8 (unused credentials) doesn't test whether a support role
+        # exists — that's IAM.18.
         "checks": [
-            "IAM.8",
+            "IAM.18",
         ],
     },
 
@@ -224,7 +245,7 @@ C5_MAPPING = {
             "shared credentials."
         ),
         "checks": [
-            "IAM.8",
+            "IAM.18",  # IAM.8 (unused credentials) didn't test for a support role
         ],
     },
 
@@ -242,7 +263,7 @@ C5_MAPPING = {
             "without using root credentials."
         ),
         "checks": [
-            "IAM.8",
+            "IAM.18",  # IAM.8 (unused credentials) didn't test for a support role
         ],
     },
 
@@ -260,10 +281,14 @@ C5_MAPPING = {
             "Enable CloudWatch alarms for network ACL, gateway and VPC changes. "
             "Enable S3 default encryption on all buckets."
         ),
+        # Was IAM.1/IAM.2 (admin policies/attachment, not mentioned) instead
+        # of IAM.5 (console MFA, explicit alongside root MFA); missing IAM.7
+        # (password policies) and IAM.8 (unused access keys), both explicit;
+        # S3.3.1 (public ACL) instead of S3.3.5 ("S3 default encryption").
         "checks": [
             "CloudWatch.11", "CloudWatch.12", "CloudWatch.14",
-            "IAM.1", "IAM.2", "IAM.6", "IAM.9",
-            "S3.3.1",
+            "IAM.5", "IAM.6", "IAM.7", "IAM.8", "IAM.9",
+            "S3.3.5",
         ],
     },
 }

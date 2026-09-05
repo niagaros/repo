@@ -68,7 +68,9 @@ NYDFS_MAPPING = {
             "trails designed to detect and respond to Cybersecurity Events."
         ),
         "remediation": "Enable multi-region CloudTrail with CloudWatch alarms for all CIS-required security events.",
-        "checks": ["CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4", "CloudWatch.5", "CloudWatch.6", "CloudWatch.7", "CloudWatch.8", "CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12", "CloudWatch.13"],
+        # Was missing CloudWatch.14 (VPC changes) despite claiming "all
+        # CIS-required security events" — the full CIS set is CloudWatch.1-14.
+        "checks": ["CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4", "CloudWatch.5", "CloudWatch.6", "CloudWatch.7", "CloudWatch.8", "CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12", "CloudWatch.13", "CloudWatch.14"],
     },
     "NYDFS.500.07": {
         "title": "Access Privileges",
@@ -116,7 +118,10 @@ NYDFS_MAPPING = {
             "Users and detect unauthorized access, use, or tampering."
         ),
         "remediation": "Ensure CloudTrail is enabled and CloudWatch alarms for unauthorized API calls and unusual activity are active with a confirmed SNS subscription.",
-        "checks": ["CloudWatch.1", "CloudWatch.3", "CloudWatch.4", "CloudWatch.14"],
+        # Was CloudWatch.3 (console sign-in without MFA) — "unauthorized API
+        # calls" is CloudWatch.2. CW.4/CW.14 kept under the broader "unusual
+        # activity" wording.
+        "checks": ["CloudWatch.1", "CloudWatch.2", "CloudWatch.4", "CloudWatch.14"],
     },
     "NYDFS.500.15": {
         "title": "Encryption of Nonpublic Information",
