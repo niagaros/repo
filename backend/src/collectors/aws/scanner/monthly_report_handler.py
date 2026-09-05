@@ -48,6 +48,59 @@ MAPPED_FRAMEWORK_NAMES = (
     'CIS Controls v8.1', '23 NYCRR 500 (NYDFS)', 'NIST Privacy Framework',
 )
 
+# Identical to the CASE mapping in trust_center_handler.py / get-dashboard-
+# data — copied verbatim, not reimplemented, so a "SOC 2: 92%" line in this
+# report can never silently disagree with the same framework's card on the
+# dashboard or Trust Center. Unlike MAPPED_FRAMEWORK_NAMES above (used to
+# EXCLUDE these for the raw/deduplicated headline numbers), this is used to
+# INCLUDE them for the per-framework breakdown, which is supposed to show
+# each framework's own citation.
+FRAMEWORK_CASE_SQL = """
+    CASE
+        WHEN f.framework = 'ISO 27001:2022' THEN 'ISO27001'
+        WHEN f.framework = 'NIST CSF v2.0'  THEN 'NIST'
+        WHEN f.framework = 'GDPR'            THEN 'GDPR'
+        WHEN f.framework = 'SOC2'            THEN 'SOC2'
+        WHEN f.framework = 'PCI DSS v4.0'   THEN 'PCIDSS'
+        WHEN f.framework = 'NIS2'            THEN 'NIS2'
+        WHEN f.framework = 'HIPAA'           THEN 'HIPAA'
+        WHEN f.framework = 'NIST 800-53 Rev 5' THEN 'NIST80053'
+        WHEN f.framework = 'BSI-C5'          THEN 'BSIC5'
+        WHEN f.framework = 'CSA CCM 4.0'     THEN 'CSACCM'
+        WHEN f.framework = 'FedRAMP Moderate Rev 4' THEN 'FEDRAMP'
+        WHEN f.framework = 'ISO 42001'       THEN 'ISO42001'
+        WHEN f.framework = 'ISO 27017'       THEN 'ISO27017'
+        WHEN f.framework = 'AWS FTR'         THEN 'AWSFTR'
+        WHEN f.framework = 'MVSP'            THEN 'MVSP'
+        WHEN f.framework = 'TISAX'           THEN 'TISAX'
+        WHEN f.framework = 'HITRUST CSF'     THEN 'HITRUST'
+        WHEN f.framework = 'DORA'            THEN 'DORA'
+        WHEN f.framework = 'CRI Profile'     THEN 'CRIPROFILE'
+        WHEN f.framework = 'EU AI Act'       THEN 'EUAIACT'
+        WHEN f.framework = 'NIST AI RMF'     THEN 'NISTAIRMF'
+        WHEN f.framework = 'ISO 27701'       THEN 'ISO27701'
+        WHEN f.framework = 'ISO 27018'       THEN 'ISO27018'
+        WHEN f.framework = 'Microsoft SSPA'  THEN 'SSPA'
+        WHEN f.framework = 'CIS Controls v8.1' THEN 'CISCTRL'
+        WHEN f.framework = '23 NYCRR 500 (NYDFS)' THEN 'NYDFS'
+        WHEN f.framework = 'NIST Privacy Framework' THEN 'NISTPRIV'
+        WHEN f.framework = 'CIS AWS Foundations Benchmark v5.0.0' THEN 'CISAWS'
+        WHEN f.framework = 'AWS Foundational Security Best Practices' THEN 'FSBP'
+        ELSE NULL
+    END
+"""
+
+FRAMEWORK_LABELS = {
+    "ISO27001": "ISO/IEC 27001:2022", "NIST": "NIST CSF v2.0", "GDPR": "GDPR", "SOC2": "SOC 2",
+    "PCIDSS": "PCI DSS v4.0", "NIS2": "NIS2", "HIPAA": "HIPAA", "NIST80053": "NIST SP 800-53 Rev 5",
+    "BSIC5": "BSI C5", "CSACCM": "CSA CCM 4.0", "FEDRAMP": "FedRAMP Moderate", "ISO42001": "ISO 42001:2023",
+    "ISO27017": "ISO 27017:2015", "AWSFTR": "AWS FTR", "MVSP": "MVSP", "TISAX": "TISAX",
+    "HITRUST": "HITRUST CSF", "DORA": "DORA", "CRIPROFILE": "CRI Profile", "EUAIACT": "EU AI Act",
+    "NISTAIRMF": "NIST AI RMF", "ISO27701": "ISO 27701", "ISO27018": "ISO 27018", "SSPA": "Microsoft SSPA",
+    "CISCTRL": "CIS Controls v8.1", "NYDFS": "23 NYCRR 500 (NYDFS)", "NISTPRIV": "NIST Privacy Framework",
+    "CISAWS": "CIS AWS Foundations Benchmark", "FSBP": "AWS Foundational Security Best Practices",
+}
+
 
 def _get_connection():
     secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -93,7 +146,38 @@ def _current_state(cur, cloud_account_id):
     return {
         "total": total, "passed": passed, "failed": failed,
         "by_severity": by_severity, "failing": failing,
+        "by_framework": _framework_breakdown(cur, cloud_account_id),
     }
+
+
+def _framework_breakdown(cur, cloud_account_id):
+    """Per-framework passed/failed/score — deliberately the opposite scope
+    from _current_state's raw-only query above: this INCLUDES every mapped
+    framework's own citation, because "SOC 2: 92%" is supposed to be that
+    framework's own number, the same one shown on its dashboard card."""
+    cur.execute(f"""
+        SELECT service, COUNT(*) AS total, COUNT(*) FILTER (WHERE result = 'PASS') AS passed
+        FROM (
+            SELECT {FRAMEWORK_CASE_SQL} AS service, f.result
+            FROM findings f
+            JOIN resources r ON f.resource_id = r.id
+            WHERE r.cloud_account_id = %s
+        ) sub
+        WHERE service IS NOT NULL
+        GROUP BY service
+    """, (cloud_account_id,))
+    out = {}
+    for row in cur.fetchall():
+        # This cursor is a RealDictCursor (see generate_report) — rows are
+        # dict-like, so `for a, b, c in row` would iterate its *keys*, not
+        # values. Index by column name explicitly.
+        service, total, passed = row["service"], row["total"], row["passed"]
+        label = FRAMEWORK_LABELS.get(service, service)
+        out[label] = {
+            "total": total, "passed": passed, "failed": total - passed,
+            "score": round(passed * 100.0 / total, 1) if total else 0,
+        }
+    return out
 
 
 def _period_data(cur, cloud_account_id):
@@ -107,12 +191,17 @@ def _period_data(cur, cloud_account_id):
     the time this report runs, instead of only comparing two isolated points.
     """
     cur.execute("""
-        SELECT generated_at FROM compliance_snapshots
+        SELECT generated_at, by_framework FROM compliance_snapshots
         WHERE cloud_account_id = %s AND snapshot_type = 'monthly_report'
         ORDER BY generated_at DESC LIMIT 1
     """, (cloud_account_id,))
     last_report = cur.fetchone()
     period_start = last_report["generated_at"] if last_report else datetime.now(timezone.utc) - timedelta(days=30)
+    # Framework before/after always compares against the *previous report*,
+    # not an arbitrary mid-period scan snapshot (those don't carry a
+    # per-framework breakdown) — "SOC 2 was 88%, now 92%" means since last
+    # month's report, not since some scan a week ago.
+    previous_by_framework = (last_report["by_framework"] or {}) if last_report else {}
 
     cur.execute("""
         SELECT total_checks, passed, failed, by_severity, failing_keys, generated_at
@@ -140,6 +229,7 @@ def _period_data(cur, cloud_account_id):
         "baseline": baseline,
         "min_score": min(scores) if scores else None,
         "max_score": max(scores) if scores else None,
+        "previous_by_framework": previous_by_framework,
     }
 
 
@@ -193,10 +283,56 @@ def _render_html(account_name, period_label, current, period, new_findings, reso
         f'No scans recorded since {period["period_start"].strftime("%d %b %Y")} — score reflects the current snapshot only'
     )
 
+    baseline_by_severity = (baseline["by_severity"] or {}) if baseline else {}
+
+    def _delta_cell(before, now):
+        if before is None:
+            return '<span style="color:#9ca3af">—</span>'
+        d = now - before
+        if d == 0:
+            return '<span style="color:#9ca3af">no change</span>'
+        color = "#ef4444" if d > 0 else "#10b981"  # more failures = red, fewer = green
+        return f'<span style="color:{color};font-weight:600">{"+" if d > 0 else ""}{d}</span>'
+
+    def _sev_row(sev, d):
+        before = baseline_by_severity.get(sev, {}).get("failed") if baseline else None
+        now = d["failed"]
+        return (
+            f'<tr><td>{_esc(sev)}</td>'
+            f'<td>{before if before is not None else "—"}</td>'
+            f'<td>{now}</td>'
+            f'<td>{_delta_cell(before, now)}</td></tr>'
+        )
+
     sev_rows = "".join(
-        f'<tr><td>{_esc(sev)}</td><td>{d["passed"]}</td><td>{d["failed"]}</td></tr>'
+        _sev_row(sev, d)
         for sev, d in sorted(current["by_severity"].items(), key=lambda kv: SEVERITY_ORDER.get(kv[0], 9))
     )
+
+    def _score_delta_cell(before, now):
+        if before is None or now is None:
+            return '<span style="color:#9ca3af">—</span>'
+        d = now - before
+        if d == 0:
+            return '<span style="color:#9ca3af">no change</span>'
+        color = "#10b981" if d > 0 else "#ef4444"  # higher score = better = green
+        return f'<span style="color:{color};font-weight:600">{"+" if d > 0 else ""}{d} pts</span>'
+
+    previous_by_framework = period.get("previous_by_framework") or {}
+    all_frameworks = sorted(set(current["by_framework"]) | set(previous_by_framework))
+    fw_row_parts = []
+    for fw in all_frameworks:
+        now_d = current["by_framework"].get(fw)
+        prev_d = previous_by_framework.get(fw)
+        now_score = now_d["score"] if now_d else None
+        prev_score = prev_d["score"] if prev_d else None
+        fw_row_parts.append(
+            f'<tr><td>{_esc(fw)}</td>'
+            f'<td>{f"{prev_score}%" if prev_score is not None else "—"}</td>'
+            f'<td>{f"{now_score}%" if now_score is not None else "—"}</td>'
+            f'<td>{_score_delta_cell(prev_score, now_score)}</td></tr>'
+        )
+    framework_rows = "".join(fw_row_parts) or '<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:16px">No framework data available.</td></tr>'
 
     def finding_rows(items, empty_msg):
         if not items:
@@ -244,8 +380,12 @@ code{{font-family:monospace;font-size:12px}}
   <div class="tile"><div class="lbl">Resolved</div><div class="val" style="color:#3b82f6">{len(resolved_findings)}</div></div>
 </div>
 
-<h2>Score by Severity</h2>
-<table><thead><tr><th>Severity</th><th>Passed</th><th>Failed</th></tr></thead><tbody>{sev_rows}</tbody></table>
+<h2>Failing Checks by Severity — Before vs. Now</h2>
+<table><thead><tr><th>Severity</th><th>Before</th><th>Now</th><th>Change</th></tr></thead><tbody>{sev_rows}</tbody></table>
+
+<h2>Compliance by Framework — Before vs. Now</h2>
+<div class="sub" style="margin:-4px 0 10px">{'Before = last monthly report, ' + period["period_start"].strftime("%d %b %Y") + '. Shows exactly where compliance improved or regressed, not just the overall number.' if previous_by_framework else 'No prior report with framework data yet — this comparison starts from the next report.'}</div>
+<table><thead><tr><th>Framework</th><th>Before</th><th>Now</th><th>Change</th></tr></thead><tbody>{framework_rows}</tbody></table>
 
 <h2>New Findings This Period</h2>
 <table><thead><tr><th>Severity</th><th>Check</th><th>Title</th><th>Resource</th></tr></thead>
@@ -338,11 +478,12 @@ def generate_report(cloud_account_id: str, preview_only: bool = False) -> dict:
                 if not preview_only:
                     cur.execute("""
                         INSERT INTO compliance_snapshots
-                            (cloud_account_id, total_checks, passed, failed, by_severity, failing_keys, report_s3_key, snapshot_type)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, 'monthly_report')
+                            (cloud_account_id, total_checks, passed, failed, by_severity, by_framework, failing_keys, report_s3_key, snapshot_type)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'monthly_report')
                     """, (
                         cloud_account_id, current["total"], current["passed"], current["failed"],
-                        json.dumps(current["by_severity"]), json.dumps(current["failing"]), s3_key,
+                        json.dumps(current["by_severity"]), json.dumps(current["by_framework"]),
+                        json.dumps(current["failing"]), s3_key,
                     ))
 
         score = round(100 * current["passed"] / current["total"]) if current["total"] else 0
