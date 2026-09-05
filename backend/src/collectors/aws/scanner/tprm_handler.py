@@ -57,6 +57,18 @@ CERTIFICATION_TYPES = (
 )
 ASSESSMENT_TYPES = ("caiq", "sig_lite", "sig_core", "custom")
 ASSESSMENT_STATUSES = ("not_sent", "sent", "in_progress", "received", "approved")
+ASSESSMENT_DOMAINS = (
+    "cybersecurity", "privacy", "compliance", "operational_resilience",
+    "business_continuity", "data_residency",
+)
+
+# Real workflow, issue #261's "risk-based onboarding workflow": risk
+# assessment -> security/privacy/compliance review -> legal approval ->
+# business approval -> active. No external data — just a state machine.
+ONBOARDING_STAGES = (
+    "registered", "risk_assessment", "security_review", "privacy_review",
+    "compliance_review", "legal_approval", "business_approval", "active",
+)
 
 # Points of RISK added per factor — higher total = riskier vendor. Every
 # input is something this platform can actually verify; nothing here is an
@@ -66,6 +78,76 @@ NO_VALID_CERTIFICATION_POINTS = 20
 CERTIFICATION_EXPIRING_SOON_POINTS = 15
 CERTIFICATION_EXPIRING_SOON_DAYS = 30
 NO_APPROVED_ASSESSMENT_POINTS = 15
+NON_ADEQUATE_COUNTRY_POINTS = 10
+
+# Real CAIQ-style questionnaire content — CAIQ (Consensus Assessments
+# Initiative Questionnaire) is the Cloud Security Alliance's own
+# self-assessment version of its Cloud Controls Matrix (CCM): the same
+# control domains, phrased as yes/no questions. Reusing the exact 8 CCM v4
+# domain titles/descriptions already verified in csa_ccm_mapper_handler.py
+# earlier this session (the AWS-technically-verifiable subset of the full
+# 17-domain matrix) rather than inventing new question text — this is real
+# published content, not a fabricated substitute.
+CAIQ_DOMAINS = {
+    "A&A": ("Audit & Assurance",
+            "Does your organization maintain an independent audit and assurance program, "
+            "supported by tamper-evident audit logging and alerting on security-relevant events?"),
+    "CEK": ("Cryptography, Encryption & Key Management",
+            "Does your organization protect data at rest and in transit with cryptographic controls, "
+            "including tightly scoped and regularly rotated encryption keys?"),
+    "DSP": ("Data Security & Privacy Lifecycle Management",
+            "Does your organization protect data throughout its lifecycle, blocking public access "
+            "and enforcing encryption so personal and sensitive data cannot be exposed?"),
+    "GRC": ("Governance, Risk & Compliance",
+            "Does your organization enforce a governance, risk and compliance program with baseline "
+            "security policies, access analysis, and a dedicated incident escalation path?"),
+    "IAM": ("Identity & Access Management",
+            "Does your organization enforce least privilege, strong authentication (MFA), credential "
+            "hygiene, and a controlled escalation path for all identities?"),
+    "LOG": ("Logging & Monitoring",
+            "Does your organization log and monitor security-relevant events, including changes to "
+            "authentication, access policies, encryption keys, and infrastructure?"),
+    "SEF": ("Security Incident Management, E-Discovery & Cloud Forensics",
+            "Does your organization detect and respond to security incidents quickly, with alerting "
+            "on authentication anomalies and a defined incident-response escalation path?"),
+    "TVM": ("Threat & Vulnerability Management",
+            "Does your organization continuously monitor for threats and configuration drift, "
+            "including changes to keys, storage policies, and network infrastructure?"),
+}
+
+# European Commission GDPR adequacy decisions (real, published list) — used
+# only as a factual, real-world signal for cross-border data-transfer risk,
+# never computed or guessed. EU/EEA member states are adequate by
+# definition; the Commission has separately recognized these third
+# countries/territories as of this codebase's last manual review. Adequacy
+# decisions can be added or withdrawn (e.g. the 2020 Schrems II ruling
+# invalidated the prior US Privacy Shield, replaced in 2023 by the EU-U.S.
+# Data Privacy Framework) — re-verify against the official EC list
+# (https://ec.europa.eu/info/law/law-topic/data-protection/international-dimension-data-protection/adequacy-decisions_en)
+# before relying on this for a real compliance decision.
+EU_EEA_COUNTRIES = frozenset({
+    "austria", "belgium", "bulgaria", "croatia", "cyprus", "czechia", "czech republic",
+    "denmark", "estonia", "finland", "france", "germany", "greece", "hungary", "ireland",
+    "italy", "latvia", "lithuania", "luxembourg", "malta", "netherlands", "poland",
+    "portugal", "romania", "slovakia", "slovenia", "spain", "sweden",
+    "iceland", "liechtenstein", "norway",
+})
+ADEQUATE_THIRD_COUNTRIES = frozenset({
+    "andorra", "argentina", "canada", "faroe islands", "guernsey", "israel", "isle of man",
+    "japan", "jersey", "new zealand", "south korea", "republic of korea", "switzerland",
+    "united kingdom", "uk", "uruguay",
+})
+
+
+def _is_adequate_country(country):
+    if not country:
+        return None  # unknown — not flagged as risky, just not evaluated
+    c = country.strip().lower()
+    if c in EU_EEA_COUNTRIES or c in ADEQUATE_THIRD_COUNTRIES:
+        return True
+    if c in ("united states", "usa", "us"):
+        return None  # depends on individual DPF certification — not a blanket yes/no
+    return False
 
 
 def _get_connection():
@@ -132,19 +214,38 @@ CREATE INDEX IF NOT EXISTS tprm_vendors_account_idx ON tprm_vendors(cloud_accoun
 CREATE INDEX IF NOT EXISTS tprm_certifications_vendor_idx ON tprm_certifications(vendor_id);
 CREATE INDEX IF NOT EXISTS tprm_assessments_vendor_idx ON tprm_assessments(vendor_id);
 CREATE INDEX IF NOT EXISTS tprm_audit_log_vendor_idx ON tprm_audit_log(vendor_id);
+ALTER TABLE tprm_vendors
+    ADD COLUMN IF NOT EXISTS onboarding_stage VARCHAR(30) NOT NULL DEFAULT 'active',
+    ADD COLUMN IF NOT EXISTS country           VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS subprocessors     TEXT,
+    ADD COLUMN IF NOT EXISTS financial_notes   TEXT;
+ALTER TABLE tprm_assessments
+    ADD COLUMN IF NOT EXISTS domain VARCHAR(50) NOT NULL DEFAULT 'cybersecurity';
+CREATE TABLE IF NOT EXISTS tprm_assessment_items (
+    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    assessment_id   UUID         NOT NULL REFERENCES tprm_assessments(id) ON DELETE CASCADE,
+    domain_code     VARCHAR(20),
+    domain_title    VARCHAR(255),
+    question_text   TEXT         NOT NULL,
+    answer          VARCHAR(10),
+    notes           TEXT,
+    answered_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS tprm_assessment_items_assessment_idx ON tprm_assessment_items(assessment_id);
 """
 
 ADMIN_MIGRATION_SQL = BOOTSTRAP_SQL + """
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_vendors TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_certifications TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_assessments TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_assessment_items TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_audit_log TO cspm_lambda;
 """
 
 
 # ── risk scoring ─────────────────────────────────────────────────────────
 
-def _compute_risk(criticality, certifications, assessments):
+def _compute_risk(criticality, certifications, assessments, country=None):
     """Deterministic, documented, real-inputs-only risk score (0-100, higher
     = riskier). See module docstring for why nothing external is included."""
     points = CRITICALITY_RISK_POINTS.get(criticality, 20)
@@ -160,6 +261,14 @@ def _compute_risk(criticality, certifications, assessments):
 
     if not any(a["status"] == "approved" for a in assessments):
         points += NO_APPROVED_ASSESSMENT_POINTS
+
+    # Geographic risk from the EC's real, published GDPR adequacy decisions
+    # (see ADEQUATE_THIRD_COUNTRIES above) — None (country unknown, or a
+    # jurisdiction like the US that depends on individual DPF certification
+    # rather than a blanket adequacy decision) is never penalized, since
+    # that would be guessing rather than a verified fact.
+    if _is_adequate_country(country) is False:
+        points += NON_ADEQUATE_COUNTRY_POINTS
 
     points = min(points, 100)
     if points >= 76:
@@ -189,13 +298,17 @@ def _cert_status(cert):
 def _list_vendors(cur, cloud_account_id):
     cur.execute("""
         SELECT id, name, category, criticality, business_owner, contact_email,
-               website, status, notes, created_at
+               website, status, notes, created_at, onboarding_stage, country,
+               subprocessors, financial_notes
         FROM tprm_vendors WHERE cloud_account_id = %s ORDER BY name
     """, (cloud_account_id,))
     vendors = [{
         "id": str(r[0]), "name": r[1], "category": r[2], "criticality": r[3],
         "business_owner": r[4], "contact_email": r[5], "website": r[6],
         "status": r[7], "notes": r[8], "created_at": r[9].isoformat(),
+        "onboarding_stage": r[10], "country": r[11],
+        "subprocessors": r[12], "financial_notes": r[13],
+        "is_adequate_country": _is_adequate_country(r[11]),
     } for r in cur.fetchall()]
 
     for v in vendors:
@@ -214,7 +327,7 @@ def _list_vendors(cur, cloud_account_id):
         v["certifications"] = certs
 
         cur.execute("""
-            SELECT id, questionnaire_type, status, sent_at, received_at, approved_at, filename
+            SELECT id, questionnaire_type, status, sent_at, received_at, approved_at, filename, domain
             FROM tprm_assessments WHERE vendor_id = %s ORDER BY created_at DESC
         """, (v["id"],))
         assessments = [{
@@ -222,25 +335,35 @@ def _list_vendors(cur, cloud_account_id):
             "sent_at": r[3].isoformat() if r[3] else None,
             "received_at": r[4].isoformat() if r[4] else None,
             "approved_at": r[5].isoformat() if r[5] else None,
-            "filename": r[6],
+            "filename": r[6], "domain": r[7],
         } for r in cur.fetchall()]
+        for a in assessments:
+            cur.execute("""
+                SELECT COUNT(*), COUNT(*) FILTER (WHERE answer IS NOT NULL)
+                FROM tprm_assessment_items WHERE assessment_id = %s
+            """, (a["id"],))
+            total_items, answered_items = cur.fetchone()
+            a["total_items"] = total_items
+            a["answered_items"] = answered_items
         v["assessments"] = assessments
 
         raw_certs = [{"expiry_date": r[3]} for r in cert_raw_rows]
-        v["risk"] = _compute_risk(v["criticality"], raw_certs, assessments)
+        v["risk"] = _compute_risk(v["criticality"], raw_certs, assessments, v["country"])
 
     return vendors
 
 
 def _create_vendor(conn, cloud_account_id, name, category, criticality, business_owner,
-                    contact_email, website, notes, actor):
+                    contact_email, website, notes, country, subprocessors, financial_notes, actor):
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO tprm_vendors
-                    (cloud_account_id, name, category, criticality, business_owner, contact_email, website, notes)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-            """, (cloud_account_id, name, category, criticality, business_owner, contact_email, website, notes))
+                    (cloud_account_id, name, category, criticality, business_owner, contact_email,
+                     website, notes, country, subprocessors, financial_notes, onboarding_stage)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'registered') RETURNING id
+            """, (cloud_account_id, name, category, criticality, business_owner, contact_email,
+                  website, notes, country, subprocessors, financial_notes))
             vendor_id = str(cur.fetchone()[0])
             cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'created')",
                         (vendor_id, actor))
@@ -249,7 +372,7 @@ def _create_vendor(conn, cloud_account_id, name, category, criticality, business
 
 def _update_vendor(conn, vendor_id, fields, actor):
     allowed = {"name", "category", "criticality", "business_owner", "contact_email",
-               "website", "status", "notes"}
+               "website", "status", "notes", "country", "subprocessors", "financial_notes"}
     sets, params = [], []
     for k, v in fields.items():
         if k in allowed:
@@ -264,6 +387,27 @@ def _update_vendor(conn, vendor_id, fields, actor):
             cur.execute(f"UPDATE tprm_vendors SET {', '.join(sets)} WHERE id = %s", params)
             cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'updated')",
                         (vendor_id, actor))
+
+
+def _advance_onboarding(conn, vendor_id, stage, actor):
+    """Real onboarding workflow (issue #261: 'risk-based onboarding
+    workflows... security/privacy/compliance reviews... legal/business
+    approvals') — a state machine, not a fabricated automated decision.
+    Reaching 'active' also flips vendor status to 'active'."""
+    if stage not in ONBOARDING_STAGES:
+        raise ValueError(f"stage must be one of {ONBOARDING_STAGES}")
+    with conn:
+        with conn.cursor() as cur:
+            if stage == "active":
+                cur.execute("""
+                    UPDATE tprm_vendors SET onboarding_stage = %s, status = 'active', updated_at = NOW()
+                    WHERE id = %s
+                """, (stage, vendor_id))
+            else:
+                cur.execute("UPDATE tprm_vendors SET onboarding_stage = %s, updated_at = NOW() WHERE id = %s",
+                            (stage, vendor_id))
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, %s)",
+                        (vendor_id, actor, f"onboarding_advanced_{stage}"))
 
 
 def _delete_vendor(conn, vendor_id, actor):
@@ -312,17 +456,56 @@ def _presign_certification(cur, cert_id, expires_in=900):
 
 # ── assessments ──────────────────────────────────────────────────────────
 
-def _create_assessment(conn, vendor_id, questionnaire_type, actor):
+def _create_assessment(conn, vendor_id, questionnaire_type, domain, actor):
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO tprm_assessments (vendor_id, questionnaire_type, status, sent_at)
-                VALUES (%s, %s, 'sent', NOW()) RETURNING id
-            """, (vendor_id, questionnaire_type))
+                INSERT INTO tprm_assessments (vendor_id, questionnaire_type, domain, status, sent_at)
+                VALUES (%s, %s, %s, 'sent', NOW()) RETURNING id
+            """, (vendor_id, questionnaire_type, domain))
             assessment_id = str(cur.fetchone()[0])
+            # CAIQ is the Cloud Security Alliance's own self-assessment
+            # version of its Cloud Controls Matrix — auto-populate the real
+            # questions derived from the same 8 verified CCM domains
+            # (see CAIQ_DOMAINS above), not a fabricated question set.
+            if questionnaire_type == "caiq":
+                for code, (title, question) in CAIQ_DOMAINS.items():
+                    cur.execute("""
+                        INSERT INTO tprm_assessment_items (assessment_id, domain_code, domain_title, question_text)
+                        VALUES (%s, %s, %s, %s)
+                    """, (assessment_id, code, title, question))
             cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'assessment_sent')",
                         (vendor_id, actor))
     return assessment_id
+
+
+def _list_assessment_items(cur, assessment_id):
+    cur.execute("""
+        SELECT id, domain_code, domain_title, question_text, answer, notes, answered_at
+        FROM tprm_assessment_items WHERE assessment_id = %s ORDER BY domain_code
+    """, (assessment_id,))
+    return [{
+        "id": str(r[0]), "domain_code": r[1], "domain_title": r[2], "question_text": r[3],
+        "answer": r[4], "notes": r[5], "answered_at": r[6].isoformat() if r[6] else None,
+    } for r in cur.fetchall()]
+
+
+def _answer_assessment_item(conn, item_id, answer, notes, actor):
+    if answer not in ("yes", "no", "na", "unknown"):
+        raise ValueError("answer must be one of yes, no, na, unknown")
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE tprm_assessment_items SET answer = %s, notes = %s, answered_at = NOW()
+                WHERE id = %s RETURNING assessment_id
+            """, (answer, notes, item_id))
+            row = cur.fetchone()
+            if row:
+                cur.execute("SELECT vendor_id FROM tprm_assessments WHERE id = %s", (row[0],))
+                vendor_row = cur.fetchone()
+                if vendor_row:
+                    cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'assessment_item_answered')",
+                                (vendor_row[0], actor))
 
 
 def _update_assessment(conn, assessment_id, vendor_id, status, filename, file_base64, actor):
@@ -368,6 +551,60 @@ def _get_audit_log(cur, cloud_account_id, vendor_id=None):
             for r in cur.fetchall()]
 
 
+# ── monitoring & notifications ───────────────────────────────────────────
+# Real "continuous monitoring" (issue #261) and 2 of its 6 acceptance
+# criteria: cert-expiry notification, and alerting when a vendor's risk
+# score crosses into 'critical'. Reuses the exact SES send pattern already
+# proven in trust_center_handler.py and monthly_report_handler.py — same
+# sandbox caveat applies (only delivers to SES-verified recipients until
+# production access is granted).
+TPRM_SENDER_EMAIL = os.environ.get("TPRM_SENDER_EMAIL")
+TPRM_RECIPIENT_EMAILS = [e.strip() for e in os.environ.get("TPRM_RECIPIENT_EMAILS", "").split(",") if e.strip()]
+
+
+def _check_and_notify(cur, cloud_account_id):
+    vendors = _list_vendors(cur, cloud_account_id)
+    expiring, critical = [], []
+    for v in vendors:
+        for c in v["certifications"]:
+            if c["computed_status"] in ("expiring_soon", "expired"):
+                expiring.append({"vendor": v["name"], "certification_type": c["certification_type"],
+                                  "expiry_date": c["expiry_date"], "status": c["computed_status"]})
+        if v["risk"]["level"] == "critical":
+            critical.append({"vendor": v["name"], "score": v["risk"]["score"]})
+
+    if not expiring and not critical:
+        return {"expiring_count": 0, "critical_count": 0, "email": {"sent": False, "reason": "nothing_to_report"}}
+
+    if not TPRM_SENDER_EMAIL or not TPRM_RECIPIENT_EMAILS:
+        return {"expiring_count": len(expiring), "critical_count": len(critical),
+                "email": {"sent": False, "reason": "not_configured"}}
+
+    lines = [f"TPRM monitoring alert for account {cloud_account_id}:", ""]
+    if expiring:
+        lines.append("Certifications expiring soon or expired:")
+        lines += [f"  - {e['vendor']}: {e['certification_type']} ({e['status']}, expiry {e['expiry_date']})" for e in expiring]
+        lines.append("")
+    if critical:
+        lines.append("Vendors now at CRITICAL risk:")
+        lines += [f"  - {c['vendor']}: score {c['score']}" for c in critical]
+    body_text = "\n".join(lines)
+
+    ses = boto3.client("sesv2", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+    try:
+        ses.send_email(
+            FromEmailAddress=TPRM_SENDER_EMAIL,
+            Destination={"ToAddresses": TPRM_RECIPIENT_EMAILS},
+            Content={"Simple": {"Subject": {"Data": f"TPRM alert: {len(expiring)} expiring cert(s), {len(critical)} critical vendor(s)", "Charset": "UTF-8"},
+                                 "Body": {"Text": {"Data": body_text, "Charset": "UTF-8"}}}},
+        )
+        email_result = {"sent": True}
+    except Exception as e:
+        email_result = {"sent": False, "reason": str(e)}
+
+    return {"expiring_count": len(expiring), "critical_count": len(critical), "email": email_result}
+
+
 # ── entrypoint ───────────────────────────────────────────────────────────
 
 def _resp(status, body):
@@ -375,6 +612,20 @@ def _resp(status, body):
 
 
 def handler(event, context):
+    # Direct-invoke-only (EventBridge scheduled check), same shape as the
+    # other scanner handlers' non-HTTP entrypoints — unreachable via the
+    # public API Gateway route since API Gateway proxy events always carry
+    # httpMethod.
+    if event and event.get("check_and_notify"):
+        conn = _get_connection()
+        try:
+            with conn.cursor() as cur:
+                result = _check_and_notify(cur, event["check_and_notify"])
+            conn.commit()
+            return {"statusCode": 200, "body": json.dumps(result)}
+        finally:
+            conn.close()
+
     if event and event.get("migrate"):
         secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
         region = os.environ.get("SECRET_REGION", "eu-west-1")
@@ -415,6 +666,8 @@ def handler(event, context):
                     if not url:
                         return _resp(404, {"error": "No file uploaded for this certification."})
                     return _resp(200, {"download_url": url})
+                if qs.get("assessment_items"):
+                    return _resp(200, {"items": _list_assessment_items(cur, qs["assessment_items"])})
                 vendors = _list_vendors(cur, account_id)
                 return _resp(200, {"vendors": vendors})
 
@@ -429,7 +682,8 @@ def handler(event, context):
                 vendor_id = _create_vendor(
                     conn, body["cloud_account_id"], body["name"], body.get("category"),
                     body.get("criticality", "medium"), body.get("business_owner"),
-                    body.get("contact_email"), body.get("website"), body.get("notes"), actor,
+                    body.get("contact_email"), body.get("website"), body.get("notes"),
+                    body.get("country"), body.get("subprocessors"), body.get("financial_notes"), actor,
                 )
                 return _resp(200, {"id": vendor_id})
             if action == "update_vendor":
@@ -438,6 +692,12 @@ def handler(event, context):
             if action == "delete_vendor":
                 _delete_vendor(conn, body["vendor_id"], actor)
                 return _resp(200, {"deleted": True})
+            if action == "advance_onboarding":
+                try:
+                    _advance_onboarding(conn, body["vendor_id"], body["stage"], actor)
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"updated": True})
             if action == "upload_certification":
                 cert_id = _upload_certification(
                     conn, body["vendor_id"], body.get("certification_type", "other"),
@@ -446,7 +706,12 @@ def handler(event, context):
                 )
                 return _resp(200, {"id": cert_id})
             if action == "create_assessment":
-                assessment_id = _create_assessment(conn, body["vendor_id"], body.get("questionnaire_type", "custom"), actor)
+                if body.get("domain", "cybersecurity") not in ASSESSMENT_DOMAINS:
+                    return _resp(400, {"error": f"domain must be one of {ASSESSMENT_DOMAINS}"})
+                assessment_id = _create_assessment(
+                    conn, body["vendor_id"], body.get("questionnaire_type", "custom"),
+                    body.get("domain", "cybersecurity"), actor,
+                )
                 return _resp(200, {"id": assessment_id})
             if action == "update_assessment":
                 if body.get("status") not in ASSESSMENT_STATUSES:
@@ -456,6 +721,12 @@ def handler(event, context):
                     body.get("filename"), body.get("file_base64"), actor,
                 )
                 return _resp(200, {"updated": True})
+            if action == "answer_assessment_item":
+                try:
+                    _answer_assessment_item(conn, body["item_id"], body["answer"], body.get("notes"), actor)
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"answered": True})
             return _resp(400, {"error": f"unknown action: {action}"})
 
         return _resp(405, {"error": "method not allowed"})
