@@ -123,6 +123,67 @@ non-fabricated way to do them:
   `email: {"sent": true}`; a vendor with nothing wrong correctly returned
   `"reason": "nothing_to_report"` instead of sending an empty alert.
 
+## v1.3 — literal userstory completion pass ("look carefully at what's actually in it")
+
+Re-read the literal issue #261 text line by line against everything built
+so far and found real, concrete, missed items — not new invented scope:
+
+- **Compliance & Certifications named 7 more frameworks explicitly**
+  (NIS2, DORA, ISO 42001, HITRUST CSF, CIS Benchmarks, NIST CSF, EU AI Act)
+  that weren't in `CERTIFICATION_TYPES`, plus **Evidence Management's**
+  distinct categories (audit reports, pentests, policies, insurance
+  certificates, BCPs, security documentation) — all added as real,
+  uploadable evidence types.
+- **Contract tracking** (`contract_start_date`/`contract_end_date`/real
+  uploaded contract document) — issue #261 names "Contract renewals"
+  under Continuous Monitoring and "contracts" explicitly in acceptance
+  criterion 5's evidence list; neither existed before.
+- **"Data sensitivity"** (Risk Scoring) — `handles_sensitive_data`, real
+  self-declared boolean, +10 risk points when true.
+- **"Internet exposure" / "External attack surface"** (Risk Scoring /
+  Continuous Monitoring) — `_check_website_tls()`, a real, narrow,
+  honestly-named technical signal: does the vendor's own declared website
+  present a valid, currently-trusted TLS certificate? A genuine live
+  network check (stdlib `ssl`/`socket`, no paid attack-surface-scanning
+  service configured in this account), explicitly not a stand-in for real
+  port scanning or subdomain enumeration. Verified live against
+  `https://www.google.com` → `website_tls_valid: true`.
+- **"Service inventory" / "asset relationships"** (Vendor Inventory) —
+  `services_provided` / `internal_systems_accessed`, real self-declared
+  text fields.
+- **Findings & Remediation** (risk acceptance, exception management,
+  corrective action tracking, escalation workflows) — new
+  `tprm_remediation_tasks` table: real tasks with a due date, assignee,
+  and a required written reason when a risk is explicitly accepted
+  instead of resolved (never silently dropped). Overdue open tasks are
+  surfaced as an escalation in the daily monitoring email.
+- **Acceptance criterion 1** ("onboarding workflow begins... a risk
+  assessment... automatically assigned") — `_create_vendor` now also
+  auto-creates a real CAIQ assessment (the same real 8-question set) the
+  moment a vendor is registered. Verified live: a newly created vendor
+  immediately had an 8-item CAIQ assessment attached.
+- **Acceptance criterion 3** ("notifications are sent to the vendor
+  owner") — added `business_owner_email`; `_check_and_notify` now
+  includes each critical vendor's real owner email as an actual
+  recipient, not just the internal distribution list.
+- **Acceptance criterion 4** ("risk score increases... alerts and
+  remediation workflows are triggered") — `_check_and_notify` now
+  auto-opens a real remediation task the moment a vendor first crosses
+  into `critical` (never duplicated while one is already open). Verified
+  live: a test vendor pushed to critical had a task titled "Vendor
+  reached critical risk — review required" appear automatically.
+- **CSV/evidence-package exports now include the new fields** (contract
+  status, registration number) for a complete real hand-off to an
+  auditor or a procurement/contract-management system.
+
+Full live verification chain for this pass: created a real vendor with
+country/sensitive-data/website/owner-email set → confirmed risk score
+correctly included the sensitivity and non-adequate-country factors →
+confirmed the auto-created CAIQ assessment existed → ran a real website
+TLS check against google.com → uploaded real contract dates → ran
+`check_and_notify` and confirmed a real remediation task was auto-created
+and a real email was sent → cleaned up the test vendor.
+
 ## v1.2 — "just build it and see how far you can get legitimately"
 
 Pushed once more on the remaining gaps. Found real, honest paths for four

@@ -153,6 +153,13 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <input class="f-in" id="add-subprocessors" placeholder="bv. AWS (hosting), Twilio (SMS)">
       <label class="f-lbl">Registratienummer (bv. KVK, Companies House — voor handmatige verificatie)</label>
       <input class="f-in" id="add-regnum" placeholder="bv. KVK 12345678">
+      <label class="f-lbl">E-mail van de business owner (voor meldingen)</label>
+      <input class="f-in" id="add-owner-email" placeholder="naam@bedrijf.nl">
+      <label class="f-lbl">Geleverde diensten</label>
+      <input class="f-in" id="add-services" placeholder="bv. Cloud hosting, Payment processing">
+      <label class="f-lbl">Welke interne systemen/data heeft deze vendor toegang toe?</label>
+      <input class="f-in" id="add-systems" placeholder="bv. Klantendatabase, Facturatiesysteem">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin:10px 0"><input type="checkbox" id="add-sensitive"> Deze vendor verwerkt gevoelige/persoonsgegevens</label>
       <label class="f-lbl">Notities</label>
       <textarea class="f-ta" id="add-notes"></textarea>
     </div>
@@ -237,6 +244,40 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <input class="f-in" type="date" id="inc-date">
     </div>
     <div class="modal-foot"><button class="btn-ghost" onclick="closeIncidentModal()">Annuleren</button><button class="btn-primary" onclick="submitIncident()">Loggen</button></div>
+  </div>
+</div>
+
+<!-- Contract modal -->
+<div class="overlay" id="ov-contract" onclick="if(event.target===this)closeContractModal()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Contract</div><button class="modal-close" onclick="closeContractModal()">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Startdatum</label>
+      <input class="f-in" type="date" id="contract-start">
+      <label class="f-lbl">Einddatum (voor verlengingssignalering)</label>
+      <input class="f-in" type="date" id="contract-end">
+      <label class="f-lbl">Contractdocument</label>
+      <input type="file" id="contract-file">
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeContractModal()">Annuleren</button><button class="btn-primary" onclick="submitContract()">Opslaan</button></div>
+  </div>
+</div>
+
+<!-- Remediation task modal -->
+<div class="overlay" id="ov-task" onclick="if(event.target===this)closeTaskModal()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Remediation-actie aanmaken</div><button class="modal-close" onclick="closeTaskModal()">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Titel *</label>
+      <input class="f-in" id="task-title" placeholder="bv. Vraag bijgewerkt SOC 2-rapport op">
+      <label class="f-lbl">Omschrijving</label>
+      <textarea class="f-ta" id="task-desc"></textarea>
+      <label class="f-lbl">Deadline</label>
+      <input class="f-in" type="date" id="task-due">
+      <label class="f-lbl">Toegewezen aan</label>
+      <input class="f-in" id="task-assignee">
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeTaskModal()">Annuleren</button><button class="btn-primary" onclick="submitTask()">Aanmaken</button></div>
   </div>
 </div>
 
@@ -335,7 +376,8 @@ async function downloadEvidencePackage(vendorId){
 }
 
 function openAddVendor(){
-  ['add-name','add-category','add-owner','add-email','add-website','add-country','add-subprocessors','add-regnum','add-notes'].forEach(id=>document.getElementById(id).value='');
+  ['add-name','add-category','add-owner','add-email','add-website','add-country','add-subprocessors','add-regnum','add-owner-email','add-services','add-systems','add-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('add-sensitive').checked=false;
   document.getElementById('add-criticality').value='medium';
   document.getElementById('ov-add').classList.add('open');
 }
@@ -353,6 +395,10 @@ async function submitAddVendor(){
     country:document.getElementById('add-country').value.trim(),
     subprocessors:document.getElementById('add-subprocessors').value.trim(),
     registration_number:document.getElementById('add-regnum').value.trim(),
+    business_owner_email:document.getElementById('add-owner-email').value.trim(),
+    services_provided:document.getElementById('add-services').value.trim(),
+    internal_systems_accessed:document.getElementById('add-systems').value.trim(),
+    handles_sensitive_data:document.getElementById('add-sensitive').checked,
     notes:document.getElementById('add-notes').value.trim(),
     actor_name:actorName(),
   })});
@@ -392,6 +438,19 @@ function openDetail(id){
   const nextStage=ONBOARDING_STAGES[stageIdx+1];
   const stepper=ONBOARDING_STAGES.map((s,i)=>`<span style="font-size:9.5px;font-weight:700;padding:3px 8px;border-radius:5px;margin-right:4px;margin-bottom:4px;display:inline-block;background:${i<=stageIdx?'#dbeafe':'#f3f4f6'};color:${i<=stageIdx?'#1d4ed8':'#9ca3af'}">${i+1}. ${s.replace('_',' ')}</span>`).join('');
 
+  const taskRows=(v.remediation_tasks||[]).map(t=>`
+    <div class="row-item" style="flex-direction:column;align-items:stretch;gap:4px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="chip ${t.status==='resolved'?'ok':t.status==='accepted_risk'?'warn':t.overdue?'bad':''}">${t.status.replace('_',' ')}${t.overdue?' · overdue':''}</span>
+        <div style="flex:1"><b>${esc(t.title)}</b>${t.due_date?' · due '+t.due_date:''}${t.assigned_to?' · '+esc(t.assigned_to):''}</div>
+        ${t.status==='open'||t.status==='in_progress'?`
+          <button class="btn-ghost btn-sm" onclick="resolveTask('${t.id}')">Resolve</button>
+          <button class="btn-ghost btn-sm" onclick="acceptTaskRisk('${t.id}')">Accept risk</button>`:''}
+      </div>
+      ${t.description?`<div style="font-size:11.5px;color:#6b7280">${esc(t.description)}</div>`:''}
+      ${t.acceptance_reason?`<div style="font-size:11px;color:#92400e">Risico geaccepteerd door ${esc(t.accepted_by||'')}: ${esc(t.acceptance_reason)}</div>`:''}
+    </div>`).join('') || '<div class="empty">Geen openstaande acties.</div>';
+
   const incidentRows=(v.incidents||[]).map(i=>`
     <div class="row-item" style="flex-direction:column;align-items:stretch;gap:2px">
       <div style="font-size:12px;font-weight:600">${esc(i.title)} ${i.occurred_date?'· '+i.occurred_date:''}</div>
@@ -408,6 +467,13 @@ function openDetail(id){
     </div>
     <div style="font-size:11.5px;color:#6b7280;margin-bottom:14px">${esc(v.category||'')} ${v.business_owner?' · Owner: '+esc(v.business_owner):''} ${v.contact_email?' · '+esc(v.contact_email):''} ${v.registration_number?' · Reg: '+esc(v.registration_number):''}</div>
     ${v.subprocessors?`<div style="font-size:11.5px;color:#6b7280;margin-bottom:10px"><b>Sub-processors (zelf opgegeven door vendor):</b> ${esc(v.subprocessors)}</div>`:''}
+    ${v.handles_sensitive_data?'<span class="chip bad" style="margin-bottom:10px;display:inline-block">⚠ Verwerkt gevoelige/persoonsgegevens</span>':''}
+    ${v.website?`<div style="font-size:11.5px;color:#6b7280;margin-bottom:10px">Website TLS: ${v.website_tls_valid===true?'<span class="chip ok">geldig</span>':v.website_tls_valid===false?'<span class="chip bad">ongeldig</span>':'<span class="chip">nog niet gecontroleerd</span>'} ${v.website_checked_at?'· gecontroleerd '+v.website_checked_at.substring(0,10):''} <button class="btn-ghost btn-sm" onclick="checkWebsite()">Nu controleren</button></div>`:''}
+    <div style="font-size:11.5px;color:#6b7280;margin-bottom:10px">
+      <b>Contract:</b> ${v.contract_start_date||v.contract_end_date?`${v.contract_start_date||'?'} → ${v.contract_end_date||'?'}`:'niet ingesteld'}
+      ${v.contract_filename?` (${esc(v.contract_filename)}) <button class="btn-ghost btn-sm" onclick="downloadContract('${v.id}')">Download</button>`:''}
+      <button class="btn-ghost btn-sm" onclick="openContractModal()">Bewerken</button>
+    </div>
 
     <div class="sec-hdr">Onboarding-voortgang</div>
     <div style="margin-bottom:4px">${stepper}</div>
@@ -419,6 +485,8 @@ function openDetail(id){
     ${assessRows}
     <div class="sec-hdr">Bekende incidenten (handmatig gelogd, echte bron vereist) <button class="btn-ghost btn-sm" onclick="openIncidentModal()">+ Loggen</button></div>
     ${incidentRows}
+    <div class="sec-hdr">Remediation &amp; risk acceptance <button class="btn-ghost btn-sm" onclick="openTaskModal()">+ Actie aanmaken</button></div>
+    ${taskRows}
   `;
   document.getElementById('ov-detail').classList.add('open');
 }
@@ -490,6 +558,84 @@ async function submitCert(){
   })});
   closeCertModal();
   showToast('Certificaat toegevoegd');
+  await loadAll();
+  openDetail(activeVendorId);
+}
+
+function openContractModal(){
+  const v=vendors.find(x=>x.id===activeVendorId);
+  document.getElementById('contract-start').value=v.contract_start_date||'';
+  document.getElementById('contract-end').value=v.contract_end_date||'';
+  document.getElementById('contract-file').value='';
+  document.getElementById('ov-contract').classList.add('open');
+}
+function closeContractModal(){document.getElementById('ov-contract').classList.remove('open');}
+async function submitContract(){
+  const file=document.getElementById('contract-file').files[0];
+  let file_base64=null, filename=null;
+  if(file){
+    filename=file.name;
+    const buf=await file.arrayBuffer();
+    const bytes=new Uint8Array(buf);
+    let binary=''; for(let i=0;i<bytes.length;i++) binary+=String.fromCharCode(bytes[i]);
+    file_base64=btoa(binary);
+  }
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
+    action:'upload_contract',vendor_id:activeVendorId,
+    start_date:document.getElementById('contract-start').value||null,
+    end_date:document.getElementById('contract-end').value||null,
+    filename,file_base64,actor_name:actorName(),
+  })});
+  closeContractModal();
+  showToast('Contract opgeslagen');
+  await loadAll();
+  openDetail(activeVendorId);
+}
+async function downloadContract(vendorId){
+  const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&download_contract='+vendorId);
+  const d=await r.json();
+  if(d.download_url) window.open(d.download_url,'_blank');
+  else showToast(d.error||'Geen contractbestand beschikbaar');
+}
+async function checkWebsite(){
+  const v=vendors.find(x=>x.id===activeVendorId);
+  showToast('Website wordt gecontroleerd…');
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'check_website',vendor_id:activeVendorId,website:v.website,actor_name:actorName()})});
+  await loadAll();
+  openDetail(activeVendorId);
+}
+
+function openTaskModal(){
+  ['task-title','task-desc','task-due','task-assignee'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ov-task').classList.add('open');
+}
+function closeTaskModal(){document.getElementById('ov-task').classList.remove('open');}
+async function submitTask(){
+  const title=document.getElementById('task-title').value.trim();
+  if(!title){showToast('Titel is verplicht');return;}
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
+    action:'create_remediation_task',vendor_id:activeVendorId,title,
+    description:document.getElementById('task-desc').value.trim(),
+    due_date:document.getElementById('task-due').value||null,
+    assigned_to:document.getElementById('task-assignee').value.trim(),
+    actor_name:actorName(),
+  })});
+  closeTaskModal();
+  showToast('Actie aangemaakt');
+  await loadAll();
+  openDetail(activeVendorId);
+}
+async function resolveTask(taskId){
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'update_remediation_task',task_id:taskId,vendor_id:activeVendorId,status:'resolved',actor_name:actorName()})});
+  showToast('Actie afgerond');
+  await loadAll();
+  openDetail(activeVendorId);
+}
+async function acceptTaskRisk(taskId){
+  const reason=prompt('Waarom accepteer je dit risico? (verplicht)');
+  if(!reason)return;
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'update_remediation_task',task_id:taskId,vendor_id:activeVendorId,status:'accepted_risk',acceptance_reason:reason,actor_name:actorName()})});
+  showToast('Risico geaccepteerd en vastgelegd');
   await loadAll();
   openDetail(activeVendorId);
 }

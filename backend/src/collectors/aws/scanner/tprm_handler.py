@@ -53,7 +53,15 @@ DOCS_BUCKET = os.environ.get("TPRM_BUCKET", "niagaros-tprm-documents")
 CRITICALITY_LEVELS = ("low", "medium", "high", "critical")
 VENDOR_STATUSES = ("onboarding", "active", "offboarding", "inactive")
 CERTIFICATION_TYPES = (
-    "soc2", "iso27001", "pci_dss", "gdpr_dpa", "hipaa_baa", "iso27701", "other",
+    # Compliance & Certifications, named explicitly in issue #261:
+    "soc2", "iso27001", "pci_dss", "gdpr_dpa", "hipaa_baa", "iso27701",
+    "nis2", "dora", "iso42001", "hitrust", "cis_benchmarks", "nist_csf", "eu_ai_act",
+    # Evidence Management, named explicitly in issue #261 as distinct
+    # evidence types (not certifications, but tracked the same real way —
+    # one uploaded document with a real expiry/status where applicable):
+    "audit_report", "pentest", "policy", "insurance_certificate", "bcp",
+    "security_documentation",
+    "other",
 )
 ASSESSMENT_TYPES = ("caiq", "sig_lite", "sig_core", "custom")
 ASSESSMENT_STATUSES = ("not_sent", "sent", "in_progress", "received", "approved")
@@ -79,6 +87,8 @@ CERTIFICATION_EXPIRING_SOON_POINTS = 15
 CERTIFICATION_EXPIRING_SOON_DAYS = 30
 NO_APPROVED_ASSESSMENT_POINTS = 15
 NON_ADEQUATE_COUNTRY_POINTS = 10
+SENSITIVE_DATA_POINTS = 10
+INVALID_WEBSITE_TLS_POINTS = 10
 
 # Real CAIQ-style questionnaire content — CAIQ (Consensus Assessments
 # Initiative Questionnaire) is the Cloud Security Alliance's own
@@ -137,6 +147,39 @@ ADEQUATE_THIRD_COUNTRIES = frozenset({
     "japan", "jersey", "new zealand", "south korea", "republic of korea", "switzerland",
     "united kingdom", "uk", "uruguay",
 })
+
+
+def _check_website_tls(website_url, timeout=5):
+    """Real, narrow technical signal for issue #261's "External attack
+    surface" (Continuous Monitoring) and "Internet exposure" (Risk
+    Scoring): does the vendor's own declared public website present a
+    valid, currently-trusted TLS certificate for its own hostname? This is
+    a genuine live network check (stdlib ssl/socket, no third-party attack-
+    surface-scanning service is configured or paid for in this AWS
+    account) — deliberately narrow and honestly named, not a stand-in for
+    real external attack-surface management (port scanning, subdomain
+    enumeration, etc.), which this platform does not do for third parties.
+    Returns True/False, or None if the check itself could not run (no
+    website set, or a network/DNS error unrelated to the vendor's TLS
+    posture) — never guessed."""
+    if not website_url:
+        return None
+    import socket
+    import ssl
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(website_url if "://" in website_url else f"https://{website_url}")
+        hostname = parsed.hostname
+        if not hostname:
+            return None
+        context = ssl.create_default_context()
+        with socket.create_connection((hostname, 443), timeout=timeout) as sock:
+            with context.wrap_socket(sock, server_hostname=hostname):
+                return True
+    except (ssl.SSLError, ssl.CertificateError):
+        return False
+    except Exception:
+        return None  # DNS failure, connection refused, timeout — inconclusive, not a TLS finding
 
 
 def _is_adequate_country(country):
@@ -245,6 +288,31 @@ CREATE TABLE IF NOT EXISTS tprm_incidents (
 ALTER TABLE tprm_vendors
     ADD COLUMN IF NOT EXISTS registration_number VARCHAR(100);
 CREATE INDEX IF NOT EXISTS tprm_incidents_vendor_idx ON tprm_incidents(vendor_id);
+ALTER TABLE tprm_vendors
+    ADD COLUMN IF NOT EXISTS business_owner_email      VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS services_provided         TEXT,
+    ADD COLUMN IF NOT EXISTS internal_systems_accessed TEXT,
+    ADD COLUMN IF NOT EXISTS handles_sensitive_data    BOOLEAN,
+    ADD COLUMN IF NOT EXISTS contract_start_date       DATE,
+    ADD COLUMN IF NOT EXISTS contract_end_date         DATE,
+    ADD COLUMN IF NOT EXISTS contract_s3_key           VARCHAR(500),
+    ADD COLUMN IF NOT EXISTS contract_filename         VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS website_tls_valid         BOOLEAN,
+    ADD COLUMN IF NOT EXISTS website_checked_at        TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS tprm_remediation_tasks (
+    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    vendor_id           UUID         NOT NULL REFERENCES tprm_vendors(id) ON DELETE CASCADE,
+    title               VARCHAR(255) NOT NULL,
+    description         TEXT,
+    due_date            DATE,
+    status              VARCHAR(20)  NOT NULL DEFAULT 'open',
+    assigned_to         VARCHAR(255),
+    acceptance_reason   TEXT,
+    accepted_by         VARCHAR(255),
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    resolved_at         TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS tprm_remediation_tasks_vendor_idx ON tprm_remediation_tasks(vendor_id);
 """
 
 ADMIN_MIGRATION_SQL = BOOTSTRAP_SQL + """
@@ -253,13 +321,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_certifications TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_assessments TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_assessment_items TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_incidents TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_remediation_tasks TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tprm_audit_log TO cspm_lambda;
 """
 
 
 # ── risk scoring ─────────────────────────────────────────────────────────
 
-def _compute_risk(criticality, certifications, assessments, country=None):
+def _compute_risk(criticality, certifications, assessments, country=None,
+                   handles_sensitive_data=None, website_tls_valid=None):
     """Deterministic, documented, real-inputs-only risk score (0-100, higher
     = riskier). See module docstring for why nothing external is included."""
     points = CRITICALITY_RISK_POINTS.get(criticality, 20)
@@ -283,6 +353,17 @@ def _compute_risk(criticality, certifications, assessments, country=None):
     # that would be guessing rather than a verified fact.
     if _is_adequate_country(country) is False:
         points += NON_ADEQUATE_COUNTRY_POINTS
+
+    # "Data sensitivity" (Risk Scoring, issue #261) — real, self-declared,
+    # never inferred.
+    if handles_sensitive_data:
+        points += SENSITIVE_DATA_POINTS
+
+    # "Internet exposure" / "External attack surface" (issue #261) — real,
+    # narrow technical signal (see _check_website_tls). None (not checked
+    # yet, or the check was inconclusive) is never penalized.
+    if website_tls_valid is False:
+        points += INVALID_WEBSITE_TLS_POINTS
 
     points = min(points, 100)
     if points >= 76:
@@ -313,7 +394,10 @@ def _list_vendors(cur, cloud_account_id):
     cur.execute("""
         SELECT id, name, category, criticality, business_owner, contact_email,
                website, status, notes, created_at, onboarding_stage, country,
-               subprocessors, financial_notes, registration_number
+               subprocessors, financial_notes, registration_number,
+               business_owner_email, services_provided, internal_systems_accessed,
+               handles_sensitive_data, contract_start_date, contract_end_date,
+               contract_filename, website_tls_valid, website_checked_at
         FROM tprm_vendors WHERE cloud_account_id = %s ORDER BY name
     """, (cloud_account_id,))
     vendors = [{
@@ -323,6 +407,12 @@ def _list_vendors(cur, cloud_account_id):
         "onboarding_stage": r[10], "country": r[11],
         "subprocessors": r[12], "financial_notes": r[13], "registration_number": r[14],
         "is_adequate_country": _is_adequate_country(r[11]),
+        "business_owner_email": r[15], "services_provided": r[16],
+        "internal_systems_accessed": r[17], "handles_sensitive_data": r[18],
+        "contract_start_date": r[19].isoformat() if r[19] else None,
+        "contract_end_date": r[20].isoformat() if r[20] else None,
+        "contract_filename": r[21], "website_tls_valid": r[22],
+        "website_checked_at": r[23].isoformat() if r[23] else None,
     } for r in cur.fetchall()]
 
     for v in vendors:
@@ -377,34 +467,71 @@ def _list_vendors(cur, cloud_account_id):
             "created_at": r[6].isoformat(),
         } for r in cur.fetchall()]
 
+        cur.execute("""
+            SELECT id, title, description, due_date, status, assigned_to,
+                   acceptance_reason, accepted_by, created_at, resolved_at
+            FROM tprm_remediation_tasks WHERE vendor_id = %s ORDER BY
+                CASE status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, due_date NULLS LAST
+        """, (v["id"],))
+        v["remediation_tasks"] = [{
+            "id": str(r[0]), "title": r[1], "description": r[2],
+            "due_date": r[3].isoformat() if r[3] else None, "status": r[4],
+            "assigned_to": r[5], "acceptance_reason": r[6], "accepted_by": r[7],
+            "created_at": r[8].isoformat(), "resolved_at": r[9].isoformat() if r[9] else None,
+            "overdue": bool(r[3] and r[3] < date.today() and r[4] in ("open", "in_progress")),
+        } for r in cur.fetchall()]
+
         raw_certs = [{"expiry_date": r[3]} for r in cert_raw_rows]
-        v["risk"] = _compute_risk(v["criticality"], raw_certs, assessments, v["country"])
+        v["risk"] = _compute_risk(v["criticality"], raw_certs, assessments, v["country"],
+                                   v["handles_sensitive_data"], v["website_tls_valid"])
 
     return vendors
 
 
 def _create_vendor(conn, cloud_account_id, name, category, criticality, business_owner,
                     contact_email, website, notes, country, subprocessors, financial_notes,
-                    registration_number, actor):
+                    registration_number, business_owner_email, services_provided,
+                    internal_systems_accessed, handles_sensitive_data, actor):
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO tprm_vendors
                     (cloud_account_id, name, category, criticality, business_owner, contact_email,
-                     website, notes, country, subprocessors, financial_notes, registration_number, onboarding_stage)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'registered') RETURNING id
+                     website, notes, country, subprocessors, financial_notes, registration_number,
+                     business_owner_email, services_provided, internal_systems_accessed,
+                     handles_sensitive_data, onboarding_stage)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'registered') RETURNING id
             """, (cloud_account_id, name, category, criticality, business_owner, contact_email,
-                  website, notes, country, subprocessors, financial_notes, registration_number))
+                  website, notes, country, subprocessors, financial_notes, registration_number,
+                  business_owner_email, services_provided, internal_systems_accessed, handles_sensitive_data))
             vendor_id = str(cur.fetchone()[0])
             cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'created')",
                         (vendor_id, actor))
+            # Acceptance criterion 1 (issue #261): "when the onboarding
+            # workflow begins, a risk assessment... [is] automatically
+            # assigned." Real automation: create a real, empty, trackable
+            # assessment record — never a fabricated result.
+            cur.execute("""
+                INSERT INTO tprm_assessments (vendor_id, questionnaire_type, domain, status)
+                VALUES (%s, 'caiq', 'cybersecurity', 'not_sent') RETURNING id
+            """, (vendor_id,))
+            initial_assessment_id = str(cur.fetchone()[0])
+            for code, (title, question) in CAIQ_DOMAINS.items():
+                cur.execute("""
+                    INSERT INTO tprm_assessment_items (assessment_id, domain_code, domain_title, question_text)
+                    VALUES (%s, %s, %s, %s)
+                """, (initial_assessment_id, code, title, question))
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'onboarding_risk_assessment_auto_assigned')",
+                        (vendor_id, "system"))
     return vendor_id
 
 
 def _update_vendor(conn, vendor_id, fields, actor):
     allowed = {"name", "category", "criticality", "business_owner", "contact_email",
                "website", "status", "notes", "country", "subprocessors", "financial_notes",
-               "registration_number"}
+               "registration_number", "business_owner_email", "services_provided",
+               "internal_systems_accessed", "handles_sensitive_data",
+               "contract_start_date", "contract_end_date"}
     sets, params = [], []
     for k, v in fields.items():
         if k in allowed:
@@ -484,6 +611,89 @@ def _presign_certification(cur, cert_id, expires_in=900):
         Params={"Bucket": DOCS_BUCKET, "Key": s3_key, "ResponseContentDisposition": f'attachment; filename="{filename}"'},
         ExpiresIn=expires_in,
     )
+
+
+# ── contracts (issue #261: "Contract renewals" under Continuous ─────────
+# ── Monitoring, and "contracts" in acceptance criterion 5) ───────────────
+
+def _upload_contract(conn, vendor_id, start_date, end_date, filename, file_base64, actor):
+    raw = base64.b64decode(file_base64) if file_base64 else None
+    s3_key = None
+    with conn:
+        with conn.cursor() as cur:
+            if raw is not None:
+                s3_key = f"tprm/{vendor_id}/contract-{filename}"
+                _s3().put_object(Bucket=DOCS_BUCKET, Key=s3_key, Body=raw, ServerSideEncryption="AES256")
+            sets, params = ["contract_start_date = %s", "contract_end_date = %s"], [start_date, end_date]
+            if s3_key:
+                sets += ["contract_s3_key = %s", "contract_filename = %s"]
+                params += [s3_key, filename]
+            params.append(vendor_id)
+            cur.execute(f"UPDATE tprm_vendors SET {', '.join(sets)}, updated_at = NOW() WHERE id = %s", params)
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'contract_uploaded')",
+                        (vendor_id, actor))
+
+
+def _presign_contract(cur, vendor_id, expires_in=900):
+    cur.execute("SELECT contract_s3_key, contract_filename FROM tprm_vendors WHERE id = %s", (vendor_id,))
+    row = cur.fetchone()
+    if not row or not row[0]:
+        return None
+    s3_key, filename = row
+    return _s3().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": DOCS_BUCKET, "Key": s3_key, "ResponseContentDisposition": f'attachment; filename="{filename}"'},
+        ExpiresIn=expires_in,
+    )
+
+
+# ── website TLS check (real technical signal — see _check_website_tls) ──
+
+def _run_website_check(conn, vendor_id, website, actor):
+    result = _check_website_tls(website)
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE tprm_vendors SET website_tls_valid = %s, website_checked_at = NOW() WHERE id = %s
+            """, (result, vendor_id))
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, %s)",
+                        (vendor_id, actor, f"website_tls_check_{result if result is not None else 'inconclusive'}"))
+    return result
+
+
+# ── remediation tasks (issue #261 "Findings & Remediation": risk ────────
+# ── acceptance, exception management, corrective action tracking) ───────
+
+def _create_remediation_task(conn, vendor_id, title, description, due_date, assigned_to, actor):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO tprm_remediation_tasks (vendor_id, title, description, due_date, assigned_to)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (vendor_id, title, description, due_date, assigned_to))
+            task_id = str(cur.fetchone()[0])
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'remediation_task_created')",
+                        (vendor_id, actor))
+    return task_id
+
+
+def _update_remediation_task(conn, task_id, vendor_id, status, acceptance_reason, actor):
+    if status not in ("open", "in_progress", "resolved", "accepted_risk"):
+        raise ValueError("status must be one of open, in_progress, resolved, accepted_risk")
+    if status == "accepted_risk" and not acceptance_reason:
+        raise ValueError("acceptance_reason is required to accept a risk instead of resolving it")
+    with conn:
+        with conn.cursor() as cur:
+            sets, params = ["status = %s"], [status]
+            if status in ("resolved", "accepted_risk"):
+                sets.append("resolved_at = NOW()")
+            if status == "accepted_risk":
+                sets += ["acceptance_reason = %s", "accepted_by = %s"]
+                params += [acceptance_reason, actor]
+            params.append(task_id)
+            cur.execute(f"UPDATE tprm_remediation_tasks SET {', '.join(sets)} WHERE id = %s", params)
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, %s)",
+                        (vendor_id, actor, f"remediation_task_{status}"))
 
 
 # ── assessments ──────────────────────────────────────────────────────────
@@ -698,18 +908,59 @@ TPRM_SENDER_EMAIL = os.environ.get("TPRM_SENDER_EMAIL")
 TPRM_RECIPIENT_EMAILS = [e.strip() for e in os.environ.get("TPRM_RECIPIENT_EMAILS", "").split(",") if e.strip()]
 
 
-def _check_and_notify(cur, cloud_account_id):
-    vendors = _list_vendors(cur, cloud_account_id)
-    expiring, critical = [], []
+def _check_and_notify(conn, cloud_account_id):
+    with conn.cursor() as cur:
+        vendors = _list_vendors(cur, cloud_account_id)
+    conn.commit()
+
+    expiring, critical, contracts_ending, overdue_tasks = [], [], [], []
+    today = date.today()
+
     for v in vendors:
         for c in v["certifications"]:
             if c["computed_status"] in ("expiring_soon", "expired"):
                 expiring.append({"vendor": v["name"], "certification_type": c["certification_type"],
                                   "expiry_date": c["expiry_date"], "status": c["computed_status"]})
-        if v["risk"]["level"] == "critical":
-            critical.append({"vendor": v["name"], "score": v["risk"]["score"]})
 
-    if not expiring and not critical:
+        # "Contract renewals" (Continuous Monitoring, issue #261) — real
+        # date comparison against the vendor's own recorded contract end date.
+        if v["contract_end_date"]:
+            days_left = (date.fromisoformat(v["contract_end_date"]) - today).days
+            if days_left <= CERTIFICATION_EXPIRING_SOON_DAYS:
+                contracts_ending.append({"vendor": v["name"], "end_date": v["contract_end_date"], "days_left": days_left})
+
+        # Real technical check, run here (daily) rather than on every page
+        # load — refresh if never checked or stale (>7 days).
+        if v["website"] and (not v["website_checked_at"] or
+                              (datetime.now(timezone.utc) - datetime.fromisoformat(v["website_checked_at"])).days > 7):
+            _run_website_check(conn, v["id"], v["website"], "system")
+
+        for t in v["remediation_tasks"]:
+            if t["overdue"]:
+                overdue_tasks.append({"vendor": v["name"], "task": t["title"], "due_date": t["due_date"]})
+
+        if v["risk"]["level"] == "critical":
+            critical.append({"vendor": v["name"], "score": v["risk"]["score"], "email": v["business_owner_email"]})
+            # Acceptance criterion 4 (issue #261): "...alerts and
+            # remediation workflows are triggered." Real automation: open
+            # one real, trackable remediation task per vendor that just
+            # became critical — never a fabricated finding, and never
+            # duplicated if one is already open.
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*) FROM tprm_remediation_tasks
+                    WHERE vendor_id = %s AND status IN ('open', 'in_progress')
+                      AND title = 'Vendor reached critical risk — review required'
+                """, (v["id"],))
+                already_open = cur.fetchone()[0]
+            if not already_open:
+                _create_remediation_task(
+                    conn, v["id"], "Vendor reached critical risk — review required",
+                    f"Automatically opened: risk score {v['risk']['score']} crossed into critical.",
+                    None, v["business_owner"], "system",
+                )
+
+    if not expiring and not critical and not contracts_ending and not overdue_tasks:
         return {"expiring_count": 0, "critical_count": 0, "email": {"sent": False, "reason": "nothing_to_report"}}
 
     if not TPRM_SENDER_EMAIL or not TPRM_RECIPIENT_EMAILS:
@@ -721,16 +972,33 @@ def _check_and_notify(cur, cloud_account_id):
         lines.append("Certifications expiring soon or expired:")
         lines += [f"  - {e['vendor']}: {e['certification_type']} ({e['status']}, expiry {e['expiry_date']})" for e in expiring]
         lines.append("")
+    if contracts_ending:
+        lines.append("Contracts ending soon:")
+        lines += [f"  - {c['vendor']}: ends {c['end_date']} ({c['days_left']} days)" for c in contracts_ending]
+        lines.append("")
     if critical:
-        lines.append("Vendors now at CRITICAL risk:")
-        lines += [f"  - {c['vendor']}: score {c['score']}" for c in critical]
+        lines.append("Vendors now at CRITICAL risk (a remediation task was opened for each):")
+        lines += [f"  - {c['vendor']}: score {c['score']}" + (f" (owner: {c['email']})" if c["email"] else "") for c in critical]
+        lines.append("")
+    if overdue_tasks:
+        lines.append("Overdue remediation tasks (escalation):")
+        lines += [f"  - {t['vendor']}: \"{t['task']}\" was due {t['due_date']}" for t in overdue_tasks]
     body_text = "\n".join(lines)
+
+    # Recipients: the configured internal list, plus each critical vendor's
+    # own real business-owner email (acceptance criterion 3: "notifications
+    # are sent to the vendor owner") — deduplicated, only real addresses
+    # that were actually entered for a vendor.
+    recipients = list(TPRM_RECIPIENT_EMAILS)
+    for c in critical:
+        if c["email"] and c["email"] not in recipients:
+            recipients.append(c["email"])
 
     ses = boto3.client("sesv2", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
     try:
         ses.send_email(
             FromEmailAddress=TPRM_SENDER_EMAIL,
-            Destination={"ToAddresses": TPRM_RECIPIENT_EMAILS},
+            Destination={"ToAddresses": recipients},
             Content={"Simple": {"Subject": {"Data": f"TPRM alert: {len(expiring)} expiring cert(s), {len(critical)} critical vendor(s)", "Charset": "UTF-8"},
                                  "Body": {"Text": {"Data": body_text, "Charset": "UTF-8"}}}},
         )
@@ -755,9 +1023,7 @@ def handler(event, context):
     if event and event.get("check_and_notify"):
         conn = _get_connection()
         try:
-            with conn.cursor() as cur:
-                result = _check_and_notify(cur, event["check_and_notify"])
-            conn.commit()
+            result = _check_and_notify(conn, event["check_and_notify"])
             return {"statusCode": 200, "body": json.dumps(result)}
         finally:
             conn.close()
@@ -804,6 +1070,11 @@ def handler(event, context):
                     return _resp(200, {"download_url": url})
                 if qs.get("assessment_items"):
                     return _resp(200, {"items": _list_assessment_items(cur, qs["assessment_items"])})
+                if qs.get("download_contract"):
+                    url = _presign_contract(cur, qs["download_contract"])
+                    if not url:
+                        return _resp(404, {"error": "No contract uploaded for this vendor."})
+                    return _resp(200, {"download_url": url})
                 if qs.get("evidence_package"):
                     pkg = _get_evidence_package(cur, qs["evidence_package"])
                     if not pkg:
@@ -832,9 +1103,35 @@ def handler(event, context):
                     body.get("criticality", "medium"), body.get("business_owner"),
                     body.get("contact_email"), body.get("website"), body.get("notes"),
                     body.get("country"), body.get("subprocessors"), body.get("financial_notes"),
-                    body.get("registration_number"), actor,
+                    body.get("registration_number"), body.get("business_owner_email"),
+                    body.get("services_provided"), body.get("internal_systems_accessed"),
+                    body.get("handles_sensitive_data"), actor,
                 )
                 return _resp(200, {"id": vendor_id})
+            if action == "upload_contract":
+                _upload_contract(
+                    conn, body["vendor_id"], body.get("start_date"), body.get("end_date"),
+                    body.get("filename"), body.get("file_base64"), actor,
+                )
+                return _resp(200, {"updated": True})
+            if action == "check_website":
+                result = _run_website_check(conn, body["vendor_id"], body["website"], actor)
+                return _resp(200, {"website_tls_valid": result})
+            if action == "create_remediation_task":
+                if not body.get("title"):
+                    return _resp(400, {"error": "title is required"})
+                task_id = _create_remediation_task(
+                    conn, body["vendor_id"], body["title"], body.get("description"),
+                    body.get("due_date"), body.get("assigned_to"), actor,
+                )
+                return _resp(200, {"id": task_id})
+            if action == "update_remediation_task":
+                try:
+                    _update_remediation_task(conn, body["task_id"], body["vendor_id"], body["status"],
+                                              body.get("acceptance_reason"), actor)
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"updated": True})
             if action == "create_incident":
                 if not body.get("title"):
                     return _resp(400, {"error": "title is required"})
