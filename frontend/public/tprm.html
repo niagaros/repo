@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Third-Party Risk Management</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:flex;font-size:14px}
+.sb{width:220px;background:#0d0f14;display:flex;flex-direction:column;height:100vh;flex-shrink:0;overflow:hidden}
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e;flex-shrink:0}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff}
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e2a1e;color:#fff}
+.ni-item.on .ni{color:#22c55e}
+.ni{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 22px;gap:10px;flex-shrink:0}
+.tp-badge{display:flex;align-items:center;gap:7px;background:#eff6ff;border:1px solid #bfdbfe;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;color:#1d4ed8}
+.tp-right{display:flex;align-items:center;gap:9px;margin-left:auto}
+.acct-wrap{position:relative}
+.acct-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer}
+.acct-dd{position:absolute;top:calc(100% + 6px);left:0;min-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12);z-index:999;overflow:hidden;display:none}
+.acct-dd.open{display:block}
+.acct-item{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:12.5px;cursor:pointer}
+.acct-item:hover{background:#f9fafb}
+.avatar{width:34px;height:34px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+.content{flex:1;overflow-y:auto;padding:20px 22px}
+[hidden]{display:none!important}
+.page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.page-title{font-size:15px;font-weight:700}
+.page-sub{font-size:12px;color:#9ca3af;margin-top:3px;max-width:640px}
+.btn-primary{background:#1d4ed8;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-primary:hover{filter:brightness(0.92)}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-sm{padding:5px 10px;font-size:11px}
+.summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.sum-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px}
+.sum-n{font-size:22px;font-weight:800}
+.sum-l{font-size:11px;color:#9ca3af;margin-top:2px}
+.vendor-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.v-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;cursor:pointer;transition:box-shadow .15s}
+.v-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08)}
+.v-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.v-name{font-size:14px;font-weight:700}
+.v-cat{font-size:11px;color:#9ca3af;margin-top:2px}
+.risk-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.r-low{background:#ecfdf5;color:#16a34a}.r-medium{background:#fffbeb;color:#d97706}
+.r-high{background:#fef2f2;color:#ef4444}.r-critical{background:#fee2e2;color:#991b1b}
+.v-meta{font-size:11.5px;color:#6b7280;margin-bottom:10px}
+.v-chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;background:#f3f4f6;color:#374151}
+.chip.ok{background:#ecfdf5;color:#16a34a}.chip.warn{background:#fffbeb;color:#d97706}.chip.bad{background:#fef2f2;color:#ef4444}
+.crit-pill{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:5px;background:#eef2ff;color:#4338ca}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:all}
+.modal{background:#fff;border-radius:16px;width:520px;max-width:92vw;max-height:86vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hdr{display:flex;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #f3f4f6;position:sticky;top:0;background:#fff}
+.modal-title{font-size:14px;font-weight:700}
+.modal-close{width:26px;height:26px;border:none;background:#f3f4f6;border-radius:6px;cursor:pointer}
+.modal-body{padding:16px 18px}
+.f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block;margin-top:10px}
+.f-lbl:first-child{margin-top:0}
+.f-in,.f-ta,.f-sel{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:'Inter',sans-serif}
+.f-ta{resize:vertical;min-height:50px}
+.modal-foot{padding:14px 18px;border-top:1px solid #f3f4f6;display:flex;justify-content:flex-end;gap:8px}
+.sec-hdr{font-size:12px;font-weight:700;margin:16px 0 8px;display:flex;justify-content:space-between;align-items:center}
+.row-item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:12px}
+.row-item:last-child{border-bottom:none}
+.toast{position:fixed;bottom:22px;right:22px;background:#111827;color:#fff;padding:11px 18px;border-radius:9px;font-size:12.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{color:#9ca3af;font-size:12.5px;text-align:center;padding:40px 0}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-logo"><div class="sb-logo-icon">🛡</div><div class="sb-logo-text">Niagaros</div></div>
+  <nav class="sb-nav">
+    <div class="ni-item" onclick="dashTo('dashboard')"><span class="ni">⌘</span><span>Dashboard</span></div>
+    <div class="ni-item" onclick="location.href='questionnaire_automation.html'"><span class="ni">🧾</span><span>Questionnaires</span></div>
+    <div class="ni-item" onclick="location.href='trust_center.html'"><span class="ni">🔒</span><span>Trust Center</span></div>
+    <div class="ni-item on" onclick="location.href='tprm.html'"><span class="ni">🤝</span><span>Third-Party Risk</span></div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div style="font-size:15px;font-weight:700">Third-Party Risk Management</div>
+    <div class="tp-badge"><span>🤝</span> Vendor risico &amp; compliance-tracking</div>
+    <div class="acct-wrap">
+      <div class="acct-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
+      <div class="acct-dd" id="acct-dd"><div id="acct-list"></div></div>
+    </div>
+    <div class="tp-right"><div class="avatar">DN</div></div>
+  </header>
+
+  <div class="content">
+    <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Laden…</span></div>
+
+    <div id="v-content" hidden>
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Vendors</div>
+          <div class="page-sub">Risicoscore berekend uit echte, verifieerbare factoren: criticaliteit, certificaat-vervaldatum, en of er een goedgekeurde beveiligingsassessment is — geen externe of verzonnen data.</div>
+        </div>
+        <button class="btn-primary" onclick="openAddVendor()">+ Vendor toevoegen</button>
+      </div>
+
+      <div class="summary-row" id="summary-row"></div>
+
+      <div id="vendor-grid" class="vendor-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add vendor modal -->
+<div class="overlay" id="ov-add" onclick="if(event.target===this)closeAdd()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Vendor toevoegen</div><button class="modal-close" onclick="closeAdd()">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Naam *</label>
+      <input class="f-in" id="add-name" placeholder="bv. Stripe">
+      <label class="f-lbl">Categorie</label>
+      <input class="f-in" id="add-category" placeholder="bv. Payment Processor">
+      <label class="f-lbl">Criticaliteit</label>
+      <select class="f-sel" id="add-criticality">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+      <label class="f-lbl">Business owner</label>
+      <input class="f-in" id="add-owner" placeholder="bv. Finance Team">
+      <label class="f-lbl">Contact e-mail</label>
+      <input class="f-in" id="add-email" placeholder="security@vendor.com">
+      <label class="f-lbl">Website</label>
+      <input class="f-in" id="add-website" placeholder="https://...">
+      <label class="f-lbl">Notities</label>
+      <textarea class="f-ta" id="add-notes"></textarea>
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeAdd()">Annuleren</button><button class="btn-primary" onclick="submitAddVendor()">Toevoegen</button></div>
+  </div>
+</div>
+
+<!-- Vendor detail modal -->
+<div class="overlay" id="ov-detail" onclick="if(event.target===this)closeDetail()">
+  <div class="modal" style="width:600px">
+    <div class="modal-hdr"><div class="modal-title" id="detail-title">Vendor</div><button class="modal-close" onclick="closeDetail()">✕</button></div>
+    <div class="modal-body" id="detail-body"></div>
+    <div class="modal-foot"><button class="btn-ghost" style="color:#ef4444" onclick="deleteCurrentVendor()">Verwijderen</button><button class="btn-ghost" onclick="closeDetail()">Sluiten</button></div>
+  </div>
+</div>
+
+<!-- Upload certification modal -->
+<div class="overlay" id="ov-cert" onclick="if(event.target===this)closeCertModal()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Certificaat toevoegen</div><button class="modal-close" onclick="closeCertModal()">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Type</label>
+      <select class="f-sel" id="cert-type">
+        <option value="soc2">SOC 2</option>
+        <option value="iso27001">ISO 27001</option>
+        <option value="pci_dss">PCI DSS</option>
+        <option value="gdpr_dpa">GDPR DPA</option>
+        <option value="hipaa_baa">HIPAA BAA</option>
+        <option value="iso27701">ISO 27701</option>
+        <option value="other">Overig</option>
+      </select>
+      <label class="f-lbl">Uitgiftedatum</label>
+      <input class="f-in" type="date" id="cert-issued">
+      <label class="f-lbl">Vervaldatum</label>
+      <input class="f-in" type="date" id="cert-expiry">
+      <label class="f-lbl">Bestand (bewijs)</label>
+      <input type="file" id="cert-file">
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeCertModal()">Annuleren</button><button class="btn-primary" onclick="submitCert()">Toevoegen</button></div>
+  </div>
+</div>
+
+<!-- Assessment modal -->
+<div class="overlay" id="ov-assess" onclick="if(event.target===this)closeAssessModal()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Assessment versturen</div><button class="modal-close" onclick="closeAssessModal()">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Type vragenlijst</label>
+      <select class="f-sel" id="assess-type">
+        <option value="caiq">CAIQ</option>
+        <option value="sig_lite">SIG Lite</option>
+        <option value="sig_core">SIG Core</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeAssessModal()">Annuleren</button><button class="btn-primary" onclick="submitAssessment()">Versturen (markeren als 'sent')</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+const TPRM_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/tprm';
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[], vendors=[], activeVendorId=null;
+
+function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
+function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
+document.addEventListener('click',e=>{const w=document.querySelector('.acct-wrap');if(w&&!w.contains(e.target))document.getElementById('acct-dd').classList.remove('open');});
+function switchAccount(id){if(id===currentAccountId)return;currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(a=>`<div class="acct-item" onclick="switchAccount('${a.id}')">🏢 ${esc(a.name)}</div>`).join('');}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
+const actorName=()=>localStorage.getItem('niagaros_display_name')||'Admin';
+
+async function loadAll(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-content').hidden=true;
+  const token=localStorage.getItem('niagaros_token')||'';
+  const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
+  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}}), dd=await dr.json();
+  if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
+  if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
+
+  const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
+  const d=await r.json();
+  vendors=d.vendors||[];
+  render();
+}
+
+function render(){
+  const counts={low:0,medium:0,high:0,critical:0};
+  vendors.forEach(v=>counts[v.risk.level]=(counts[v.risk.level]||0)+1);
+  document.getElementById('summary-row').innerHTML=`
+    <div class="sum-card"><div class="sum-n">${vendors.length}</div><div class="sum-l">Totaal vendors</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:#ef4444">${counts.critical}</div><div class="sum-l">Critical risk</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:#d97706">${counts.high}</div><div class="sum-l">High risk</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:#16a34a">${counts.low+counts.medium}</div><div class="sum-l">Low/Medium risk</div></div>
+  `;
+
+  document.getElementById('vendor-grid').innerHTML = vendors.length ? vendors.map(v=>{
+    const validCerts=v.certifications.filter(c=>c.computed_status==='valid').length;
+    const expiringCerts=v.certifications.filter(c=>c.computed_status==='expiring_soon').length;
+    const expiredCerts=v.certifications.filter(c=>c.computed_status==='expired').length;
+    const approvedAssessment=v.assessments.some(a=>a.status==='approved');
+    return `<div class="v-card" onclick="openDetail('${v.id}')">
+      <div class="v-hdr">
+        <div><div class="v-name">${esc(v.name)}</div><div class="v-cat">${esc(v.category||'—')}</div></div>
+        <span class="risk-badge r-${v.risk.level}">${v.risk.level} · ${v.risk.score}</span>
+      </div>
+      <div class="v-meta"><span class="crit-pill">${v.criticality}</span> ${v.business_owner?' · '+esc(v.business_owner):''}</div>
+      <div class="v-chips">
+        ${validCerts?`<span class="chip ok">✓ ${validCerts} cert(s) geldig</span>`:''}
+        ${expiringCerts?`<span class="chip warn">⚠ ${expiringCerts} verlopen binnenkort</span>`:''}
+        ${expiredCerts?`<span class="chip bad">✗ ${expiredCerts} verlopen</span>`:''}
+        ${!v.certifications.length?`<span class="chip bad">Geen certificaten</span>`:''}
+        <span class="chip ${approvedAssessment?'ok':'warn'}">${approvedAssessment?'✓ Assessment goedgekeurd':'Geen goedgekeurde assessment'}</span>
+      </div>
+    </div>`;
+  }).join('') : '<div class="empty">Nog geen vendors toegevoegd. Klik op "+ Vendor toevoegen" om te beginnen.</div>';
+
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-content').hidden=false;
+}
+
+function openAddVendor(){
+  ['add-name','add-category','add-owner','add-email','add-website','add-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('add-criticality').value='medium';
+  document.getElementById('ov-add').classList.add('open');
+}
+function closeAdd(){document.getElementById('ov-add').classList.remove('open');}
+async function submitAddVendor(){
+  const name=document.getElementById('add-name').value.trim();
+  if(!name){showToast('Naam is verplicht');return;}
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
+    action:'create_vendor',cloud_account_id:currentAccountId,name,
+    category:document.getElementById('add-category').value.trim(),
+    criticality:document.getElementById('add-criticality').value,
+    business_owner:document.getElementById('add-owner').value.trim(),
+    contact_email:document.getElementById('add-email').value.trim(),
+    website:document.getElementById('add-website').value.trim(),
+    notes:document.getElementById('add-notes').value.trim(),
+    actor_name:actorName(),
+  })});
+  closeAdd();
+  showToast('Vendor toegevoegd');
+  loadAll();
+}
+
+function openDetail(id){
+  activeVendorId=id;
+  const v=vendors.find(x=>x.id===id);
+  if(!v)return;
+  document.getElementById('detail-title').textContent=v.name;
+  const certRows=v.certifications.map(c=>`
+    <div class="row-item">
+      <span class="chip ${c.computed_status==='valid'?'ok':c.computed_status==='expiring_soon'?'warn':'bad'}">${c.computed_status.replace('_',' ')}</span>
+      <div style="flex:1"><b>${c.certification_type.toUpperCase()}</b> ${c.expiry_date?'· vervalt '+c.expiry_date:''}</div>
+      ${c.filename?`<button class="btn-ghost btn-sm" onclick="downloadCert('${c.id}')">Download</button>`:''}
+    </div>`).join('') || '<div class="empty">Geen certificaten.</div>';
+  const assessRows=v.assessments.map(a=>`
+    <div class="row-item">
+      <span class="chip ${a.status==='approved'?'ok':a.status==='received'?'warn':''}">${a.status}</span>
+      <div style="flex:1"><b>${a.questionnaire_type.toUpperCase()}</b></div>
+      ${a.status!=='approved'?`<select class="f-sel" style="width:auto" onchange="updateAssessmentStatus('${a.id}', this.value)">
+        <option value="">Status wijzigen…</option>
+        <option value="in_progress">In progress</option>
+        <option value="received">Received</option>
+        <option value="approved">Approved</option>
+      </select>`:''}
+    </div>`).join('') || '<div class="empty">Nog geen assessment verstuurd.</div>';
+
+  document.getElementById('detail-body').innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <span class="risk-badge r-${v.risk.level}">${v.risk.level} risk · score ${v.risk.score}</span>
+      <span class="crit-pill">${v.criticality} criticality</span>
+    </div>
+    <div style="font-size:11.5px;color:#6b7280;margin-bottom:14px">${esc(v.category||'')} ${v.business_owner?' · Owner: '+esc(v.business_owner):''} ${v.contact_email?' · '+esc(v.contact_email):''}</div>
+    <div class="sec-hdr">Certificaten <button class="btn-ghost btn-sm" onclick="openCertModal()">+ Toevoegen</button></div>
+    ${certRows}
+    <div class="sec-hdr">Assessments <button class="btn-ghost btn-sm" onclick="openAssessModal()">+ Versturen</button></div>
+    ${assessRows}
+  `;
+  document.getElementById('ov-detail').classList.add('open');
+}
+function closeDetail(){document.getElementById('ov-detail').classList.remove('open');}
+async function deleteCurrentVendor(){
+  if(!activeVendorId)return;
+  if(!confirm('Deze vendor en alle bijbehorende data verwijderen?'))return;
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'delete_vendor',vendor_id:activeVendorId,actor_name:actorName()})});
+  closeDetail();
+  showToast('Vendor verwijderd');
+  loadAll();
+}
+async function downloadCert(certId){
+  const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&download_certification='+certId);
+  const d=await r.json();
+  if(d.download_url) window.open(d.download_url,'_blank');
+  else showToast(d.error||'Geen bestand beschikbaar');
+}
+
+function openCertModal(){
+  document.getElementById('cert-issued').value='';
+  document.getElementById('cert-expiry').value='';
+  document.getElementById('cert-file').value='';
+  document.getElementById('ov-cert').classList.add('open');
+}
+function closeCertModal(){document.getElementById('ov-cert').classList.remove('open');}
+async function submitCert(){
+  const file=document.getElementById('cert-file').files[0];
+  let file_base64=null, filename=null;
+  if(file){
+    filename=file.name;
+    const buf=await file.arrayBuffer();
+    const bytes=new Uint8Array(buf);
+    let binary=''; for(let i=0;i<bytes.length;i++) binary+=String.fromCharCode(bytes[i]);
+    file_base64=btoa(binary);
+  }
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
+    action:'upload_certification',vendor_id:activeVendorId,
+    certification_type:document.getElementById('cert-type').value,
+    issued_date:document.getElementById('cert-issued').value||null,
+    expiry_date:document.getElementById('cert-expiry').value||null,
+    filename, file_base64, actor_name:actorName(),
+  })});
+  closeCertModal();
+  showToast('Certificaat toegevoegd');
+  await loadAll();
+  openDetail(activeVendorId);
+}
+
+function openAssessModal(){document.getElementById('ov-assess').classList.add('open');}
+function closeAssessModal(){document.getElementById('ov-assess').classList.remove('open');}
+async function submitAssessment(){
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
+    action:'create_assessment',vendor_id:activeVendorId,
+    questionnaire_type:document.getElementById('assess-type').value,
+    actor_name:actorName(),
+  })});
+  closeAssessModal();
+  showToast('Assessment verstuurd');
+  await loadAll();
+  openDetail(activeVendorId);
+}
+async function updateAssessmentStatus(assessmentId, status){
+  if(!status)return;
+  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
+    action:'update_assessment',assessment_id:assessmentId,vendor_id:activeVendorId,status,actor_name:actorName(),
+  })});
+  showToast('Status bijgewerkt: '+status);
+  await loadAll();
+  openDetail(activeVendorId);
+}
+
+loadAll();
+</script>
+</body>
+</html>
