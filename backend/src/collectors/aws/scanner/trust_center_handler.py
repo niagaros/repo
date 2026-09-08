@@ -292,17 +292,29 @@ def _update_settings(conn, cloud_account_id, is_public=None, company_name=None, 
                 cur.execute(f"UPDATE trust_center_settings SET {', '.join(sets)} WHERE cloud_account_id = %s", params)
 
 
-# ── compliance status (reused verbatim from get-dashboard-data) ─────────
-
+# ── compliance status ────────────────────────────────────────────────────
+#
+# Corrected 2026-09-08: this used to give "credit" for the underlying raw
+# checks embedded in a control's own details.passed/details.failed (e.g. a
+# CIS Controls v8.1 row that FAILS overall because 1 of its 5 underlying
+# checks failed still contributed 4 "passed" credits) — a fundamentally
+# different, more lenient scoring method than every other place in this
+# product (the dashboard's own services aggregation, and every standalone
+# framework page), which count one control row as one pass/fail, full
+# stop. That made Trust Center — the one page an external auditor or
+# prospect actually sees — show a meaningfully HIGHER, rosier score
+# (e.g. 88.5%) than the real, control-level number (52.9%) shown
+# everywhere else for the exact same account and framework. Fixed to use
+# the same plain per-row COUNT(*) FILTER the rest of the app uses, so this
+# can never again silently disagree with the dashboard's own number.
 def _get_compliance_status(cur, cloud_account_id):
     cur.execute(f"""
-        SELECT service, SUM(passed_credit) AS passed, SUM(passed_credit + failed_credit) AS total,
-               MAX(detected_at) AS last_verified
+        SELECT service, COUNT(*) FILTER (WHERE result = 'PASS') AS passed,
+               COUNT(*) AS total, MAX(detected_at) AS last_verified
         FROM (
             SELECT
                 {FRAMEWORK_CASE_SQL} AS service,
-                COALESCE((f.details->>'passed')::int, CASE WHEN f.result = 'PASS' THEN 1 ELSE 0 END) AS passed_credit,
-                COALESCE((f.details->>'failed')::int, CASE WHEN f.result = 'FAIL' THEN 1 ELSE 0 END) AS failed_credit,
+                f.result,
                 f.detected_at
             FROM findings f
             JOIN resources r ON f.resource_id = r.id
@@ -310,7 +322,7 @@ def _get_compliance_status(cur, cloud_account_id):
         ) sub
         WHERE service IS NOT NULL
         GROUP BY service
-        ORDER BY SUM(passed_credit) * 100.0 / NULLIF(SUM(passed_credit + failed_credit), 0) DESC NULLS LAST
+        ORDER BY COUNT(*) FILTER (WHERE result = 'PASS') * 100.0 / NULLIF(COUNT(*), 0) DESC NULLS LAST
     """, (cloud_account_id,))
     out = []
     for service, passed, total, last_verified in cur.fetchall():
