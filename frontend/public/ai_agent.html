@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — AI Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:flex;font-size:14px}
+.sb{width:220px;background:#0d0f14;display:flex;flex-direction:column;height:100vh;flex-shrink:0;overflow:hidden}
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e;flex-shrink:0}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff}
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e2a1e;color:#fff}
+.ni-item.on .ni{color:#22c55e}
+.ni{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 22px;gap:10px;flex-shrink:0}
+.tp-badge{display:flex;align-items:center;gap:7px;background:#f5f3ff;border:1px solid #ddd6fe;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;color:#6d28d9}
+.tp-right{display:flex;align-items:center;gap:9px;margin-left:auto}
+.acct-wrap{position:relative}
+.acct-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer}
+.acct-dd{position:absolute;top:calc(100% + 6px);left:0;min-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12);z-index:999;overflow:hidden;display:none}
+.acct-dd.open{display:block}
+.acct-item{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:12.5px;cursor:pointer}
+.acct-item:hover{background:#f9fafb}
+.avatar{width:34px;height:34px;background:#6d28d9;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+.acct-dd-hdr{padding:9px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;border-bottom:1px solid #f3f4f6}
+.tp-scan{font-size:12px;color:#6b7280;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.tp-dot{width:7px;height:7px;background:#6d28d9;border-radius:50%;animation:blink 2s infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1}60%{opacity:.6}}
+.btn-icon{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;font-size:14px;transition:background .12s}
+.btn-icon:hover{background:#f9fafb}
+.content{flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column}
+[hidden]{display:none!important}
+.page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.page-hdr-main{display:flex;align-items:center;gap:14px}
+.page-icon{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;background:#f5f3ff;color:#6d28d9}
+.page-title{font-size:19px;font-weight:800;color:#111827}
+.page-sub{font-size:12.5px;font-weight:500;color:#4b5563;margin-top:3px;max-width:640px}
+.btn-primary{background:#6d28d9;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-primary:hover{filter:brightness(0.92)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-sm{padding:5px 10px;font-size:11px}
+.scope-note{background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:12px 16px;font-size:12px;color:#6b21a8;margin-bottom:16px;line-height:1.5}
+.scope-note b{font-weight:700}
+.chat-panel{flex:1;display:flex;flex-direction:column;min-height:0;background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden}
+.chat-scroll{flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:16px}
+.msg-row{display:flex;gap:10px;max-width:78%}
+.msg-row.user{align-self:flex-end;flex-direction:row-reverse}
+.msg-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.msg-row.user .msg-avatar{background:#6d28d9;color:#fff}
+.msg-row.bot .msg-avatar{background:#f5f3ff;color:#6d28d9}
+.msg-bubble{padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.55}
+.msg-row.user .msg-bubble{background:#6d28d9;color:#fff;border-top-right-radius:3px}
+.msg-row.bot .msg-bubble{background:#f9fafb;color:#111827;border-top-left-radius:3px;border:1px solid #f0f0f0}
+.msg-intent{display:inline-block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;margin-top:6px}
+.finding-actions{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.finding-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:11.5px}
+.finding-row .ft{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.finding-row .fs{font-size:9.5px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:#ecfdf5;color:#16a34a;flex-shrink:0}
+.finding-row .fs.open{background:#fef2f2;color:#ef4444}
+.suggestions{display:flex;flex-wrap:wrap;gap:8px;padding:0 22px 16px}
+.suggestion-chip{background:#f9fafb;border:1px solid #e5e7eb;border-radius:20px;padding:6px 13px;font-size:11.5px;color:#374151;cursor:pointer}
+.suggestion-chip:hover{background:#f3f4f6}
+.chat-input-row{border-top:1px solid #f0f0f0;padding:14px 18px;display:flex;gap:10px;flex-shrink:0}
+.chat-input{flex:1;border:1px solid #e5e7eb;border-radius:9px;padding:10px 14px;font-size:13px;font-family:'Inter',sans-serif}
+.chat-input:focus{outline:none;border-color:#6d28d9}
+.typing{display:flex;gap:4px;padding:4px 0}
+.typing span{width:6px;height:6px;border-radius:50%;background:#c4b5fd;animation:bounce 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:all}
+.modal{background:#fff;border-radius:16px;width:440px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hdr{display:flex;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #f3f4f6}
+.modal-title{font-size:14px;font-weight:700}
+.modal-close{width:26px;height:26px;border:none;background:#f3f4f6;border-radius:6px;cursor:pointer}
+.modal-body{padding:16px 18px}
+.f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block;margin-top:10px}
+.f-lbl:first-child{margin-top:0}
+.f-in{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:'Inter',sans-serif}
+.modal-foot{padding:14px 18px;border-top:1px solid #f3f4f6;display:flex;justify-content:flex-end;gap:8px}
+.toast{position:fixed;bottom:22px;right:22px;background:#111827;color:#fff;padding:11px 18px;border-radius:9px;font-size:12.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#6d28d9;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{color:#9ca3af;font-size:12.5px;text-align:center;padding:40px 0}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-logo"><div class="sb-logo-icon">🛡</div><div class="sb-logo-text">Niagaros</div></div>
+  <nav class="sb-nav">
+    <div class="ni-item" onclick="dashTo('dashboard')"><span class="ni">⌘</span><span>Dashboard</span></div>
+    <div class="ni-item" onclick="location.href='questionnaire_automation.html'"><span class="ni">🧾</span><span>Questionnaires</span></div>
+    <div class="ni-item" onclick="location.href='trust_center.html'"><span class="ni">🔒</span><span>Trust Center</span></div>
+    <div class="ni-item" onclick="location.href='tprm.html'"><span class="ni">🤝</span><span>Third-Party Risk</span></div>
+    <div class="ni-item" onclick="location.href='audit_management.html'"><span class="ni">📋</span><span>Audit Management</span></div>
+    <div class="ni-item" onclick="location.href='calculators.html'"><span class="ni">🧮</span><span>Calculators</span></div>
+    <div class="ni-item on" onclick="location.href='ai_agent.html'"><span class="ni">🤖</span><span>AI Agent</span></div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div style="font-size:15px;font-weight:700">AI Agent</div>
+    <div class="tp-badge"><span>🤖</span> Answers grounded in your own scanned data</div>
+    <div class="acct-wrap">
+      <div class="acct-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
+      <div class="acct-dd" id="acct-dd">
+        <div class="acct-dd-hdr">Switch Account</div>
+        <div id="acct-list"></div>
+      </div>
+    </div>
+    <div class="tp-right">
+      <div class="tp-scan"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
+      <button class="btn-ghost" onclick="loadHistory()">↻ Refresh</button>
+      <div class="btn-icon">🔔</div>
+      <div class="avatar">DN</div>
+    </div>
+  </header>
+
+  <div class="content">
+    <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Loading…</span></div>
+
+    <div id="v-content" hidden style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div class="page-hdr">
+        <div class="page-hdr-main">
+          <div class="page-icon">🤖</div>
+          <div>
+            <div class="page-title">AI Agent</div>
+            <div class="page-sub">Ask questions about this account's real findings, frameworks, vendors, and audits. Every answer is generated only from your own scanned data — nothing is invented.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scope-note">
+        <b>What this can answer:</b> highest risks, compliance scores per framework, internet-facing S3 exposure, which controls are failing for a named framework, vendor certificates expiring, and audit evidence status.
+        <b>What it won't do:</b> connect to Azure/GCP/Kubernetes/Jira/ServiceNow/Okta/other tools, or change your infrastructure on its own — this account only has AWS scan data and no write access to it.
+      </div>
+
+      <div class="chat-panel">
+        <div class="chat-scroll" id="chat-scroll">
+          <div class="empty" id="chat-empty">No questions asked yet — try one below.</div>
+        </div>
+        <div class="suggestions" id="suggestions">
+          <div class="suggestion-chip" onclick="ask('What are my highest risks right now?')">What are my highest risks right now?</div>
+          <div class="suggestion-chip" onclick="ask('How compliant are we across all frameworks?')">How compliant are we overall?</div>
+          <div class="suggestion-chip" onclick="ask('Which SOC 2 controls are failing?')">Which SOC 2 controls are failing?</div>
+          <div class="suggestion-chip" onclick="ask('Do we have any vendor certificates expiring soon?')">Vendor certs expiring soon?</div>
+          <div class="suggestion-chip" onclick="ask('Which of my AWS accounts are not compliant?')">Which of my accounts are not compliant?</div>
+          <div class="suggestion-chip" onclick="ask('Give me an executive summary of our security posture')">Executive summary</div>
+        </div>
+        <div class="chat-input-row">
+          <input class="chat-input" id="chat-input" placeholder="Ask about your risks, compliance, vendors, or audits…" onkeydown="if(event.key==='Enter')askFromInput()">
+          <button class="btn-primary" id="ask-btn" onclick="askFromInput()">Ask</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create remediation task modal -->
+<div class="overlay" id="ov-task" onclick="if(event.target===this)closeTaskModal()">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Create remediation task</div><button class="modal-close" onclick="closeTaskModal()">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Task title</label>
+      <input class="f-in" id="task-title">
+      <label class="f-lbl">Owner email</label>
+      <input class="f-in" id="task-owner-email" placeholder="name@company.com">
+      <label class="f-lbl">Due date</label>
+      <input class="f-in" type="date" id="task-due-date">
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeTaskModal()">Cancel</button><button class="btn-primary" onclick="confirmCreateTask()">Confirm &amp; create</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+const AGENT_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/ai-agent';
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[];
+let pendingTask=null;
+
+function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
+function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
+document.addEventListener('click',e=>{const w=document.querySelector('.acct-wrap');if(w&&!w.contains(e.target))document.getElementById('acct-dd').classList.remove('open');});
+function switchAccount(id){if(id===currentAccountId)return;currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(a=>`<div class="acct-item" onclick="switchAccount('${a.id}')">🏢 ${esc(a.name)}</div>`).join('');}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
+
+async function loadAll(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-content').hidden=true;
+  const token=localStorage.getItem('niagaros_token')||'';
+  const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
+  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}});
+  if(dr.status===401){location.href='/';return;}
+  const dd=await dr.json();
+  if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
+  if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+esc(dd.account_name)+' ▾';
+  document.getElementById('last-scan').textContent = dd.last_scan_at ? 'Last scan: '+dd.last_scan_at.substring(0,16) : 'No scan yet';
+  if(!currentAccountId){
+    document.getElementById('v-load').innerHTML='<div class="empty">No account found. Please open this page from the dashboard.</div>';
+    return;
+  }
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-content').hidden=false;
+  await loadHistory();
+}
+
+function bubble(role, html, intent){
+  const row=document.createElement('div');
+  row.className='msg-row '+role;
+  row.innerHTML=`<div class="msg-avatar">${role==='user'?'🙂':'🤖'}</div><div><div class="msg-bubble">${html}</div>${intent?`<div class="msg-intent">${esc(intent.replace(/_/g,' '))}</div>`:''}</div>`;
+  return row;
+}
+
+function findingActionsHtml(evidence, queryId){
+  if(!evidence || !Array.isArray(evidence.findings) || !evidence.audit_exists) return '';
+  const openOnes = evidence.findings.filter(f=>f.status==='open');
+  if(!openOnes.length) return '';
+  const rows = openOnes.slice(0,5).map(f=>`
+    <div class="finding-row">
+      <span class="ft" title="${esc(f.title)}">${esc(f.title)}</span>
+      <button class="btn-ghost btn-sm js-create-task" data-query-id="${esc(queryId)}" data-finding-id="${esc(f.id)}" data-title="${esc(f.title)}">+ Remediation task</button>
+    </div>`).join('');
+  return `<div class="finding-actions">${rows}</div>`;
+}
+document.addEventListener('click', e=>{
+  const btn=e.target.closest('.js-create-task');
+  if(btn) openTaskModal(btn.dataset.queryId, btn.dataset.findingId, btn.dataset.title);
+});
+
+async function loadHistory(){
+  const r=await fetch(AGENT_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
+  const d=await r.json();
+  const scroll=document.getElementById('chat-scroll');
+  scroll.innerHTML='';
+  const history=(d.history||[]).slice().reverse();
+  if(!history.length){
+    scroll.innerHTML='<div class="empty" id="chat-empty">No questions asked yet — try one below.</div>';
+    return;
+  }
+  history.forEach(h=>{
+    scroll.appendChild(bubble('user', esc(h.question)));
+    scroll.appendChild(bubble('bot', esc(h.answer), h.intent));
+  });
+  scroll.scrollTop=scroll.scrollHeight;
+}
+
+function askFromInput(){
+  const inp=document.getElementById('chat-input');
+  const q=inp.value.trim();
+  if(!q) return;
+  inp.value='';
+  ask(q);
+}
+
+async function ask(question){
+  const scroll=document.getElementById('chat-scroll');
+  const empty=document.getElementById('chat-empty');
+  if(empty) empty.remove();
+  scroll.appendChild(bubble('user', esc(question)));
+  const typingRow=document.createElement('div');
+  typingRow.className='msg-row bot';
+  typingRow.innerHTML='<div class="msg-avatar">🤖</div><div class="msg-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
+  scroll.appendChild(typingRow);
+  scroll.scrollTop=scroll.scrollHeight;
+  document.getElementById('ask-btn').disabled=true;
+
+  try{
+    const token=localStorage.getItem('niagaros_token')||'';
+    const r=await fetch(AGENT_API,{method:'POST',
+      headers: token?{Authorization:'Bearer '+token}:{},
+      body:JSON.stringify({
+        action:'ask', cloud_account_id:currentAccountId, question,
+        asked_by: localStorage.getItem('niagaros_display_name')||'Admin'
+      })});
+    const d=await r.json();
+    typingRow.remove();
+    const actionsHtml=findingActionsHtml(d.evidence, d.id);
+    scroll.appendChild(bubble('bot', esc(d.answer||'Something went wrong.')+actionsHtml, d.intent));
+  }catch(e){
+    typingRow.remove();
+    scroll.appendChild(bubble('bot', 'Could not reach the AI Agent service. Please try again.'));
+  }
+  scroll.scrollTop=scroll.scrollHeight;
+  document.getElementById('ask-btn').disabled=false;
+}
+
+function openTaskModal(queryId, findingId, title){
+  pendingTask={queryId, findingId};
+  document.getElementById('task-title').value=title;
+  document.getElementById('task-owner-email').value='';
+  document.getElementById('task-due-date').value='';
+  document.getElementById('ov-task').classList.add('open');
+}
+function closeTaskModal(){document.getElementById('ov-task').classList.remove('open');pendingTask=null;}
+
+async function confirmCreateTask(){
+  if(!pendingTask) return;
+  const title=document.getElementById('task-title').value.trim();
+  const owner_email=document.getElementById('task-owner-email').value.trim();
+  const due_date=document.getElementById('task-due-date').value||null;
+  if(!title){showToast('Title is required');return;}
+  const token=localStorage.getItem('niagaros_token')||'';
+  const r=await fetch(AGENT_API,{method:'POST',
+    headers: token?{Authorization:'Bearer '+token}:{},
+    body:JSON.stringify({
+      action:'create_remediation_task', query_id:pendingTask.queryId, finding_id:pendingTask.findingId,
+      title, owner_email, due_date
+    })});
+  const d=await r.json();
+  if(r.ok){showToast('Remediation task created');closeTaskModal();}
+  else{showToast(d.reason || d.error || 'Could not create task');}
+}
+
+loadAll();
+</script>
+</body>
+</html>
