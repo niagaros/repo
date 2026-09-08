@@ -555,6 +555,8 @@ def _update_vendor(conn, vendor_id, fields, actor):
                         (vendor_id, actor))
 
 
+APPROVAL_STAGES = ("legal_approval", "business_approval")
+
 def _advance_onboarding(conn, vendor_id, stage, actor):
     """Real onboarding workflow (issue #261: 'risk-based onboarding
     workflows... security/privacy/compliance reviews... legal/business
@@ -574,6 +576,42 @@ def _advance_onboarding(conn, vendor_id, stage, actor):
                             (stage, vendor_id))
             cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, %s)",
                         (vendor_id, actor, f"onboarding_advanced_{stage}"))
+            cur.execute("SELECT name, business_owner, business_owner_email FROM tprm_vendors WHERE id = %s",
+                        (vendor_id,))
+            v_name, v_owner, v_owner_email = cur.fetchone()
+    # AC (issue #261): "...required approvals are automatically assigned."
+    # Real, immediate email to the vendor's business owner — the only real
+    # contact this system has for a vendor — when the vendor reaches a
+    # stage that actually needs their approval. No separate "approver"
+    # role/contact exists in this product, so the business owner is the
+    # honest, real recipient rather than a fabricated approver.
+    if stage in APPROVAL_STAGES:
+        return _notify_approval_needed(v_name, v_owner, v_owner_email, stage)
+    return {"sent": False, "reason": "not_an_approval_stage"}
+
+
+def _notify_approval_needed(vendor_name, owner_name, owner_email, stage):
+    if not owner_email:
+        return {"sent": False, "reason": "no_owner_email"}
+    if not TPRM_SENDER_EMAIL:
+        return {"sent": False, "reason": "not_configured"}
+    label = "Legal approval" if stage == "legal_approval" else "Business approval"
+    body = (
+        f"Hi {owner_name or ''},\n\n"
+        f"Vendor \"{vendor_name}\" has reached the {label} step of its onboarding "
+        f"in Niagaros TPRM and needs your review before it can go active.\n"
+    ).strip()
+    ses = boto3.client("sesv2", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+    try:
+        ses.send_email(
+            FromEmailAddress=TPRM_SENDER_EMAIL,
+            Destination={"ToAddresses": [owner_email]},
+            Content={"Simple": {"Subject": {"Data": f"{label} needed: {vendor_name}", "Charset": "UTF-8"},
+                                 "Body": {"Text": {"Data": body, "Charset": "UTF-8"}}}},
+        )
+        return {"sent": True}
+    except Exception as e:
+        return {"sent": False, "reason": str(e)}
 
 
 def _delete_vendor(conn, vendor_id, actor):
@@ -803,7 +841,8 @@ def _create_incident(conn, vendor_id, title, description, source_url, occurred_d
 def _get_evidence_package(cur, vendor_id):
     cur.execute("""
         SELECT id, name, category, criticality, business_owner, contact_email, website,
-               status, onboarding_stage, country, registration_number, created_at
+               status, onboarding_stage, country, registration_number, created_at,
+               contract_start_date, contract_end_date, contract_s3_key, contract_filename
         FROM tprm_vendors WHERE id = %s
     """, (vendor_id,))
     row = cur.fetchone()
@@ -815,6 +854,21 @@ def _get_evidence_package(cur, vendor_id):
         "status": row[7], "onboarding_stage": row[8], "country": row[9],
         "registration_number": row[10], "created_at": row[11].isoformat(),
     }
+    # AC (issue #261): evidence for an auditor must include "assessments,
+    # certifications, contracts, and supporting documents" — contracts were
+    # missing from this package entirely until now.
+    contract = None
+    if row[12] or row[13] or row[15]:
+        contract = {
+            "start_date": row[12].isoformat() if row[12] else None,
+            "end_date": row[13].isoformat() if row[13] else None,
+            "filename": row[15],
+        }
+        if row[14]:
+            contract["download_url"] = _s3().generate_presigned_url(
+                "get_object", Params={"Bucket": DOCS_BUCKET, "Key": row[14],
+                                       "ResponseContentDisposition": f'attachment; filename="{row[15]}"'},
+                ExpiresIn=900)
 
     cur.execute("""
         SELECT id, certification_type, issued_date, expiry_date, s3_key, filename
@@ -858,7 +912,7 @@ def _get_evidence_package(cur, vendor_id):
                           [{"status": a["status"]} for a in assessments], vendor["country"])
 
     return {"vendor": vendor, "risk": risk, "certifications": certifications,
-            "assessments": assessments, "incidents": incidents,
+            "assessments": assessments, "incidents": incidents, "contract": contract,
             "generated_at": datetime.now(timezone.utc).isoformat()}
 
 
@@ -981,8 +1035,15 @@ def _check_and_notify(conn, cloud_account_id):
     for v in vendors:
         for c in v["certifications"]:
             if c["computed_status"] in ("expiring_soon", "expired"):
+                # AC (issue #261): "...notifications are sent to the vendor
+                # owner." Capture the real owner email here too — this was
+                # previously only added to recipients for vendors that were
+                # ALSO critical-risk, so a non-critical vendor's owner never
+                # actually got the expiry notice despite the code claiming
+                # this AC was covered.
                 expiring.append({"vendor": v["name"], "certification_type": c["certification_type"],
-                                  "expiry_date": c["expiry_date"], "status": c["computed_status"]})
+                                  "expiry_date": c["expiry_date"], "status": c["computed_status"],
+                                  "email": v["business_owner_email"]})
 
         # "Contract renewals" (Continuous Monitoring, issue #261) — real
         # date comparison against the vendor's own recorded contract end date.
@@ -1047,14 +1108,18 @@ def _check_and_notify(conn, cloud_account_id):
         lines += [f"  - {t['vendor']}: \"{t['task']}\" was due {t['due_date']}" for t in overdue_tasks]
     body_text = "\n".join(lines)
 
-    # Recipients: the configured internal list, plus each critical vendor's
-    # own real business-owner email (acceptance criterion 3: "notifications
-    # are sent to the vendor owner") — deduplicated, only real addresses
-    # that were actually entered for a vendor.
+    # Recipients: the configured internal list, plus each affected vendor's
+    # own real business-owner email — both for a critical-risk vendor and
+    # for one with an expiring/expired certificate (acceptance criterion 3:
+    # "notifications are sent to the vendor owner") — deduplicated, only
+    # real addresses that were actually entered for a vendor.
     recipients = list(TPRM_RECIPIENT_EMAILS)
     for c in critical:
         if c["email"] and c["email"] not in recipients:
             recipients.append(c["email"])
+    for e in expiring:
+        if e["email"] and e["email"] not in recipients:
+            recipients.append(e["email"])
 
     ses = boto3.client("sesv2", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
     try:
@@ -1225,10 +1290,10 @@ def handler(event, context):
                 return _resp(200, {"deleted": True})
             if action == "advance_onboarding":
                 try:
-                    _advance_onboarding(conn, body["vendor_id"], body["stage"], actor)
+                    notification = _advance_onboarding(conn, body["vendor_id"], body["stage"], actor)
                 except ValueError as e:
                     return _resp(400, {"error": str(e)})
-                return _resp(200, {"updated": True})
+                return _resp(200, {"updated": True, "notification": notification})
             if action == "upload_certification":
                 cert_id = _upload_certification(
                     conn, body["vendor_id"], body.get("certification_type", "other"),

@@ -39,7 +39,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .btn-primary:hover{filter:brightness(0.92)}
 .btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
 .btn-sm{padding:5px 10px;font-size:11px}
-.summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.summary-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
 .sum-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px}
 .sum-n{font-size:22px;font-weight:800}
 .sum-l{font-size:11px;color:#9ca3af;margin-top:2px}
@@ -326,12 +326,17 @@ let riskFilter=null;
 function render(){
   const counts={low:0,medium:0,high:0,critical:0};
   vendors.forEach(v=>counts[v.risk.level]=(counts[v.risk.level]||0)+1);
+  // AC (issue #261): the executive dashboard must show "open risks", not
+  // just per-vendor risk level — a real, live count of open/in_progress
+  // remediation tasks across every vendor, not just visible on drill-down.
+  const openRisks=vendors.reduce((n,v)=>n+v.remediation_tasks.filter(t=>t.status==='open'||t.status==='in_progress').length,0);
   const sc=(level,label,color,levels)=>`<div class="sum-card" style="cursor:pointer;${riskFilter&&JSON.stringify(riskFilter)===JSON.stringify(levels)?'outline:2px solid '+color:''}" onclick='toggleRiskFilter(${JSON.stringify(levels)})'><div class="sum-n" style="color:${color}">${level}</div><div class="sum-l">${label}</div></div>`;
   document.getElementById('summary-row').innerHTML=
     `<div class="sum-card" style="cursor:pointer;${!riskFilter?'outline:2px solid #1d4ed8':''}" onclick="toggleRiskFilter(null)"><div class="sum-n">${vendors.length}</div><div class="sum-l">Total vendors (click to clear filter)</div></div>` +
     sc(counts.critical,'Critical risk','#ef4444',['critical']) +
     sc(counts.high,'High risk','#d97706',['high']) +
-    sc(counts.low+counts.medium,'Low/Medium risk','#16a34a',['low','medium']);
+    sc(counts.low+counts.medium,'Low/Medium risk','#16a34a',['low','medium']) +
+    `<div class="sum-card"><div class="sum-n" style="color:${openRisks?'#d97706':'#111827'}">${openRisks}</div><div class="sum-l">Open risks (remediation)</div></div>`;
 
   const visibleVendors = riskFilter ? vendors.filter(v=>riskFilter.includes(v.risk.level)) : vendors;
   document.getElementById('vendor-grid').innerHTML = visibleVendors.length ? visibleVendors.map(v=>{
@@ -512,8 +517,10 @@ function openDetail(id){
   document.getElementById('ov-detail').classList.add('open');
 }
 async function advanceOnboarding(stage){
-  await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'advance_onboarding',vendor_id:activeVendorId,stage,actor_name:actorName()})});
-  showToast('Onboarding: '+stage.replace('_',' '));
+  const r=await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'advance_onboarding',vendor_id:activeVendorId,stage,actor_name:actorName()})});
+  const d=await r.json();
+  const n=d.notification;
+  showToast('Onboarding: '+stage.replace('_',' ')+(n&&n.sent?' — approver notified':n&&n.reason==='no_owner_email'?' — no owner email to notify':''));
   await loadAll();
   openDetail(activeVendorId);
 }
