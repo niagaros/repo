@@ -202,16 +202,16 @@ def _get_authenticated_caller(event):
     headers = event.get("headers") or {}
     auth = headers.get("Authorization") or headers.get("authorization") or ""
     if not auth.startswith("Bearer "):
-        return None, None, "No access token was provided with this request."
+        return None, None, "Er is geen toegangstoken meegestuurd met dit verzoek."
     token = auth[7:].strip()
     if not token:
-        return None, None, "No access token was provided with this request."
+        return None, None, "Er is geen toegangstoken meegestuurd met dit verzoek."
     region = os.environ.get("SECRET_REGION", "eu-west-1")
     cognito = boto3.client("cognito-idp", region_name=region)
     try:
         user = cognito.get_user(AccessToken=token)
     except Exception:
-        return None, None, "This access token is invalid or expired."
+        return None, None, "Dit toegangstoken is ongeldig of verlopen."
     email = next((a["Value"] for a in user["UserAttributes"] if a["Name"] == "email"), None)
     return user["Username"], email, None
 
@@ -229,10 +229,10 @@ def _get_caller_admin_status(event):
             UserPoolId=os.environ["COGNITO_USER_POOL_ID"], Username=username
         )
     except Exception:
-        return False, email, "Could not verify this account's role."
+        return False, email, "De rol van dit account kon niet worden geverifieerd."
     group_names = [g["GroupName"] for g in groups_resp.get("Groups", [])]
     if ADMIN_GROUP_NAME not in group_names:
-        return False, email, f"This account does not have the {ADMIN_GROUP_NAME} role required for this action."
+        return False, email, f"Dit account heeft niet de {ADMIN_GROUP_NAME}-rol die nodig is voor deze actie."
     return True, email, None
 
 
@@ -375,7 +375,7 @@ def _q_internet_facing_critical(cur, account_id):
 
 def _q_framework_status(cur, account_id, framework_code):
     if not framework_code or framework_code not in FRAMEWORK_DB_VALUES:
-        return {"error": "I couldn't match that to one of this account's tracked frameworks."}
+        return {"error": "Ik kon dit niet koppelen aan een van de normenkaders die voor dit account worden bijgehouden."}
     db_values = FRAMEWORK_DB_VALUES[framework_code]
     cur.execute("""
         SELECT f.check_id, f.title, r.resource_name
@@ -401,7 +401,7 @@ def _q_vendor_certs_expiring(cur, account_id):
 
 def _q_audit_evidence_needed(cur, account_id, framework_code):
     if not framework_code:
-        return {"error": "I couldn't match that to one of this account's tracked frameworks."}
+        return {"error": "Ik kon dit niet koppelen aan een van de normenkaders die voor dit account worden bijgehouden."}
     fw_label = FRAMEWORK_LABELS.get(framework_code, framework_code)
     cur.execute("""
         SELECT a.id, a.title, a.status FROM audits a
@@ -435,7 +435,7 @@ def _q_accounts_compliance(cur, owner_email):
     """, (owner_email,))
     accounts = [{"id": str(r[0]), "name": r[1]} for r in cur.fetchall()]
     if not accounts:
-        return {"error": "No AWS accounts found for this user."}
+        return {"error": "Geen AWS-accounts gevonden voor deze gebruiker."}
     results = []
     for acct in accounts:
         cur.execute("""
@@ -509,13 +509,13 @@ def _run_intent(cur, account_id, intent, framework_code):
 
 
 UNSUPPORTED_MESSAGE = (
-    "I can only answer questions about this AWS account's own real, scanned data right now — "
-    "I'm not connected to Azure, GCP, Kubernetes, GitHub, GitLab, Jira, ServiceNow, Okta, "
-    "CrowdStrike, Wiz, or any other tool, and I can't autonomously change your infrastructure. "
-    "I can tell you about: your highest risks, compliance scores per framework, which of your "
-    "AWS accounts are compliant, internet-facing S3 exposure, which controls are failing for a "
-    "named framework, vendor certificates expiring, what evidence exists for a framework's audit, "
-    "and an executive summary of your overall posture."
+    "Ik kan alleen vragen beantwoorden over de echte, gescande data van dit AWS-account — "
+    "ik heb geen koppeling met Azure, GCP, Kubernetes, GitHub, GitLab, Jira, ServiceNow, Okta, "
+    "CrowdStrike, Wiz of andere tools, en ik kan jullie infrastructuur niet zelfstandig aanpassen. "
+    "Ik kan wel vertellen over: jullie grootste risico's, compliance-scores per normenkader, welke "
+    "van jullie AWS-accounts compliant zijn, publiek toegankelijke S3-buckets, welke controls falen "
+    "voor een specifiek normenkader, verlopende leveranciercertificaten, welk bewijs er is voor een "
+    "audit, en een executive summary van de algehele status."
 )
 
 
@@ -531,6 +531,8 @@ def _phrase_answer(question, intent, evidence):
         "one sentence instead of describing what such an audit or evidence set would generally "
         "contain. Be concise: 2-5 sentences, professional tone, as if written by a security "
         "analyst.\n\n"
+        "Language: reply in Dutch by default. If the question is clearly written in a different "
+        "language, reply in that same language instead.\n\n"
         f"Question: {question}\n\n"
         f"Real data:\n{json.dumps(evidence, default=str)}\n\n"
         "Answer:"
@@ -539,8 +541,8 @@ def _phrase_answer(question, intent, evidence):
         return _call_groq(prompt, max_tokens=350)
     except Exception as e:
         logger.exception("groq phrasing failed")
-        return (f"I found real data for this ({json.dumps(evidence, default=str)[:300]}...), "
-                f"but couldn't reach the AI service to phrase it in words ({e}).")
+        return (f"Ik heb hier echte data voor gevonden ({json.dumps(evidence, default=str)[:300]}...), "
+                f"maar kon de AI-dienst niet bereiken om dit in woorden om te zetten ({e}).")
 
 
 def handler(event, context):
@@ -611,9 +613,9 @@ def handler(event, context):
                         evidence = _run_intent(cur, account_id, intent, framework_code)
 
                 if needs_login:
-                    answer = ("I need you to be signed in to compare across your AWS accounts "
-                               f"({auth_reason}). Please ask this again from the AI Agent page "
-                               "while logged in.")
+                    answer = ("Je moet ingelogd zijn om je AWS-accounts met elkaar te vergelijken "
+                               f"({auth_reason}). Stel deze vraag opnieuw vanuit de AI Agent-pagina "
+                               "terwijl je bent ingelogd.")
                 else:
                     answer = _phrase_answer(question, intent, evidence)
 
@@ -631,7 +633,7 @@ def handler(event, context):
             if action == "create_remediation_task":
                 is_admin, caller_email, deny_reason = _get_caller_admin_status(event)
                 if not is_admin:
-                    return _resp(403, {"error": "Refused: administrative action requires the Admin role.",
+                    return _resp(403, {"error": "Geweigerd: deze actie vereist de Admin-rol.",
                                         "reason": deny_reason})
                 query_id = body.get("query_id")
                 finding_id = body.get("finding_id")
@@ -639,12 +641,12 @@ def handler(event, context):
                 owner_email = body.get("owner_email")
                 due_date = body.get("due_date")
                 if not (_is_uuid(query_id) and _is_uuid(finding_id) and title):
-                    return _resp(400, {"error": "query_id, finding_id and title are required"})
+                    return _resp(400, {"error": "query_id, finding_id en title zijn verplicht"})
                 with conn:
                     with conn.cursor() as cur:
                         cur.execute("SELECT id FROM audit_findings WHERE id = %s", (finding_id,))
                         if not cur.fetchone():
-                            return _resp(404, {"error": "That finding no longer exists in Audit Management."})
+                            return _resp(404, {"error": "Deze bevinding bestaat niet meer in Audit Management."})
                         cur.execute("""
                             INSERT INTO audit_remediation_tasks (audit_finding_id, title, owner_email, due_date)
                             VALUES (%s, %s, %s, %s) RETURNING id

@@ -215,7 +215,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="ni-item" onclick="location.href='tprm.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🤝</span><span class="nt">Third-Party Risk</span></div>
     <div class="ni-item" onclick="location.href='audit_management.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">📋</span><span class="nt">Audit Management</span></div>
     <div class="ni-item" onclick="location.href='calculators.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🧮</span><span class="nt">Calculators</span></div>
-    <div class="ni-item" onclick="location.href='ai_agent.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🤖</span><span class="nt">AI Agent</span></div>
     <div class="ni-item" onclick="dashTo('reports')"><span class="ni">📊</span><span class="nt">Reports</span></div>
     <div class="ni-item" onclick="dashTo('projects')"><span class="ni">🗂</span><span class="nt">Projects</span></div>
     <div class="nl">Security</div>
@@ -775,5 +774,6 @@ function exportCsv(){
 
 loadAll();
 </script>
+<script src="ai-agent-widget.js"></script>
 </body>
 </html>

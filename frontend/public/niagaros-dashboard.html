@@ -543,9 +543,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="ni-item" onclick="location.href='calculators.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')">
       <span class="ni">🧮</span><span class="nt">Calculators</span>
     </div>
-    <div class="ni-item" onclick="location.href='ai_agent.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')">
-      <span class="ni">🤖</span><span class="nt">AI Agent</span>
-    </div>
     <div class="ni-item" id="ni-rep" onclick="show('reports',this)">
       <span class="ni">📊</span><span class="nt">Reports</span>
     </div>
@@ -1858,5 +1855,6 @@ window.addEventListener('hashchange', ()=>{
 });
 loadData();
 </script>
+<script src="ai-agent-widget.js"></script>
 </body>
 </html>
