@@ -180,6 +180,13 @@ def _check_website_tls(website_url, timeout=5):
         if not hostname:
             return None
         context = ssl.create_default_context()
+        # Explicit, not implicit: don't rely on whatever Python/OpenSSL
+        # version this Lambda happens to run on to silently forbid TLS 1.0/
+        # 1.1 on our behalf (CodeQL "insecure SSL/TLS version" - a real,
+        # worth-fixing finding even though python3.12's default already
+        # excludes them, since a runtime change shouldn't be able to
+        # silently reopen this).
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         with socket.create_connection((hostname, 443), timeout=timeout) as sock:
             with context.wrap_socket(sock, server_hostname=hostname):
                 return True
