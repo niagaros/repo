@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Calculators</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:flex;font-size:14px}
+.sb{width:220px;background:#0d0f14;display:flex;flex-direction:column;height:100vh;flex-shrink:0;overflow:hidden}
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e;flex-shrink:0}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff}
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e2a1e;color:#fff}
+.ni-item.on .ni{color:#22c55e}
+.ni{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 22px;gap:10px;flex-shrink:0}
+.tp-badge{display:flex;align-items:center;gap:7px;background:#f0fdf4;border:1px solid #bbf7d0;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;color:#15803d}
+.tp-right{display:flex;align-items:center;gap:9px;margin-left:auto}
+.acct-wrap{position:relative}
+.acct-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer}
+.acct-dd{position:absolute;top:calc(100% + 6px);left:0;min-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12);z-index:999;overflow:hidden;display:none}
+.acct-dd.open{display:block}
+.acct-item{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:12.5px;cursor:pointer}
+.acct-item:hover{background:#f9fafb}
+.avatar{width:34px;height:34px;background:#15803d;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+.acct-dd-hdr{padding:9px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;border-bottom:1px solid #f3f4f6}
+.tp-scan{font-size:12px;color:#6b7280;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.tp-dot{width:7px;height:7px;background:#15803d;border-radius:50%;animation:blink 2s infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1}60%{opacity:.6}}
+.btn-icon{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;font-size:14px;transition:background .12s}
+.btn-icon:hover{background:#f9fafb}
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:20px 22px}
+[hidden]{display:none!important}
+.page-hdr{margin-bottom:20px}
+.page-hdr-main{display:flex;align-items:center;gap:14px}
+.page-icon{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;background:#f0fdf4;color:#15803d}
+.page-title{font-size:19px;font-weight:800;color:#111827}
+.page-sub{font-size:12.5px;font-weight:500;color:#4b5563;margin-top:3px;max-width:680px}
+.btn-primary{background:#15803d;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-primary:hover{filter:brightness(0.92)}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-ghost:disabled{color:#d1d5db;cursor:not-allowed;background:#f9fafb}
+.btn-sm{padding:5px 10px;font-size:11px}
+.tabs{display:flex;gap:6px;margin-bottom:16px}
+.tab{padding:8px 16px;border-radius:8px;font-size:12.5px;font-weight:600;color:#6b7280;cursor:pointer;background:#fff;border:1px solid #e5e7eb}
+.tab.on{background:#15803d;color:#fff;border-color:#15803d}
+.calc-layout{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;overflow-x:hidden;max-width:100%}
+.card-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.card-note{font-size:11px;color:#9ca3af;margin-bottom:14px;line-height:1.5}
+.f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block;margin-top:12px}
+.f-lbl:first-child{margin-top:0}
+.f-in,.f-sel{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:'Inter',sans-serif}
+.f-row4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.sev-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;display:block}
+.sev-CRITICAL{color:#ef4444}.sev-HIGH{color:#f97316}.sev-MEDIUM{color:#f59e0b}.sev-LOW{color:#3b82f6}
+.gap-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:12.5px}
+.gap-row:last-child{border-bottom:none}
+.gap-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.gap-n{font-weight:700;margin-left:auto}
+.result-hero{text-align:center;padding:22px 0}
+.result-n{font-size:38px;font-weight:800;color:#15803d}
+.result-l{font-size:12px;color:#9ca3af;margin-top:4px}
+.result-breakdown{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.rb-card{background:#f9fafb;border-radius:10px;padding:12px 14px;text-align:center}
+.rb-n{font-size:18px;font-weight:800}
+.rb-l{font-size:10.5px;color:#9ca3af;margin-top:2px}
+.rb-sub{font-size:9.5px;color:#c4c9d1;margin-top:4px}
+.disclaimer{font-size:10.5px;color:#9ca3af;background:#f9fafb;border-radius:8px;padding:10px 12px;margin-top:14px;line-height:1.5}
+.cite{color:#15803d;text-decoration:none;font-weight:600}
+.cite:hover{text-decoration:underline}
+.table-scroll{overflow-x:auto;max-width:100%}
+.bench-subhdr{font-size:11.5px;font-weight:700;color:#374151;margin-bottom:8px}
+.bench-table{width:100%;min-width:640px;border-collapse:collapse;font-size:12px;table-layout:fixed}
+.bench-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#9ca3af;font-weight:700;padding:6px 8px;border-bottom:1px solid #f3f4f6}
+.bench-table td{padding:8px;border-bottom:1px solid #f3f4f6;overflow-wrap:break-word}
+.bench-table th:nth-child(1),.bench-table td:nth-child(1){width:17%}
+.bench-table th:nth-child(2),.bench-table td:nth-child(2){width:15%}
+.bench-src{font-size:10.5px;color:#9ca3af;margin-top:10px;line-height:1.5;overflow-wrap:anywhere;max-width:100%}
+.rate-chip-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rate-chip{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;cursor:pointer;text-align:center;transition:background .15s}
+.rate-chip:hover{background:#f0fdf4;border-color:#bbf7d0}
+.rate-chip-n{font-size:15px;font-weight:800;color:#15803d}
+.rate-chip-l{font-size:10px;color:#374151;font-weight:600;margin-top:2px}
+.rate-chip-range{font-size:9.5px;color:#9ca3af;margin-top:1px}
+.breach-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;text-align:center}
+.breach-n{font-size:22px;font-weight:800;color:#111827}
+.breach-l{font-size:10.5px;color:#9ca3af;margin-top:3px}
+.scenario-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:12px}
+.scenario-row:last-child{border-bottom:none}
+.empty{color:#9ca3af;font-size:12.5px;text-align:center;padding:30px 0}
+.toast{position:fixed;bottom:22px;right:22px;background:#111827;color:#fff;padding:11px 18px;border-radius:9px;font-size:12.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#15803d;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media print{.sb,.topbar,.tabs,#save-row{display:none!important}.content{overflow:visible;padding:0}}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-logo"><div class="sb-logo-icon">🛡</div><div class="sb-logo-text">Niagaros</div></div>
+  <nav class="sb-nav">
+    <div class="ni-item" onclick="dashTo('dashboard')"><span class="ni">⌘</span><span>Dashboard</span></div>
+    <div class="ni-item" onclick="location.href='questionnaire_automation.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🧾</span><span>Questionnaires</span></div>
+    <div class="ni-item" onclick="location.href='trust_center.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🔒</span><span>Trust Center</span></div>
+    <div class="ni-item" onclick="location.href='tprm.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🤝</span><span>Third-Party Risk</span></div>
+    <div class="ni-item" onclick="location.href='audit_management.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">📋</span><span>Audit Management</span></div>
+    <div class="ni-item on" onclick="location.href='calculators.html'"><span class="ni">🧮</span><span>Calculators</span></div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div style="font-size:15px;font-weight:700">Calculators</div>
+    <div class="tp-badge"><span>🧮</span> Real gap data + cited industry benchmarks</div>
+    <div class="acct-wrap">
+      <div class="acct-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
+      <div class="acct-dd" id="acct-dd">
+        <div class="acct-dd-hdr">Switch Account</div>
+        <div id="acct-list"></div>
+      </div>
+    </div>
+    <div class="tp-right">
+      <div class="tp-scan"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
+      <button class="btn-ghost btn-sm" onclick="window.print()">🖨 Export / Print</button>
+      <button class="btn-primary" onclick="loadAll()">↻ Refresh</button>
+      <div class="btn-icon">🔔</div>
+      <div class="avatar">DN</div>
+    </div>
+  </header>
+
+  <div class="content">
+    <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Loading…</span></div>
+
+    <div id="v-content" hidden>
+      <div class="page-hdr">
+        <div class="page-hdr-main">
+          <div class="page-icon">🧮</div>
+          <div>
+            <div class="page-title">Compliance Effort &amp; Cost Calculator</div>
+            <div class="page-sub">See your real open findings, then estimate the effort and cost to close them.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="benchmark-card" style="margin-bottom:16px"></div>
+
+      <div class="tabs">
+        <div class="tab on" id="tab-effort" onclick="switchTab('effort')">Effort Calculator</div>
+        <div class="tab" id="tab-cost" onclick="switchTab('cost')">Cost Calculator</div>
+      </div>
+
+      <div class="calc-layout">
+        <div class="card">
+          <div class="card-title">1. Choose framework</div>
+          <div class="card-note">Real, live findings for this framework from your last scan.</div>
+          <select class="f-sel" id="fw-select" onchange="onFrameworkChange()"></select>
+          <div id="gap-display" style="margin-top:14px"></div>
+
+          <div class="card-title" style="margin-top:20px">2. Your assumptions</div>
+          <div class="card-note" id="assumptions-note">No published benchmark exists for engineering hours per finding — starts at 0, enter your own team's estimate.</div>
+          <label class="f-lbl">Estimated hours to fix one finding, per severity</label>
+          <div class="f-row4">
+            <div><span class="sev-lbl sev-CRITICAL">Critical</span><input class="f-in" type="number" min="0" id="h-critical" value="0" placeholder="0" oninput="recalc()"></div>
+            <div><span class="sev-lbl sev-HIGH">High</span><input class="f-in" type="number" min="0" id="h-high" value="0" placeholder="0" oninput="recalc()"></div>
+            <div><span class="sev-lbl sev-MEDIUM">Medium</span><input class="f-in" type="number" min="0" id="h-medium" value="0" placeholder="0" oninput="recalc()"></div>
+            <div><span class="sev-lbl sev-LOW">Low</span><input class="f-in" type="number" min="0" id="h-low" value="0" placeholder="0" oninput="recalc()"></div>
+          </div>
+          <div id="cost-inputs" hidden>
+            <label class="f-lbl" id="rate-lbl">Blended hourly rate (your team or contractor cost)</label>
+            <input class="f-in" type="number" min="0" id="hourly-rate" value="0" placeholder="0" oninput="recalc()">
+            <div id="rate-comparison" style="margin-top:10px"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" id="result-title">Estimated Effort</div>
+          <div class="card-note">Real gap × your assumptions above.</div>
+          <div class="result-hero">
+            <div class="result-n" id="result-main">—</div>
+            <div class="result-l" id="result-main-l">total hours to close all open findings</div>
+          </div>
+          <div class="result-breakdown" id="result-breakdown"></div>
+          <div class="disclaimer">Estimate only — based on your inputs above.</div>
+          <div id="save-row" style="margin-top:16px;display:flex;gap:8px">
+            <input class="f-in" id="scenario-title" placeholder="Name this scenario (e.g. ISO 27001 Q1 budget)">
+            <button class="btn-primary" onclick="saveScenario()">Save</button>
+          </div>
+          <button class="btn-ghost" id="start-remediation-btn" style="margin-top:10px;width:100%" onclick="startRemediation()" disabled>▶ Start remediation — create an audit from these findings</button>
+          <div class="card-note" style="margin-top:6px">Creates a real Audit Management audit, pre-loaded with these exact open findings, so budget approval leads straight into tracked work.</div>
+        </div>
+      </div>
+
+      <div class="card-title" style="margin-top:22px">Cost of a Data Breach — industry context</div>
+      <div class="card" id="breach-context-card"></div>
+
+      <div class="card-title" style="margin-top:22px">Saved Scenarios</div>
+      <div class="card" id="scenarios-card"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+const CALC_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/calculators';
+const AUDIT_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/audit-management';
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null;
+let allAccounts=[], frameworkOptions=[], scenarios=[], currentGap=null, mode='effort';
+let benchmarks=null, rawSeverityTotals=null;
+
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);}
+function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
+function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
+function switchAccount(id){if(id===currentAccountId)return;currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(a=>`<div class="acct-item" onclick="switchAccount('${a.id}')">🏢 ${esc(a.name)}</div>`).join('');}
+
+async function loadAll(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-content').hidden=true;
+  const token=localStorage.getItem('niagaros_token')||'';
+  const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
+  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}});
+  if(dr.status===401){location.href='/';return;}
+  const dd=await dr.json();
+  if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
+  if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
+  document.getElementById('last-scan').textContent = dd.last_scan_at ? 'Last scan: '+dd.last_scan_at.substring(0,16) : 'No scan yet';
+  if(!currentAccountId){
+    document.getElementById('v-load').innerHTML='<div class="empty">No account found. Please open this page from the dashboard.</div>';
+    return;
+  }
+
+  const r=await fetch(CALC_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
+  const d=await r.json();
+  frameworkOptions=d.framework_options||[]; scenarios=d.scenarios||[];
+  benchmarks=d.benchmarks||null; rawSeverityTotals=d.raw_severity_totals||null;
+  const sel=document.getElementById('fw-select');
+  sel.innerHTML=frameworkOptions.map(f=>`<option value="${f.value}">${esc(f.label)}</option>`).join('');
+
+  if(benchmarks){
+    const rate=document.getElementById('hourly-rate');
+    rate.value=benchmarks.hourly_rate_usd.value;
+    document.getElementById('rate-lbl').innerHTML=`Hourly rate — <a class="cite" href="${benchmarks.hourly_rate_usd.url}" target="_blank">${esc(benchmarks.hourly_rate_usd.source)}</a>`;
+    document.getElementById('assumptions-note').textContent='Enter your own team\'s estimate.';
+    renderRateComparison();
+    renderBenchmarkCard();
+    renderBreachContext();
+  }
+
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-content').hidden=false;
+  await onFrameworkChange();
+  renderScenarios();
+}
+
+function renderRateComparison(){
+  const types=benchmarks.hourly_rate_usd.by_engagement_type||[];
+  document.getElementById('rate-comparison').innerHTML=`
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#9ca3af;margin-bottom:8px">Real rate by engagement type — click to use</div>
+    <div class="rate-chip-row">
+      ${types.map(t=>`
+        <div class="rate-chip" onclick="document.getElementById('hourly-rate').value=${t.value};recalc()">
+          <div class="rate-chip-n">$${t.value}</div>
+          <div class="rate-chip-l">${esc(t.label)}</div>
+          <div class="rate-chip-range">$${t.range[0]}-$${t.range[1]}</div>
+          <a class="cite" style="font-size:9px" href="${t.url}" target="_blank" onclick="event.stopPropagation()">${esc(t.source)}</a>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderBenchmarkCard(){
+  const b=benchmarks.remediation_days;
+  const bySev=(currentGap&&currentGap.by_severity)||{};
+  const measuredRows=[
+    {lbl:'Critical', k:'CRITICAL', main:`<strong>${b.critical_mean_days} days</strong> (${b.critical_internet_facing_days}-${b.critical_host_cloud_days}d by exposure)`},
+    {lbl:'High', k:'HIGH', main:`<strong>≈${b.high_and_critical_combined_days.application_api} days</strong> (${b.high_and_critical_combined_days.device_network}d device/network)`},
+  ];
+  const targetRows=[
+    {lbl:'Medium', k:'MEDIUM', days:b.medium_days},
+    {lbl:'Low', k:'LOW', days:b.low_days},
+  ];
+  document.getElementById('benchmark-card').innerHTML=`
+    <div class="card-title">Real industry benchmark — average time to remediate</div>
+    <div class="bench-subhdr">Measured (real scan data)</div>
+    <div class="table-scroll">
+    <table class="bench-table">
+      <thead><tr><th>Severity</th><th>Your open findings</th><th>Industry average</th></tr></thead>
+      <tbody>
+        ${measuredRows.map(r=>`<tr>
+          <td><span class="sev-lbl sev-${r.k}">${r.lbl}</span></td>
+          <td>${bySev[r.k]||0}</td>
+          <td>${r.main}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div class="bench-src">Source: <a class="cite" href="${b.url}" target="_blank">${esc(b.source)}</a></div>
+
+    <div class="bench-subhdr" style="margin-top:18px">SLA target (goal, not measured)</div>
+    <div class="table-scroll">
+    <table class="bench-table">
+      <thead><tr><th>Severity</th><th>Your open findings</th><th>Target</th></tr></thead>
+      <tbody>
+        ${targetRows.map(r=>`<tr>
+          <td><span class="sev-lbl sev-${r.k}">${r.lbl}</span></td>
+          <td>${bySev[r.k]||0}</td>
+          <td><strong>${r.days} days</strong></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div class="bench-src">Source: <a class="cite" href="${b.medium_low_sla_url}" target="_blank">${esc(b.medium_low_sla_source)}</a></div>`;
+}
+
+function renderBreachContext(){
+  const b=benchmarks.data_breach_cost_usd;
+  const incidents=benchmarks.real_world_incidents||[];
+  const rst=rawSeverityTotals||{};
+  const critHigh=(rst.CRITICAL||0)+(rst.HIGH||0);
+  document.getElementById('breach-context-card').innerHTML=`
+    <div class="breach-grid">
+      <div><div class="breach-n">$${(b.global_average/1e6).toFixed(2)}M</div><div class="breach-l">Global average breach cost</div></div>
+      <div><div class="breach-n">$${(b.us_average/1e6).toFixed(2)}M</div><div class="breach-l">US average breach cost</div></div>
+      <div><div class="breach-n">${b.mean_days_to_identify_and_contain}</div><div class="breach-l">Avg. days to identify &amp; contain</div></div>
+    </div>
+    <div class="bench-src" style="margin-top:14px">Source: <a class="cite" href="${b.url}" target="_blank">${esc(b.source)}</a></div>
+    <div class="disclaimer" style="margin-top:10px">Your account has <strong>${critHigh} open critical/high findings</strong> — shown for context, not multiplied into the figures above.</div>
+    <div class="card-title" style="margin-top:20px;font-size:12px">Real-world examples</div>
+    ${incidents.map(inc=>`
+      <div style="background:#f9fafb;border-radius:10px;padding:12px 14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <strong style="font-size:12.5px">${esc(inc.name)}</strong>
+          <span class="chip warn">${esc(inc.category)}</span>
+        </div>
+        <div style="font-size:12px;color:#374151;margin-top:6px;line-height:1.55">${esc(inc.summary)}</div>
+        <div style="font-size:12px;margin-top:8px">
+          <strong style="color:${inc.cost_usd?'#dc2626':'#374151'}">${inc.cost_usd?'$'+(inc.cost_usd/1e6).toFixed(0)+'M':esc(inc.cost_label)}</strong>${inc.cost_usd?' — '+esc(inc.cost_label):''}
+          <span style="color:#9ca3af"> · Source: </span><a class="cite" href="${inc.url}" target="_blank">${esc(inc.source)}</a>
+        </div>
+      </div>`).join('')}`;
+}
+
+function switchTab(m){
+  mode=m;
+  document.getElementById('tab-effort').classList.toggle('on', m==='effort');
+  document.getElementById('tab-cost').classList.toggle('on', m==='cost');
+  document.getElementById('cost-inputs').hidden = m!=='cost';
+  document.getElementById('result-title').textContent = m==='cost' ? 'Estimated Cost' : 'Estimated Effort';
+  recalc();
+}
+
+async function onFrameworkChange(){
+  const fw=document.getElementById('fw-select').value;
+  if(!fw){currentGap={total:0,by_severity:{}};renderGap();recalc();return;}
+  const r=await fetch(CALC_API+'?gap_data='+encodeURIComponent(currentAccountId)+'&framework='+encodeURIComponent(fw));
+  const data=await r.json();
+  // Defensive fallback: never let a failed/unexpected API response (wrong
+  // shape, an {error:...} body) crash the page — degrade to an empty,
+  // honestly-zero gap instead of a blank, stuck screen.
+  currentGap = (data && data.by_severity) ? data : {total:0, by_severity:{}};
+  renderGap();
+  recalc();
+  if(benchmarks) renderBenchmarkCard();
+}
+
+function renderGap(){
+  const colors={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
+  const bySev=(currentGap&&currentGap.by_severity)||{};
+  const rows=['CRITICAL','HIGH','MEDIUM','LOW'].map(s=>`
+    <div class="gap-row"><div class="gap-dot" style="background:${colors[s]}"></div>${s.charAt(0)+s.slice(1).toLowerCase()} findings open<span class="gap-n" style="color:${colors[s]}">${bySev[s]||0}</span></div>
+  `).join('');
+  document.getElementById('gap-display').innerHTML=`
+    <div style="font-size:11px;color:#9ca3af;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.03em">Real current gap — ${(currentGap&&currentGap.total)||0} open finding(s)</div>
+    ${rows}`;
+  const btn=document.getElementById('start-remediation-btn');
+  const fw=document.getElementById('fw-select').value;
+  btn.disabled = !fw || !currentGap || !currentGap.total;
+}
+
+function recalc(){
+  if(!currentGap)return;
+  const hrs={CRITICAL:+document.getElementById('h-critical').value||0, HIGH:+document.getElementById('h-high').value||0,
+             MEDIUM:+document.getElementById('h-medium').value||0, LOW:+document.getElementById('h-low').value||0};
+  const rate=+document.getElementById('hourly-rate').value||0;
+  let totalHours=0; const bySev={};
+  ['CRITICAL','HIGH','MEDIUM','LOW'].forEach(s=>{
+    const h=(currentGap.by_severity[s]||0)*hrs[s];
+    bySev[s]=h; totalHours+=h;
+  });
+  const totalCost=totalHours*rate;
+
+  if(mode==='cost'){
+    document.getElementById('result-main').textContent='$'+totalCost.toLocaleString();
+    document.getElementById('result-main-l').textContent='estimated total cost to close all open findings';
+  } else {
+    document.getElementById('result-main').textContent=totalHours.toLocaleString()+'h';
+    document.getElementById('result-main-l').textContent='estimated hours to close all open findings (≈'+Math.ceil(totalHours/8)+' person-days)';
+  }
+  document.getElementById('result-breakdown').innerHTML=['CRITICAL','HIGH','MEDIUM','LOW'].map(s=>{
+    const count=currentGap.by_severity[s]||0;
+    return `<div class="rb-card"><div class="rb-n">${mode==='cost'?'$'+(bySev[s]*rate).toLocaleString():bySev[s]+'h'}</div><div class="rb-l">${s.charAt(0)+s.slice(1).toLowerCase()}</div><div class="rb-sub">${count} finding${count===1?'':'s'} × ${hrs[s]}h</div></div>`;
+  }).join('');
+
+  window._lastResult={total_hours:totalHours,total_cost:totalCost,by_severity_hours:bySev,assumptions:{...hrs,hourly_rate:rate}};
+}
+
+async function saveScenario(){
+  const title=document.getElementById('scenario-title').value.trim();
+  if(!title){showToast('Name this scenario first');return;}
+  const r=await fetch(CALC_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    action:'save_scenario', cloud_account_id:currentAccountId, calculator_type:mode==='cost'?'compliance_cost':'compliance_effort',
+    title, framework:document.getElementById('fw-select').value, gap_snapshot:currentGap,
+    assumptions:window._lastResult.assumptions,
+    results:{total_hours:window._lastResult.total_hours,total_cost:window._lastResult.total_cost},
+  })});
+  const d=await r.json();
+  if(!r.ok){showToast(d.error||'Failed to save');return;}
+  document.getElementById('scenario-title').value='';
+  showToast('Scenario saved');
+  const lr=await fetch(CALC_API+'?list_scenarios='+encodeURIComponent(currentAccountId));
+  scenarios=(await lr.json()).scenarios||[];
+  renderScenarios();
+}
+
+async function startRemediation(){
+  const fw=document.getElementById('fw-select').value;
+  if(!fw||!currentGap||!currentGap.total)return;
+  const fwLabel=(frameworkOptions.find(f=>f.value===fw)||{}).label||fw;
+  const r=window._lastResult||{};
+  const btn=document.getElementById('start-remediation-btn');
+  btn.disabled=true; btn.textContent='Creating audit…';
+  const resp=await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    action:'create_audit', cloud_account_id:currentAccountId,
+    title:`${fwLabel} remediation (from Compliance Calculator)`,
+    audit_type:'internal', framework:fw,
+    scope_description:`Auto-created from the Compliance Calculator on ${new Date().toLocaleDateString()}. `
+      +`Real gap at creation time: ${currentGap.total} open finding(s). `
+      +`Estimated ${Math.round(r.total_hours||0)}h`+(r.total_cost?` / $${Math.round(r.total_cost).toLocaleString()}`:'')
+      +` to close, based on the assumptions entered in the calculator (not a verified benchmark for the effort figure).`,
+  })});
+  const d=await resp.json();
+  if(!resp.ok){showToast(d.error||'Failed to create audit');btn.disabled=false;btn.textContent='▶ Start remediation — create an audit from these findings';return;}
+  showToast(`Audit created with ${d.findings_seeded||0} real finding(s) — opening…`);
+  location.href='audit_management.html?account_id='+encodeURIComponent(currentAccountId)+'&open_audit='+encodeURIComponent(d.id);
+}
+
+function renderScenarios(){
+  document.getElementById('scenarios-card').innerHTML = scenarios.length ? scenarios.map(s=>`
+    <div class="scenario-row">
+      <div style="flex:1">
+        <strong>${esc(s.title)}</strong> — ${esc(s.framework_label||'')}
+        <div style="color:#9ca3af;font-size:11px;margin-top:2px">${s.results.total_hours}h · $${(s.results.total_cost||0).toLocaleString()} · ${new Date(s.created_at).toLocaleDateString()}</div>
+      </div>
+      <button class="btn-ghost btn-sm" onclick="deleteScenario('${s.id}')">Delete</button>
+    </div>`).join('') : '<div class="empty">No saved scenarios yet. Calculate above, then click "Save".</div>';
+}
+async function deleteScenario(id){
+  await fetch(CALC_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete_scenario',scenario_id:id})});
+  scenarios=scenarios.filter(s=>s.id!==id);
+  renderScenarios();
+  showToast('Scenario deleted');
+}
+
+loadAll();
+</script>
+</body>
+</html>

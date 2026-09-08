@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timezone
+
 import boto3
 import psycopg2
 
@@ -7,6 +9,40 @@ CORS = {
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
+
+# Real scan cadence: EventBridge rule "cspm-weekly-orchestrator" runs
+# cron(0 18 ? * MON *) — every Monday. 10 days gives room for one run to
+# land a bit late before data is flagged stale, without waiting almost a
+# full extra week (this is the same "actualiteit" concept the Trust
+# Center's per-framework last_verified and the Questionnaire Automation
+# answer-staleness check already use, generalized here to the main
+# dashboard and every framework page that reads this same API).
+STALE_THRESHOLD_DAYS = 10
+
+
+# Mapped-compliance-framework names (findings.framework values written by
+# the framework mapper Lambdas). The Issues list already excludes these by
+# default so the same real misconfiguration doesn't show up as 20+ near-
+# duplicate "Fix" cards, one per framework that happens to also flag it
+# (see FRAMEWORK_SERVICES in niagaros-dashboard.html). The severity-
+# breakdown cards (section 4 below) summed every framework's own copy of
+# the same finding instead, so "High Severity: 197" and the Issues list's
+# actual 6 real HIGH/FAIL issues silently disagreed. Excluding the same
+# framework names here keeps both counts consistent.
+MAPPED_FRAMEWORK_NAMES = (
+    'ISO 27001:2022', 'NIST CSF v2.0', 'GDPR', 'SOC2', 'PCI DSS v4.0', 'NIS2', 'HIPAA',
+    'NIST 800-53 Rev 5', 'BSI-C5', 'CSA CCM 4.0', 'FedRAMP Moderate Rev 4', 'ISO 42001',
+    'ISO 27017', 'AWS FTR', 'MVSP', 'TISAX', 'HITRUST CSF', 'DORA', 'CRI Profile',
+    'EU AI Act', 'NIST AI RMF', 'ISO 27701', 'ISO 27018', 'Microsoft SSPA',
+    'CIS Controls v8.1', '23 NYCRR 500 (NYDFS)', 'NIST Privacy Framework',
+)
+
+
+def _is_stale(last_scan_at):
+    if not last_scan_at:
+        return None  # never scanned — not "stale", just unknown
+    age_days = (datetime.now(timezone.utc) - last_scan_at).total_seconds() / 86400
+    return age_days > STALE_THRESHOLD_DAYS
 
 
 def get_db_connection():
@@ -102,6 +138,7 @@ def lambda_handler(event, context):
         "services": [],
         "by_severity": {},
         "findings": [],
+        "dr_test_results": [],
         "_debug": {},
     }
 
@@ -175,9 +212,14 @@ def lambda_handler(event, context):
                 """, (account_id,))
                 row = cur.fetchone()
                 if row:
-                    data["last_scan_at"]   = str(row[0]) if row[0] else "Unknown"
-                    data["account_name"]   = row[1] if row[1] else account_id[:8]
-                    data["aws_account_id"] = row[2] if row[2] else ""
+                    last_scan_at = row[0]
+                    if last_scan_at and last_scan_at.tzinfo is None:
+                        last_scan_at = last_scan_at.replace(tzinfo=timezone.utc)
+                    data["last_scan_at"]        = str(row[0]) if row[0] else "Unknown"
+                    data["account_name"]        = row[1] if row[1] else account_id[:8]
+                    data["aws_account_id"]      = row[2] if row[2] else ""
+                    data["is_stale"]            = _is_stale(last_scan_at)
+                    data["stale_threshold_days"] = STALE_THRESHOLD_DAYS
             except Exception as e:
                 data["_debug"]["meta"] = str(e)
                 conn.rollback()
@@ -190,25 +232,59 @@ def lambda_handler(event, context):
                         COUNT(*) AS total,
                         COUNT(*) FILTER (WHERE result = 'PASS') AS passed,
                         COUNT(*) FILTER (WHERE result = 'FAIL') AS failed,
-                        ROUND(COUNT(*) FILTER (WHERE result = 'PASS') * 100.0 / COUNT(*), 1) AS score
+                        ROUND(COUNT(*) FILTER (WHERE result = 'PASS') * 100.0 / COUNT(*), 1) AS score,
+                        MAX(detected_at) AS last_verified
                     FROM (
                         SELECT
                             CASE
-                                WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
-                                WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
-                                WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
-                                WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
-                                WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
-                                WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
-                                WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
-                                WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
+                                -- Mapped-framework findings must resolve to their own
+                                -- framework FIRST — otherwise any framework's CloudWatch/
+                                -- IAM/S3/etc-based control gets swallowed into the generic
+                                -- raw-scan bucket below just because of its resource_type
+                                -- or check_id prefix.
                                 WHEN f.framework = 'ISO 27001:2022' THEN 'ISO27001'
                                 WHEN f.framework = 'NIST CSF v2.0'  THEN 'NIST'
                                 WHEN f.framework = 'GDPR'            THEN 'GDPR'
                                 WHEN f.framework = 'SOC2'            THEN 'SOC2'
+                                WHEN f.framework = 'PCI DSS v4.0'   THEN 'PCIDSS'
+                                WHEN f.framework = 'NIS2'            THEN 'NIS2'
+                                WHEN f.framework = 'HIPAA'           THEN 'HIPAA'
+                                WHEN f.framework = 'NIST 800-53 Rev 5' THEN 'NIST80053'
+                                WHEN f.framework = 'BSI-C5'          THEN 'BSIC5'
+                                WHEN f.framework = 'CSA CCM 4.0'     THEN 'CSACCM'
+                                WHEN f.framework = 'FedRAMP Moderate Rev 4' THEN 'FEDRAMP'
+                                WHEN f.framework = 'ISO 42001'       THEN 'ISO42001'
+                                WHEN f.framework = 'ISO 27017'       THEN 'ISO27017'
+                                WHEN f.framework = 'AWS FTR'         THEN 'AWSFTR'
+                                WHEN f.framework = 'MVSP'            THEN 'MVSP'
+                                WHEN f.framework = 'TISAX'           THEN 'TISAX'
+                                WHEN f.framework = 'HITRUST CSF'     THEN 'HITRUST'
+                                WHEN f.framework = 'DORA'            THEN 'DORA'
+                                WHEN f.framework = 'CRI Profile'     THEN 'CRIPROFILE'
+                                WHEN f.framework = 'EU AI Act'       THEN 'EUAIACT'
+                                WHEN f.framework = 'NIST AI RMF'     THEN 'NISTAIRMF'
+                                WHEN f.framework = 'ISO 27701'       THEN 'ISO27701'
+                                WHEN f.framework = 'ISO 27018'       THEN 'ISO27018'
+                                WHEN f.framework = 'Microsoft SSPA'  THEN 'SSPA'
+                            WHEN f.framework = 'CIS Controls v8.1' THEN 'CISCTRL'
+                            WHEN f.framework = '23 NYCRR 500 (NYDFS)' THEN 'NYDFS'
+                            WHEN f.framework = 'NIST Privacy Framework' THEN 'NISTPRIV'
+                                -- Raw CIS/FSBP scan findings (no mapped framework above)
+                                -- fall back to service inferred from check_id/resource_type.
+                                WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
+                                WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
+                                WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
+                                WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
+                                WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
+                                WHEN f.check_id LIKE 'DynamoDB%%'   THEN 'RDS'
+                                WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
+                                WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
+                                WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
+                                WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
                                 ELSE 'Other'
                             END AS service,
-                            f.result
+                            f.result,
+                            f.detected_at
                         FROM findings f
                         JOIN resources r ON f.resource_id = r.id
                         WHERE r.cloud_account_id = %s
@@ -219,30 +295,92 @@ def lambda_handler(event, context):
                         WHEN 'CloudWatch' THEN 1
                         WHEN 'S3'         THEN 2
                         WHEN 'IAM'        THEN 3
-                        WHEN 'KMS'        THEN 4
-                        WHEN 'Cognito'    THEN 5
-                        WHEN 'GitHub'     THEN 6
-                        WHEN 'ISO27001'   THEN 7
-                        WHEN 'NIST'       THEN 8
-                        WHEN 'GDPR'       THEN 9
-                        WHEN 'SOC2'       THEN 10
-                        ELSE 11
+                        WHEN 'RDS'        THEN 4
+                        WHEN 'KMS'        THEN 5
+                        WHEN 'Cognito'    THEN 6
+                        WHEN 'GitHub'     THEN 7
+                        WHEN 'ISO27001'   THEN 8
+                        WHEN 'NIST'       THEN 9
+                        WHEN 'GDPR'       THEN 10
+                        WHEN 'SOC2'       THEN 11
+                        WHEN 'PCIDSS'     THEN 12
+                        WHEN 'NIS2'       THEN 13
+                        WHEN 'HIPAA'      THEN 14
+                        WHEN 'NIST80053'  THEN 15
+                        WHEN 'BSIC5'      THEN 16
+                        WHEN 'CSACCM'     THEN 17
+                        WHEN 'FEDRAMP'    THEN 18
+                        WHEN 'ISO42001'   THEN 19
+                        WHEN 'ISO27017'   THEN 20
+                        WHEN 'AWSFTR'     THEN 21
+                        WHEN 'MVSP'       THEN 22
+                        WHEN 'TISAX'      THEN 23
+                        WHEN 'HITRUST'    THEN 24
+                        WHEN 'DORA'       THEN 25
+                        WHEN 'CRIPROFILE' THEN 26
+                        WHEN 'EUAIACT'    THEN 27
+                        WHEN 'NISTAIRMF'  THEN 28
+                        WHEN 'ISO27701'   THEN 29
+                        WHEN 'ISO27018'   THEN 30
+                        WHEN 'SSPA'       THEN 31
+                        ELSE 32
                     END
                 """, (account_id,))
                 for row in cur.fetchall():
+                    last_verified = row[5]
+                    if last_verified and last_verified.tzinfo is None:
+                        last_verified = last_verified.replace(tzinfo=timezone.utc)
                     entry = {
-                        "service": row[0],
-                        "total":   row[1],
-                        "passed":  row[2],
-                        "failed":  row[3],
-                        "score":   float(row[4]),
+                        "service":      row[0],
+                        "total":        row[1],
+                        "passed":       row[2],
+                        "failed":       row[3],
+                        "score":        float(row[4]),
+                        "last_verified": row[5].isoformat() if row[5] else None,
+                        "is_stale":     _is_stale(last_verified),
                     }
                     if row[0] == "TOTAL":
-                        data["total"] = entry
+                        pass  # replaced below by the deduplicated headline total
                     else:
                         data["services"].append(entry)
             except Exception as e:
                 data["_debug"]["services"] = str(e)
+                conn.rollback()
+
+            # ── 3b. Headline score — deduplicated, like Wiz/Vanta/AWS Security
+            # Hub show it: one real misconfiguration counted once, not once per
+            # compliance framework that also happens to cite it. The per-
+            # framework cards above (data["services"]) intentionally keep
+            # every framework's own citation — that's the correct, standard
+            # way to show "NIST 800-53: 94%" next to "PCI DSS: 95%" separately.
+            # The headline "X of Y checks passing" gauge is a different number
+            # with a different job (overall real posture), so it uses the same
+            # raw-only scope as the severity cards and Issues list instead of
+            # summing every framework's duplicate copy of the same finding.
+            try:
+                cur.execute("""
+                    SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS'), MAX(f.detected_at)
+                    FROM findings f
+                    JOIN resources r ON f.resource_id = r.id
+                    WHERE r.cloud_account_id = %s
+                      AND (f.framework IS NULL OR f.framework NOT IN %s)
+                """, (account_id, MAPPED_FRAMEWORK_NAMES))
+                total, passed, last_verified = cur.fetchone()
+                total = total or 0
+                passed = passed or 0
+                if last_verified and last_verified.tzinfo is None:
+                    last_verified = last_verified.replace(tzinfo=timezone.utc)
+                data["total"] = {
+                    "service":       "TOTAL",
+                    "total":         total,
+                    "passed":        passed,
+                    "failed":        total - passed,
+                    "score":         round(passed * 100.0 / total, 1) if total else 0,
+                    "last_verified": last_verified.isoformat() if last_verified else None,
+                    "is_stale":      _is_stale(last_verified),
+                }
+            except Exception as e:
+                data["_debug"]["total"] = str(e)
                 conn.rollback()
 
             # ── 4. Severity breakdown ────────────────────────────────
@@ -255,8 +393,9 @@ def lambda_handler(event, context):
                     FROM findings f
                     JOIN resources r ON f.resource_id = r.id
                     WHERE r.cloud_account_id = %s
+                      AND (f.framework IS NULL OR f.framework NOT IN %s)
                     GROUP BY UPPER(f.severity)
-                """, (account_id,))
+                """, (account_id, MAPPED_FRAMEWORK_NAMES))
                 data["by_severity"] = {
                     row[0]: {"total": row[1], "passed": row[2], "failed": row[3]}
                     for row in cur.fetchall()
@@ -271,27 +410,56 @@ def lambda_handler(event, context):
                     SELECT
                         f.check_id,
                         CASE
-                            WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
-                            WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
-                            WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
-                            WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
-                            WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
-                            WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
-                            WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
-                            WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
+                            -- Mapped-framework findings resolve to their own framework
+                            -- first (see the identical fix in the per-service query above).
                             WHEN f.framework = 'ISO 27001:2022' THEN 'ISO27001'
                             WHEN f.framework = 'NIST CSF v2.0'  THEN 'NIST'
                             WHEN f.framework = 'GDPR'            THEN 'GDPR'
                             WHEN f.framework = 'SOC2'            THEN 'SOC2'
+                            WHEN f.framework = 'PCI DSS v4.0'   THEN 'PCIDSS'
+                            WHEN f.framework = 'NIS2'            THEN 'NIS2'
+                            WHEN f.framework = 'HIPAA'           THEN 'HIPAA'
+                            WHEN f.framework = 'NIST 800-53 Rev 5' THEN 'NIST80053'
+                            WHEN f.framework = 'BSI-C5'          THEN 'BSIC5'
+                            WHEN f.framework = 'CSA CCM 4.0'     THEN 'CSACCM'
+                            WHEN f.framework = 'FedRAMP Moderate Rev 4' THEN 'FEDRAMP'
+                            WHEN f.framework = 'ISO 42001'       THEN 'ISO42001'
+                            WHEN f.framework = 'ISO 27017'       THEN 'ISO27017'
+                            WHEN f.framework = 'AWS FTR'         THEN 'AWSFTR'
+                            WHEN f.framework = 'MVSP'            THEN 'MVSP'
+                            WHEN f.framework = 'TISAX'           THEN 'TISAX'
+                            WHEN f.framework = 'HITRUST CSF'     THEN 'HITRUST'
+                            WHEN f.framework = 'DORA'            THEN 'DORA'
+                            WHEN f.framework = 'CRI Profile'     THEN 'CRIPROFILE'
+                            WHEN f.framework = 'EU AI Act'       THEN 'EUAIACT'
+                            WHEN f.framework = 'NIST AI RMF'     THEN 'NISTAIRMF'
+                            WHEN f.framework = 'ISO 27701'       THEN 'ISO27701'
+                            WHEN f.framework = 'ISO 27018'       THEN 'ISO27018'
+                            WHEN f.framework = 'Microsoft SSPA'  THEN 'SSPA'
+                            WHEN f.framework = 'CIS Controls v8.1' THEN 'CISCTRL'
+                            WHEN f.framework = '23 NYCRR 500 (NYDFS)' THEN 'NYDFS'
+                            WHEN f.framework = 'NIST Privacy Framework' THEN 'NISTPRIV'
+                            WHEN f.check_id LIKE 'CloudWatch%%' THEN 'CloudWatch'
+                            WHEN r.resource_type IN ('cloudwatch_trail','cloudwatch_account') THEN 'CloudWatch'
+                            WHEN f.check_id LIKE 'IAM%%'        THEN 'IAM'
+                            WHEN f.check_id LIKE 'S3%%'         THEN 'S3'
+                            WHEN f.check_id LIKE 'RDS%%'        THEN 'RDS'
+                            WHEN f.check_id LIKE 'DynamoDB%%'   THEN 'RDS'
+                            WHEN f.check_id LIKE 'KMS%%'        THEN 'KMS'
+                            WHEN f.check_id LIKE 'Cognito%%'    THEN 'Cognito'
+                            WHEN f.check_id LIKE 'github%%'     THEN 'GitHub'
+                            WHEN r.resource_type IN ('github_repository','github_organization') THEN 'GitHub'
                             ELSE r.resource_type
                         END AS service,
                         UPPER(f.severity) AS severity,
                         f.result,
                         f.title,
+                        f.description,
                         f.remediation,
                         r.resource_name,
                         r.resource_id,
-                        f.framework
+                        f.framework,
+                        f.details
                     FROM findings f
                     JOIN resources r ON f.resource_id = r.id
                     WHERE r.cloud_account_id = %s
@@ -312,15 +480,144 @@ def lambda_handler(event, context):
                         "severity":      row[2],
                         "result":        row[3],
                         "title":         row[4] or row[0],
-                        "remediation":   row[5] or "",
-                        "resource_name": row[6] or "",
-                        "resource_id":   row[7] or "",
-                        "framework":     row[8] or "",
+                        "description":   row[5] or "",
+                        "remediation":   row[6] or "",
+                        "resource_name": row[7] or "",
+                        "resource_id":   row[8] or "",
+                        "framework":     row[9] or "",
+                        "details":       row[10] or "",
                     }
                     for row in cur.fetchall()
                 ]
             except Exception as e:
                 data["_debug"]["findings"] = str(e)
+                conn.rollback()
+
+            # ── 6. Cross-compliance heatmap ──────────────────────────
+            try:
+                COMPLIANCE_FWS = [
+                    ("ISO 27001:2022",     "ISO27001",  "ISO 27001:2022"),
+                    ("NIST CSF v2.0",      "NIST",      "NIST CSF v2.0"),
+                    ("GDPR",               "GDPR",      "GDPR"),
+                    ("SOC2",               "SOC2",      "SOC 2"),
+                    ("PCI DSS v4.0",       "PCIDSS",    "PCI DSS v4.0"),
+                    ("NIS2",               "NIS2",      "NIS2"),
+                    ("HIPAA",              "HIPAA",     "HIPAA"),
+                    ("NIST 800-53 Rev 5",  "NIST80053", "NIST SP 800-53"),
+                    ("BSI-C5",             "BSIC5",     "BSI C5"),
+                    ("CSA CCM 4.0",        "CSACCM",    "CSA CCM 4.0"),
+                    ("FedRAMP Moderate Rev 4", "FEDRAMP", "FedRAMP Moderate"),
+                    ("ISO 42001",          "ISO42001",  "ISO 42001:2023"),
+                    ("ISO 27017",          "ISO27017",  "ISO 27017:2015"),
+                    ("AWS FTR",            "AWSFTR",    "AWS Foundational Technical Review"),
+                    ("MVSP",               "MVSP",      "Minimum Viable Secure Product"),
+                    ("TISAX",              "TISAX",     "TISAX (VDA ISA)"),
+                    ("HITRUST CSF",        "HITRUST",   "HITRUST CSF"),
+                    ("DORA",               "DORA",      "DORA"),
+                    ("CRI Profile",        "CRIPROFILE","CRI Profile"),
+                    ("EU AI Act",          "EUAIACT",   "EU AI Act"),
+                    ("NIST AI RMF",        "NISTAIRMF", "NIST AI RMF"),
+                    ("ISO 27701",          "ISO27701",  "ISO 27701"),
+                    ("ISO 27018",          "ISO27018",  "ISO 27018"),
+                    ("Microsoft SSPA",     "SSPA",      "Microsoft SSPA"),
+                ]
+                fw_name_to_id    = {fw[0]: fw[1] for fw in COMPLIANCE_FWS}
+                fw_id_to_label   = {fw[1]: fw[2] for fw in COMPLIANCE_FWS}
+                fw_names_tuple   = tuple(fw[0] for fw in COMPLIANCE_FWS)
+
+                cur.execute("""
+                    SELECT
+                        CASE
+                            WHEN r.resource_type LIKE 'iam%%'       OR r.resource_type LIKE 'cognito%%'
+                                THEN 'Access & Identity'
+                            WHEN r.resource_type LIKE 'kms%%'
+                                THEN 'Cryptography & Keys'
+                            WHEN r.resource_type LIKE 'cloudwatch%%'
+                                THEN 'Logging & Monitoring'
+                            WHEN r.resource_type LIKE 's3%%'
+                                THEN 'Data & Storage'
+                            ELSE 'Other Controls'
+                        END                                         AS domain,
+                        f.framework                                  AS fw_name,
+                        COUNT(*)                                     AS total,
+                        COUNT(*) FILTER (WHERE f.result = 'PASS')   AS passed
+                    FROM findings f
+                    JOIN resources r ON f.resource_id = r.id
+                    WHERE r.cloud_account_id = %s
+                      AND f.framework IN %s
+                    GROUP BY 1, 2
+                """, (account_id, fw_names_tuple))
+
+                domain_data = {}
+                for domain, fw_name, total, passed in cur.fetchall():
+                    fw_id = fw_name_to_id.get(fw_name)
+                    if not fw_id:
+                        continue
+                    if domain not in domain_data:
+                        domain_data[domain] = {}
+                    domain_data[domain][fw_id] = {"total": int(total), "passed": int(passed)}
+
+                active_fws = [
+                    {"id": fw[1], "label": fw[2]}
+                    for fw in COMPLIANCE_FWS
+                    if any(fw[1] in d for d in domain_data.values())
+                ]
+
+                DOMAIN_ORDER = [
+                    "Access & Identity",
+                    "Cryptography & Keys",
+                    "Logging & Monitoring",
+                    "Data & Storage",
+                    "Other Controls",
+                ]
+                domains_out = []
+                for domain in DOMAIN_ORDER:
+                    if domain not in domain_data:
+                        continue
+                    scores = []
+                    for fw in active_fws:
+                        d = domain_data[domain].get(fw["id"])
+                        if d and d["total"] > 0:
+                            scores.append({
+                                "score":  round(d["passed"] / d["total"] * 100),
+                                "passed": d["passed"],
+                                "total":  d["total"],
+                            })
+                        else:
+                            scores.append(None)
+                    if any(s is not None for s in scores):
+                        domains_out.append({"label": domain, "scores": scores})
+
+                data["cross_compliance"] = {
+                    "frameworks": active_fws,
+                    "domains":    domains_out,
+                }
+            except Exception as e:
+                data["_debug"]["cross_compliance"] = str(e)
+                conn.rollback()
+
+            # ── 7. Disaster-recovery restore-test results ────────────
+            try:
+                cur.execute("""
+                    SELECT resource_type, resource_name, rpo_seconds, rto_seconds,
+                           data_integrity_match, tested_at
+                    FROM dr_test_results
+                    WHERE cloud_account_id = %s
+                    ORDER BY tested_at DESC
+                """, (account_id,))
+                data["dr_test_results"] = [
+                    {
+                        "resource_type":        row[0],
+                        "resource_name":        row[1],
+                        "rpo_seconds":          row[2],
+                        "rto_seconds":          row[3],
+                        "data_integrity_match": row[4],
+                        "tested_at":            str(row[5]) if row[5] else None,
+                    }
+                    for row in cur.fetchall()
+                ]
+            except Exception as e:
+                data["_debug"]["dr_test_results"] = str(e)
                 conn.rollback()
 
     except Exception as e:

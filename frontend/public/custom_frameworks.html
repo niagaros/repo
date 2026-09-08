@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Custom Frameworks</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:flex;font-size:14px}
+.sb{width:220px;background:#0d0f14;display:flex;flex-direction:column;height:100vh;flex-shrink:0;transition:width .22s ease;overflow:hidden}
+.sb.col{width:54px}
+.sb.col .sb-logo-text,.sb.col .nt,.sb.col .nb,.sb.col .da,.sb.col .nl{display:none}
+.sb.col .ni-item{justify-content:center;padding:9px 0;margin:1px 6px}
+.sb.col .drop-items{display:none!important}
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e;flex-shrink:0}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff;white-space:nowrap}
+.sb-nav{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px 0}
+.nl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#374151;padding:12px 14px 4px;white-space:nowrap}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px;transition:all .12s;white-space:nowrap}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e1428;color:#fff}
+.ni-item.on .ni{color:#ef4444}
+.ni{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.nt{flex:1}.nb{background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:auto;flex-shrink:0}
+.da{margin-left:auto;font-size:11px;transition:transform .2s;flex-shrink:0;color:#6b7280}
+.da.open{transform:rotate(180deg)}
+.drop-items{overflow:hidden;max-height:0;transition:max-height .28s ease}
+.drop-items.open{max-height:1300px}
+.di{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 40px;font-size:12px;font-weight:500;color:#6b7280;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .12s;white-space:nowrap}
+.di:hover{background:#161b27;color:#e5e7eb}
+.di.on{color:#4f46e5;font-weight:600}
+.di-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:#374151}
+.di.on .di-dot{background:#4f46e5}
+.sb-footer{border-top:1px solid #1a1f2e;padding:6px 0;flex-shrink:0}
+.col-btn{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12px;color:#6b7280;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .12s;white-space:nowrap}
+.col-btn:hover{background:#161b27;color:#e5e7eb}
+.col-ico{font-size:13px;transition:transform .22s}
+.sb.col .col-ico{transform:rotate(180deg)}
+.sb.col .col-btn{justify-content:center;padding:9px 0}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 22px;gap:10px;flex-shrink:0}
+.tp-badge{display:flex;align-items:center;gap:7px;background:#eef2ff;border:1px solid #c7d2fe;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;color:#4f46e5}
+.tp-right{display:flex;align-items:center;gap:9px;margin-left:auto}
+.btn-primary{background:#4f46e5;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:filter .12s;display:flex;align-items:center;gap:5px}
+.btn-primary:hover{filter:brightness(0.92)}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .12s;display:flex;align-items:center;gap:5px}
+.btn-ghost:hover{background:#f9fafb;border-color:#d1d5db}
+.btn-danger-txt{background:none;border:none;color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;padding:4px 8px;border-radius:5px}
+.btn-danger-txt:hover{background:#fef2f2}
+.avatar{width:34px;height:34px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0}
+.acct-wrap{position:relative}
+.acct-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer;white-space:nowrap}
+.acct-chip:hover{background:#f3f4f6}
+.acct-dd{position:absolute;top:calc(100% + 6px);left:0;min-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12);z-index:999;overflow:hidden;display:none}
+.acct-dd.open{display:block}
+.acct-dd-hdr{padding:9px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;border-bottom:1px solid #f3f4f6}
+.acct-item{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:12.5px;font-weight:500;color:#374151;cursor:pointer;transition:background .1s}
+.acct-item:hover{background:#f9fafb}
+.acct-item.sel{background:#f3f4f6;font-weight:700;color:#111827}
+.acct-item-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-item-id{font-size:10px;font-family:monospace;color:#9ca3af;flex-shrink:0}
+.acct-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.content{flex:1;overflow-y:auto;padding:20px 22px}
+[hidden]{display:none!important}
+@keyframes up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.page-title{font-size:15px;font-weight:700}
+.page-sub{font-size:12px;color:#9ca3af;margin-top:3px}
+.empty-state{background:#fff;border:1px dashed #d1d5db;border-radius:14px;padding:48px 24px;text-align:center;color:#6b7280}
+.empty-state .es-ic{font-size:30px;margin-bottom:10px}
+.empty-state .es-t{font-size:14px;font-weight:700;color:#111827;margin-bottom:5px}
+.empty-state .es-d{font-size:12px;color:#9ca3af;margin-bottom:16px}
+.fw-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;margin-bottom:18px;overflow:hidden;animation:up .28s ease both}
+.fw-hdr{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid #f3f4f6;flex-wrap:wrap}
+.fw-name{font-size:14px;font-weight:700;flex:1;min-width:160px}
+.fw-score-pill{font-size:12px;font-weight:700;padding:4px 11px;border-radius:20px}
+.fw-score-ok{background:#eef2ff;color:#4f46e5}
+.fw-score-bad{background:#fef2f2;color:#ef4444}
+.fw-score-none{background:#f3f4f6;color:#9ca3af}
+.fw-actions{display:flex;gap:8px}
+.fw-body{padding:16px 18px}
+.ctrl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.ctrl-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:13px 14px}
+.ctrl-card.fail{border-left:3px solid #ef4444}
+.ctrl-card.pass{border-left:3px solid #4f46e5}
+.ctrl-card.notrun{border-left:3px solid #d1d5db}
+.cc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.cc-title{font-size:12.5px;font-weight:700;color:#111827}
+.cc-status{font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;flex-shrink:0;white-space:nowrap}
+.cs-fail{background:#fef2f2;color:#ef4444}.cs-pass{background:#eef2ff;color:#4f46e5}.cs-notrun{background:#f3f4f6;color:#9ca3af}
+.cc-desc{font-size:11px;color:#9ca3af;line-height:1.5;margin-bottom:9px}
+.cc-checks{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.chk-tag{background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:600;font-family:monospace}
+.cc-foot{display:flex;align-items:center;justify-content:space-between}
+.sev-pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}
+.p-CRITICAL{background:#fef2f2;color:#ef4444}.p-HIGH{background:#fff7ed;color:#f97316}.p-MEDIUM{background:#fffbeb;color:#f59e0b}.p-LOW{background:#eff6ff;color:#3b82f6}
+.add-ctrl-card{background:#fff;border:1px dashed #d1d5db;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9ca3af;font-size:12px;font-weight:600;min-height:96px;transition:all .12s}
+.add-ctrl-card:hover{border-color:#4f46e5;color:#4f46e5}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:all}
+.modal{background:#fff;border-radius:16px;width:560px;max-width:92vw;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);transform:translateY(10px);transition:transform .2s}
+.overlay.open .modal{transform:translateY(0)}
+.modal-hdr{display:flex;align-items:flex-start;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #f3f4f6}
+.modal-title{font-size:15px;font-weight:700;color:#111827}
+.modal-close{width:28px;height:28px;border:none;background:#f3f4f6;border-radius:6px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:10px}
+.modal-close:hover{background:#e5e7eb}
+.modal-body{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.f-lbl{font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;display:block}
+.f-in,.f-ta,.f-sel{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:13px;font-family:'Inter',sans-serif;color:#111827}
+.f-ta{resize:vertical;min-height:60px}
+.chk-group-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin:10px 0 6px}
+.chk-picker{display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow-y:auto;border:1px solid #f3f4f6;border-radius:8px;padding:10px;background:#f9fafb}
+.chk-opt{font-size:11px;font-family:monospace;font-weight:600;padding:4px 9px;border-radius:6px;border:1px solid #e5e7eb;background:#fff;color:#6b7280;cursor:pointer;user-select:none;transition:all .1s}
+.chk-opt.sel{background:#4f46e5;border-color:#4f46e5;color:#fff}
+.modal-foot{padding:16px 20px;border-top:1px solid #f3f4f6;display:flex;justify-content:flex-end;gap:8px}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#4f46e5;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:22px;right:22px;background:#111827;color:#fff;padding:11px 18px;border-radius:9px;font-size:12.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<aside class="sb" id="sb">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">🛡</div>
+    <div class="sb-logo-text">Niagaros</div>
+  </div>
+  <nav class="sb-nav">
+    <div class="ni-item" onclick="dashTo('dashboard')"><span class="ni">⌘</span><span class="nt">Dashboard</span></div>
+    <div class="ni-item" onclick="dashTo('inventory')"><span class="ni">📦</span><span class="nt">Inventory</span></div>
+    <div class="ni-item" onclick="dashTo('issues')"><span class="ni">⚠</span><span class="nt">Issues</span></div>
+    <div class="ni-item" onclick="dashTo('graph')"><span class="ni">🔗</span><span class="nt">Security Graph</span></div>
+    <div class="ni-item" onclick="dashTo('policies')"><span class="ni">📋</span><span class="nt">Policies</span></div>
+
+    <div class="ni-item on" onclick="toggleDrop()">
+      <span class="ni">✓</span><span class="nt">Compliance</span>
+      <span class="da open" id="drop-arrow">▾</span>
+    </div>
+    <div class="drop-items open" id="drop-items">
+      <div class="di" onclick="dashTo('heatmap')"><span class="di-dot" style="background:#ef4444"></span>Cross-Compliance Heatmap</div>
+      <div class="di" onclick="navTo('cis_controls.html')"><span class="di-dot" style="background:#0d9488"></span>CIS Controls v8.1</div>
+      <div class="di" onclick="navTo('cis_benchmark.html')"><span class="di-dot" style="background:#3b82f6"></span>CIS Benchmark</div>
+      <div class="di" onclick="navTo('iso27001.html')"><span class="di-dot" style="background:#10b981"></span>ISO 27001:2022</div>
+      <div class="di" onclick="navTo('nist_csf.html')"><span class="di-dot" style="background:#8b5cf6"></span>NIST CSF v2.0</div>
+      <div class="di" onclick="navTo('gdpr.html')"><span class="di-dot" style="background:#f59e0b"></span>GDPR</div>
+      <div class="di" onclick="navTo('soc2.html')"><span class="di-dot" style="background:#ec4899"></span>SOC 2</div>
+      <div class="di" onclick="navTo('iso42001.html')"><span class="di-dot" style="background:#06b6d4"></span>ISO 42001:2023</div>
+      <div class="di" onclick="navTo('iso27017.html')"><span class="di-dot" style="background:#14b8a6"></span>ISO 27017:2015</div>
+      <div class="di" onclick="navTo('aws_ftr.html')"><span class="di-dot" style="background:#ff9900"></span>AWS FTR</div>
+      <div class="di" onclick="navTo('mvsp.html')"><span class="di-dot" style="background:#a855f7"></span>MVSP</div>
+      <div class="di" onclick="navTo('tisax.html')"><span class="di-dot" style="background:#f43f5e"></span>TISAX</div>
+      <div class="di" onclick="navTo('nis2.html')"><span class="di-dot" style="background:#14b8a6"></span>NIS2</div>
+      <div class="di" onclick="navTo('nist_800_53.html')"><span class="di-dot" style="background:#a78bfa"></span>NIST SP 800-53</div>
+      <div class="di" onclick="navTo('hipaa.html')"><span class="di-dot" style="background:#f87171"></span>HIPAA</div>
+      <div class="di" onclick="navTo('pci_dss.html')"><span class="di-dot" style="background:#fbbf24"></span>PCI DSS</div>
+      <div class="di" onclick="navTo('c5.html')"><span class="di-dot" style="background:#94a3b8"></span>BSI C5</div>
+      <div class="di" onclick="navTo('csa_ccm.html')"><span class="di-dot" style="background:#0ea5e9"></span>CSA CCM 4.0</div>
+      <div class="di" onclick="navTo('fedramp.html')"><span class="di-dot" style="background:#2563eb"></span>FedRAMP Moderate</div>
+      <div class="di" onclick="navTo('hitrust.html')"><span class="di-dot" style="background:#22c55e"></span>HITRUST CSF</div>
+      <div class="di" onclick="navTo('dora.html')"><span class="di-dot" style="background:#7c3aed"></span>DORA</div>
+      <div class="di" onclick="navTo('cri_profile.html')"><span class="di-dot" style="background:#0891b2"></span>CRI Profile</div>
+      <div class="di" onclick="navTo('nydfs.html')"><span class="di-dot" style="background:#be123c"></span>23 NYCRR 500 (NYDFS)</div>
+      <div class="di" onclick="navTo('eu_ai_act.html')"><span class="di-dot" style="background:#d946ef"></span>EU AI Act</div>
+      <div class="di" onclick="navTo('nist_ai_rmf.html')"><span class="di-dot" style="background:#eab308"></span>NIST AI RMF</div>
+      <div class="di" onclick="navTo('iso27701.html')"><span class="di-dot" style="background:#be185d"></span>ISO 27701</div>
+      <div class="di" onclick="navTo('iso27018.html')"><span class="di-dot" style="background:#7e22ce"></span>ISO 27018</div>
+      <div class="di" onclick="navTo('sspa.html')"><span class="di-dot" style="background:#0284c7"></span>Microsoft SSPA</div>
+      <div class="di" onclick="navTo('nist_privacy.html')"><span class="di-dot" style="background:#0284c7"></span>NIST Privacy Framework</div>
+      <div class="di on" onclick="location.href='custom_frameworks.html'"><span class="di-dot"></span>Custom Frameworks</div>
+    </div>
+
+    <div class="ni-item" onclick="location.href='questionnaire_automation.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🧾</span><span class="nt">Questionnaires</span></div>
+    <div class="ni-item" onclick="location.href='trust_center.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🔒</span><span class="nt">Trust Center</span></div>
+    <div class="ni-item" onclick="location.href='tprm.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🤝</span><span>Third-Party Risk</span></div>
+    <div class="ni-item" onclick="dashTo('reports')"><span class="ni">📊</span><span class="nt">Reports</span></div>
+    <div class="ni-item" onclick="dashTo('projects')"><span class="ni">🗂</span><span class="nt">Projects</span></div>
+    <div class="nl">Security</div>
+    <div class="ni-item"><span class="ni">🔑</span><span class="nt">IAM Analysis</span></div>
+    <div class="ni-item"><span class="ni">🔔</span><span class="nt">Alerts</span></div>
+  </nav>
+  <div class="sb-footer">
+    <div class="ni-item"><span class="ni">⚙</span><span class="nt">Settings</span></div>
+    <div class="ni-item"><span class="ni">❓</span><span class="nt">Help & Support</span></div>
+    <div class="col-btn" onclick="document.getElementById('sb').classList.toggle('col')">
+      <span class="col-ico">‹</span><span class="nt">Collapse</span>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div style="font-size:15px;font-weight:700;color:#111827">Custom Frameworks</div>
+    <div class="tp-badge"><span style="font-size:14px">🧩</span> Your own controls, built on real checks</div>
+    <div class="acct-wrap">
+      <div class="acct-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
+      <div class="acct-dd" id="acct-dd">
+        <div class="acct-dd-hdr">Switch Account</div>
+        <div id="acct-list"></div>
+      </div>
+    </div>
+    <div class="tp-right">
+      <button class="btn-primary" onclick="openNewFrameworkModal()">+ New Framework</button>
+      <div class="avatar">DN</div>
+    </div>
+  </header>
+
+  <div class="content">
+    <div id="v-load" class="spin-wrap">
+      <div class="spinner"></div><span>Loading custom frameworks…</span>
+    </div>
+
+    <div id="v-content" hidden>
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Custom Frameworks</div>
+          <div class="page-sub">Define your own named framework, compose it from this account's real, already-scanned checks, and score it exactly like every built-in framework.</div>
+        </div>
+      </div>
+      <div id="fw-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- New Framework modal -->
+<div class="overlay" id="ov-newfw" onclick="closeOv(event,'ov-newfw')">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">New Custom Framework</div>
+      <button class="modal-close" onclick="closeOvDirect('ov-newfw')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <label class="f-lbl">Framework name</label>
+        <input class="f-in" id="in-fw-name" placeholder="e.g. Internal Baseline, Client X Requirements…">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" onclick="closeOvDirect('ov-newfw')">Cancel</button>
+      <button class="btn-primary" onclick="submitNewFramework()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Control modal -->
+<div class="overlay" id="ov-newctrl" onclick="closeOv(event,'ov-newctrl')">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Add Control</div>
+      <button class="modal-close" onclick="closeOvDirect('ov-newctrl')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <label class="f-lbl">Title</label>
+        <input class="f-in" id="in-ctrl-title" placeholder="e.g. Encrypt data at rest">
+      </div>
+      <div>
+        <label class="f-lbl">Description</label>
+        <textarea class="f-ta" id="in-ctrl-desc" placeholder="What this control requires…"></textarea>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1">
+          <label class="f-lbl">Severity</label>
+          <select class="f-sel" id="in-ctrl-sev">
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH" selected>High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="f-lbl">Remediation</label>
+        <textarea class="f-ta" id="in-ctrl-rem" placeholder="How to fix a failure of this control…"></textarea>
+      </div>
+      <div>
+        <label class="f-lbl">Mapped checks — this control FAILs if any selected check currently fails</label>
+        <div id="chk-picker-wrap"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" onclick="closeOvDirect('ov-newctrl')">Cancel</button>
+      <button class="btn-primary" onclick="submitNewControl()">Add Control</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+const CUSTOM_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/custom-frameworks';
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[], frameworks=[], targetFrameworkId=null;
+const selectedChecks=new Set();
+
+const CHECK_CATALOG = {
+  'IAM': ['IAM.1','IAM.2','IAM.3','IAM.4','IAM.5','IAM.6','IAM.7','IAM.8','IAM.9','IAM.15','IAM.16','IAM.18','IAM.22','IAM.26','IAM.27','IAM.28'],
+  'S3': ['S3.2.1','S3.2.2','S3.2.3','S3.2.4','S3.3.1','S3.3.2','S3.3.3','S3.3.4','S3.3.5'],
+  'KMS': ['KMS.1','KMS.2','KMS.3','KMS.4','KMS.5','KMS.6'],
+  'CloudWatch': ['CloudWatch.1','CloudWatch.2','CloudWatch.3','CloudWatch.4','CloudWatch.5','CloudWatch.6','CloudWatch.7','CloudWatch.8','CloudWatch.9','CloudWatch.10','CloudWatch.11','CloudWatch.12','CloudWatch.13','CloudWatch.14'],
+  'RDS Disaster Recovery': ['RDS.DR.1','RDS.DR.2','RDS.DR.3','RDS.DR.4'],
+  'DynamoDB Disaster Recovery': ['DynamoDB.DR.1','DynamoDB.DR.2','DynamoDB.DR.3'],
+  'GitHub': ['github_1.1.3','github_1.1.4','github_1.1.7','github_1.1.9','github_1.1.11','github_1.1.14','github_1.1.16','github_1.1.17','github_1.1.20','github_1.2.2','github_1.2.3','github_1.3.4','github_1.3.5','github_1.3.8','github_1.5.1','github_1.5.5'],
+};
+
+function navTo(page){location.href=page+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'');}
+function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
+function toggleDrop(){const d=document.getElementById('drop-items'),a=document.getElementById('drop-arrow');d.classList.toggle('open');a.classList.toggle('open');}
+function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
+document.addEventListener('click',function(e){var w=document.querySelector('.acct-wrap');if(w&&!w.contains(e.target))document.getElementById('acct-dd').classList.remove('open');});
+function switchAccount(id){if(id===currentAccountId){document.getElementById('acct-dd').classList.remove('open');return;}currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:#4f46e5"></div>'+'<div class="acct-item-name">'+a.name+'</div>'+'<div class="acct-item-id">'+(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+function closeOv(e,id){if(e.target===document.getElementById(id))closeOvDirect(id);}
+function closeOvDirect(id){document.getElementById(id).classList.remove('open');}
+
+async function loadAll(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-content').hidden=true;
+  try{
+    const token=localStorage.getItem('niagaros_token')||'';
+    const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
+    const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}}), dd=await dr.json();
+    if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
+    if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
+
+    const cr=await fetch(CUSTOM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
+    const cd=await cr.json();
+    frameworks=cd.frameworks||[];
+    render();
+  }catch(e){
+    document.getElementById('v-load').innerHTML=`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px;color:#ef4444;font-size:13px">⚠ ${e.message}</div>`;
+  }
+}
+
+function render(){
+  const list=document.getElementById('fw-list');
+  if(!frameworks.length){
+    list.innerHTML=`<div class="empty-state">
+      <div class="es-ic">🧩</div>
+      <div class="es-t">No custom frameworks yet</div>
+      <div class="es-d">Create one, add controls made of this account's real checks, and it scores like any other framework.</div>
+      <button class="btn-primary" onclick="openNewFrameworkModal()" style="margin:0 auto">+ New Framework</button>
+    </div>`;
+  } else {
+    list.innerHTML=frameworks.map(fw=>{
+      const total=fw.controls.length;
+      const failed=fw.controls.filter(c=>c.status==='FAIL').length;
+      const scored=fw.controls.filter(c=>c.status!=='NOT_RUN').length;
+      const score=scored?Math.round((scored-failed)/scored*100):null;
+      const pillCls=score===null?'fw-score-none':(failed>0?'fw-score-bad':'fw-score-ok');
+      const pillTxt=score===null?(total?'Not run yet':'No controls yet'):score+'% compliant';
+      return `<div class="fw-card">
+        <div class="fw-hdr">
+          <div class="fw-name">${fw.name}</div>
+          <span class="fw-score-pill ${pillCls}">${pillTxt}</span>
+          <div class="fw-actions">
+            <button class="btn-ghost" onclick="runFramework('${fw.id}')">↻ Run Now</button>
+            <button class="btn-danger-txt" onclick="deleteFramework('${fw.id}','${fw.name.replace(/'/g,"\\'")}')">Delete Framework</button>
+          </div>
+        </div>
+        <div class="fw-body">
+          <div class="ctrl-grid">
+            ${fw.controls.map(c=>renderControlCard(c)).join('')}
+            <div class="add-ctrl-card" onclick="openAddControlModal('${fw.id}')">+ Add Control</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-content').hidden=false;
+}
+
+function renderControlCard(c){
+  const cls=c.status==='FAIL'?'fail':(c.status==='PASS'?'pass':'notrun');
+  const statusCls=c.status==='FAIL'?'cs-fail':(c.status==='PASS'?'cs-pass':'cs-notrun');
+  const statusTxt=c.status==='FAIL'?'✗ FAIL':(c.status==='PASS'?'✓ PASS':'NOT RUN');
+  return `<div class="ctrl-card ${cls}">
+    <div class="cc-top">
+      <div class="cc-title">${c.title}</div>
+      <span class="cc-status ${statusCls}">${statusTxt}</span>
+    </div>
+    <div class="cc-desc">${c.description||''}</div>
+    <div class="cc-checks">${(c.mapped_checks||[]).map(m=>`<span class="chk-tag">${m}</span>`).join('')}</div>
+    <div class="cc-foot">
+      <span class="sev-pill p-${c.severity}">${c.severity}</span>
+      <button class="btn-danger-txt" onclick="deleteControl('${c.id}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+function openNewFrameworkModal(){
+  document.getElementById('in-fw-name').value='';
+  document.getElementById('ov-newfw').classList.add('open');
+}
+async function submitNewFramework(){
+  const name=document.getElementById('in-fw-name').value.trim();
+  if(!name){showToast('Geef de framework een naam');return;}
+  await fetch(CUSTOM_API,{method:'POST',body:JSON.stringify({action:'create_framework',cloud_account_id:currentAccountId,name})});
+  closeOvDirect('ov-newfw');
+  showToast('Framework aangemaakt');
+  loadAll();
+}
+
+function openAddControlModal(frameworkId){
+  targetFrameworkId=frameworkId;
+  selectedChecks.clear();
+  document.getElementById('in-ctrl-title').value='';
+  document.getElementById('in-ctrl-desc').value='';
+  document.getElementById('in-ctrl-rem').value='';
+  document.getElementById('in-ctrl-sev').value='HIGH';
+  const wrap=document.getElementById('chk-picker-wrap');
+  wrap.innerHTML=Object.entries(CHECK_CATALOG).map(([group,checks])=>`
+    <div class="chk-group-title">${group}</div>
+    <div class="chk-picker">${checks.map(c=>`<span class="chk-opt" data-check="${c}" onclick="toggleCheck(this,'${c}')">${c}</span>`).join('')}</div>
+  `).join('');
+  document.getElementById('ov-newctrl').classList.add('open');
+}
+function toggleCheck(el,check){
+  if(selectedChecks.has(check)){selectedChecks.delete(check);el.classList.remove('sel');}
+  else{selectedChecks.add(check);el.classList.add('sel');}
+}
+async function submitNewControl(){
+  const title=document.getElementById('in-ctrl-title').value.trim();
+  if(!title){showToast('Geef de control een titel');return;}
+  if(!selectedChecks.size){showToast('Selecteer minstens 1 check');return;}
+  await fetch(CUSTOM_API,{method:'POST',body:JSON.stringify({
+    action:'add_control', framework_id:targetFrameworkId, title,
+    description:document.getElementById('in-ctrl-desc').value.trim(),
+    severity:document.getElementById('in-ctrl-sev').value,
+    remediation:document.getElementById('in-ctrl-rem').value.trim(),
+    checks:Array.from(selectedChecks),
+  })});
+  closeOvDirect('ov-newctrl');
+  showToast('Control toegevoegd — klik Run Now om te scoren');
+  loadAll();
+}
+
+async function runFramework(frameworkId){
+  showToast('Bezig met scannen…');
+  await fetch(CUSTOM_API,{method:'POST',body:JSON.stringify({action:'run',cloud_account_id:currentAccountId})});
+  showToast('Klaar');
+  loadAll();
+}
+async function deleteFramework(id,name){
+  if(!confirm('Framework "'+name+'" en al zijn controls verwijderen?'))return;
+  await fetch(CUSTOM_API+'?framework_id='+encodeURIComponent(id),{method:'DELETE'});
+  showToast('Framework verwijderd');
+  loadAll();
+}
+async function deleteControl(id){
+  if(!confirm('Deze control verwijderen?'))return;
+  await fetch(CUSTOM_API+'?control_id='+encodeURIComponent(id),{method:'DELETE'});
+  showToast('Control verwijderd');
+  loadAll();
+}
+
+loadAll();
+</script>
+</body>
+</html>

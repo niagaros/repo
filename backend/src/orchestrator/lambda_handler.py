@@ -129,6 +129,14 @@ def lambda_handler(event, context):
             except Exception as e:
                 logger.error(f"Orchestrator: failed to touch scan_at for {account['id']} -- {e}")
 
+            # Record a compliance snapshot for this cycle — this is what gives the
+            # monthly report real intra-month trend data instead of only comparing
+            # two single points a month apart
+            try:
+                db.record_compliance_snapshot(account["id"])
+            except Exception as e:
+                logger.error(f"Orchestrator: failed to record compliance snapshot for {account['id']} -- {e}")
+
         triggered_count = len([r for r in results if r["status"] == "triggered"])
         failed_count    = len([r for r in results if r["status"] == "failed"])
 
