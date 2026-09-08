@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Audit Management</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:flex;font-size:14px}
+.sb{width:220px;background:#0d0f14;display:flex;flex-direction:column;height:100vh;flex-shrink:0;overflow:hidden}
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e;flex-shrink:0}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff}
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e2a1e;color:#fff}
+.ni-item.on .ni{color:#22c55e}
+.ni{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 22px;gap:10px;flex-shrink:0}
+.tp-badge{display:flex;align-items:center;gap:7px;background:#eef2ff;border:1px solid #c7d2fe;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;color:#4338ca}
+.tp-right{display:flex;align-items:center;gap:9px;margin-left:auto}
+.acct-wrap{position:relative}
+.acct-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer}
+.acct-dd{position:absolute;top:calc(100% + 6px);left:0;min-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12);z-index:999;overflow:hidden;display:none}
+.acct-dd.open{display:block}
+.acct-item{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:12.5px;cursor:pointer}
+.acct-item:hover{background:#f9fafb}
+.avatar{width:34px;height:34px;background:#4338ca;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+.content{flex:1;overflow-y:auto;padding:20px 22px}
+[hidden]{display:none!important}
+.page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.page-title{font-size:15px;font-weight:700}
+.page-sub{font-size:12px;color:#9ca3af;margin-top:3px;max-width:640px}
+.btn-primary{background:#4338ca;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-primary:hover{filter:brightness(0.92)}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-danger{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:6px 12px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-sm{padding:5px 10px;font-size:11px}
+.summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.sum-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px}
+.sum-n{font-size:22px;font-weight:800}
+.sum-l{font-size:11px;color:#9ca3af;margin-top:2px}
+.audit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+.a-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;cursor:pointer;transition:box-shadow .15s}
+.a-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08)}
+.a-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px}
+.a-name{font-size:14px;font-weight:700}
+.a-sub{font-size:11px;color:#9ca3af;margin-top:2px}
+.status-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;text-transform:capitalize}
+.s-planned{background:#eff6ff;color:#1d4ed8}.s-in_progress{background:#fffbeb;color:#d97706}
+.s-completed{background:#ecfdf5;color:#16a34a}.s-closed{background:#f3f4f6;color:#6b7280}
+.a-meta{font-size:11.5px;color:#6b7280;margin:8px 0 10px}
+.progress-bar{height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden;margin-bottom:8px}
+.progress-fill{height:100%;background:#4338ca;border-radius:3px;transition:width .4s}
+.a-foot{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#6b7280}
+.chip{font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;background:#f3f4f6;color:#374151}
+.chip.ok{background:#ecfdf5;color:#16a34a}.chip.warn{background:#fffbeb;color:#d97706}.chip.bad{background:#fef2f2;color:#ef4444}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:all}
+.modal{background:#fff;border-radius:16px;width:540px;max-width:92vw;max-height:86vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hdr{display:flex;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #f3f4f6;position:sticky;top:0;background:#fff}
+.modal-title{font-size:14px;font-weight:700}
+.modal-close{width:26px;height:26px;border:none;background:#f3f4f6;border-radius:6px;cursor:pointer}
+.modal-body{padding:16px 18px}
+.f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block;margin-top:10px}
+.f-lbl:first-child{margin-top:0}
+.f-in,.f-ta,.f-sel{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:'Inter',sans-serif}
+.f-ta{resize:vertical;min-height:50px}
+.f-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-foot{padding:14px 18px;border-top:1px solid #f3f4f6;display:flex;justify-content:flex-end;gap:8px}
+.toast{position:fixed;bottom:22px;right:22px;background:#111827;color:#fff;padding:11px 18px;border-radius:9px;font-size:12.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;transform:translateY(8px);transition:all .2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#4338ca;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{color:#9ca3af;font-size:12.5px;text-align:center;padding:40px 0}
+.back-link{font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;margin-bottom:12px;display:inline-block}
+.detail-hdr{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.detail-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.detail-title{font-size:16px;font-weight:800}
+.detail-meta{font-size:12px;color:#6b7280;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap}
+.sec-hdr{font-size:12.5px;font-weight:700;margin:18px 0 10px;display:flex;justify-content:space-between;align-items:center}
+.finding-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:10px;overflow:hidden}
+.finding-hdr{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer}
+.finding-hdr:hover{background:#fafafa}
+.sev-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sev-CRITICAL{background:#ef4444}.sev-HIGH{background:#f97316}.sev-MEDIUM{background:#f59e0b}.sev-LOW{background:#3b82f6}
+.finding-title{flex:1;font-size:12.5px;font-weight:600}
+.finding-sub{font-size:10.5px;color:#9ca3af;margin-top:2px}
+.finding-status{font-size:10px;font-weight:700;padding:3px 9px;border-radius:12px;text-transform:capitalize;white-space:nowrap}
+.fs-open{background:#fef2f2;color:#dc2626}.fs-in_remediation{background:#fffbeb;color:#d97706}
+.fs-verified{background:#ecfdf5;color:#16a34a}.fs-closed{background:#f3f4f6;color:#6b7280}
+.finding-body{padding:0 14px 14px;border-top:1px solid #f3f4f6;font-size:12px;color:#374151;line-height:1.6}
+.task-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:11.5px}
+.task-row:last-child{border-bottom:none}
+.evidence-row{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f9fafb;border-radius:8px;margin-bottom:6px;font-size:12px}
+.readiness-row{display:flex;justify-content:space-between;font-size:10.5px;color:#6b7280;margin-bottom:4px}
+.readiness-row b{color:#111827;font-weight:700}
+.comment-row{font-size:11.5px;color:#374151;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #f3f4f6}
+.comment-row:last-of-type{border-bottom:none}
+.comment-meta{color:#9ca3af;font-weight:400;margin-left:6px}
+@media print{
+  .sb,.topbar,.back-link,button,.overlay,#toast,select,.comment-form{display:none!important}
+  html,body{height:auto;overflow:visible}
+  .content{overflow:visible;padding:0}
+  .finding-body[hidden]{display:block!important}
+}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-logo"><div class="sb-logo-icon">🛡</div><div class="sb-logo-text">Niagaros</div></div>
+  <nav class="sb-nav">
+    <div class="ni-item" onclick="dashTo('dashboard')"><span class="ni">⌘</span><span>Dashboard</span></div>
+    <div class="ni-item" onclick="location.href='questionnaire_automation.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🧾</span><span>Questionnaires</span></div>
+    <div class="ni-item" onclick="location.href='trust_center.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🔒</span><span>Trust Center</span></div>
+    <div class="ni-item" onclick="location.href='tprm.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🤝</span><span>Third-Party Risk</span></div>
+    <div class="ni-item on" onclick="location.href='audit_management.html'"><span class="ni">📋</span><span>Audit Management</span></div>
+    <div class="ni-item" onclick="location.href='calculators.html'"><span class="ni">🧮</span><span>Calculators</span></div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div style="font-size:15px;font-weight:700">Audit Management</div>
+    <div class="tp-badge"><span>📋</span> Findings register auto-seeded from real scan data</div>
+    <div class="acct-wrap">
+      <div class="acct-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
+      <div class="acct-dd" id="acct-dd"><div id="acct-list"></div></div>
+    </div>
+    <div class="tp-right"><div class="avatar">DN</div></div>
+  </header>
+
+  <div class="content">
+    <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Loading…</span></div>
+
+    <div id="v-list" hidden>
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Audits</div>
+          <div class="page-sub">Each audit's findings register is auto-seeded from this account's own real, currently-failing scan findings for the chosen framework — the same data already verified elsewhere in this product.</div>
+        </div>
+        <button class="btn-primary" onclick="openNewAudit()">+ New Audit</button>
+      </div>
+      <div class="summary-row" id="summary-row"></div>
+      <div class="audit-grid" id="audit-grid"></div>
+    </div>
+
+    <div id="v-detail" hidden></div>
+  </div>
+</div>
+
+<!-- New Audit modal -->
+<div class="overlay" id="ov-new-audit">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">New Audit</div><button class="modal-close" onclick="closeModal('ov-new-audit')">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Title *</label>
+      <input class="f-in" id="na-title" placeholder="e.g. ISO 27001 Q3 internal audit">
+      <div class="f-row2">
+        <div><label class="f-lbl">Audit type</label>
+          <select class="f-sel" id="na-type">
+            <option value="internal">Internal</option><option value="external">External</option>
+            <option value="certification">Certification</option><option value="surveillance">Surveillance</option>
+            <option value="regulatory">Regulatory</option><option value="supplier">Supplier</option>
+            <option value="customer">Customer</option><option value="third_party">Third-party assessment</option>
+          </select></div>
+        <div><label class="f-lbl">Framework</label>
+          <select class="f-sel" id="na-framework"><option value="">— none (manual findings only) —</option></select></div>
+      </div>
+      <label class="f-lbl">Scope description</label>
+      <textarea class="f-ta" id="na-scope" placeholder="What's in scope for this audit?"></textarea>
+      <div class="f-row2">
+        <div><label class="f-lbl">Lead auditor name</label><input class="f-in" id="na-auditor-name"></div>
+        <div><label class="f-lbl">Lead auditor org</label><input class="f-in" id="na-auditor-org" placeholder="e.g. Deloitte"></div>
+      </div>
+      <label class="f-lbl">Stakeholders</label>
+      <input class="f-in" id="na-stakeholders" placeholder="e.g. CISO, Head of Engineering, DPO">
+      <div class="f-row2">
+        <div><label class="f-lbl">Start date</label><input class="f-in" type="date" id="na-start"></div>
+        <div><label class="f-lbl">End date</label><input class="f-in" type="date" id="na-end"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeModal('ov-new-audit')">Cancel</button><button class="btn-primary" onclick="submitNewAudit()">Create audit</button></div>
+  </div>
+</div>
+
+<!-- Manual finding modal -->
+<div class="overlay" id="ov-manual-finding">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Add Manual Finding</div><button class="modal-close" onclick="closeModal('ov-manual-finding')">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Title *</label>
+      <input class="f-in" id="mf-title" placeholder="e.g. Employee badge not revoked on offboarding">
+      <label class="f-lbl">Description</label>
+      <textarea class="f-ta" id="mf-desc" placeholder="What did the auditor observe?"></textarea>
+      <div class="f-row2">
+        <div><label class="f-lbl">Severity</label>
+          <select class="f-sel" id="mf-sev"><option>CRITICAL</option><option>HIGH</option><option selected>MEDIUM</option><option>LOW</option></select></div>
+        <div><label class="f-lbl">Risk rating</label><input class="f-in" id="mf-risk" placeholder="e.g. moderate"></div>
+      </div>
+      <label class="f-lbl">Root cause</label>
+      <textarea class="f-ta" id="mf-root" placeholder="Why did this happen?"></textarea>
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeModal('ov-manual-finding')">Cancel</button><button class="btn-primary" onclick="submitManualFinding()">Add finding</button></div>
+  </div>
+</div>
+
+<!-- Remediation task modal -->
+<div class="overlay" id="ov-task">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Add Remediation Task</div><button class="modal-close" onclick="closeModal('ov-task')">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Task *</label>
+      <input class="f-in" id="tk-title" placeholder="e.g. Enable MFA for all IAM console users">
+      <div class="f-row2">
+        <div><label class="f-lbl">Owner name</label><input class="f-in" id="tk-owner"></div>
+        <div><label class="f-lbl">Owner email</label><input class="f-in" id="tk-owner-email"></div>
+      </div>
+      <label class="f-lbl">Due date</label>
+      <input class="f-in" type="date" id="tk-due">
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeModal('ov-task')">Cancel</button><button class="btn-primary" onclick="submitTask()">Add task</button></div>
+  </div>
+</div>
+
+<!-- Verify task modal (requires notes) -->
+<div class="overlay" id="ov-verify">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Verify Remediation</div><button class="modal-close" onclick="closeModal('ov-verify')">✕</button></div>
+    <div class="modal-body">
+      <div class="page-sub" style="margin-bottom:10px">Verification requires a note describing how completion was confirmed — this can't be skipped.</div>
+      <label class="f-lbl">Verified by</label>
+      <input class="f-in" id="vf-by" placeholder="Your name">
+      <label class="f-lbl">Verification notes *</label>
+      <textarea class="f-ta" id="vf-notes" placeholder="e.g. Confirmed MFA enforced for all console users via IAM policy screenshot"></textarea>
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeModal('ov-verify')">Cancel</button><button class="btn-primary" onclick="submitVerify()">Mark verified</button></div>
+  </div>
+</div>
+
+<!-- Evidence upload modal -->
+<div class="overlay" id="ov-evidence">
+  <div class="modal">
+    <div class="modal-hdr"><div class="modal-title">Add Evidence</div><button class="modal-close" onclick="closeModal('ov-evidence')">✕</button></div>
+    <div class="modal-body">
+      <label class="f-lbl">Title</label>
+      <input class="f-in" id="ev-title" placeholder="e.g. SOC 2 report 2026">
+      <label class="f-lbl">File</label>
+      <input class="f-in" type="file" id="ev-file">
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeModal('ov-evidence')">Cancel</button><button class="btn-primary" onclick="submitEvidence()">Upload</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+const AUDIT_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/audit-management';
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null;
+let allAccounts=[], audits=[], frameworkOptions=[], activeAuditId=null, activeAuditDetail=null;
+let pendingFindingId=null, pendingTaskId=null;
+
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
+function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
+function switchAccount(id){if(id===currentAccountId)return;currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(a=>`<div class="acct-item" onclick="switchAccount('${a.id}')">🏢 ${esc(a.name)}</div>`).join('');}
+
+async function loadAll(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-list').hidden=true;
+  document.getElementById('v-detail').hidden=true;
+  const token=localStorage.getItem('niagaros_token')||'';
+  const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
+  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}});
+  if(dr.status===401){location.href='/';return;}
+  const dd=await dr.json();
+  if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
+  if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
+  if(!currentAccountId){
+    document.getElementById('v-load').innerHTML='<div class="empty">No account found. Please open this page from the dashboard.</div>';
+    return;
+  }
+
+  const r=await fetch(AUDIT_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
+  const d=await r.json();
+  audits=d.audits||[]; frameworkOptions=d.framework_options||[];
+  const sel=document.getElementById('na-framework');
+  sel.innerHTML='<option value="">— none (manual findings only) —</option>'+frameworkOptions.map(f=>`<option value="${f.value}">${esc(f.label)}</option>`).join('');
+
+  // Deep-link support: arriving here from the Calculator's "Start
+  // remediation" button opens the newly-created audit directly instead of
+  // landing on the list.
+  const openId=new URLSearchParams(location.search).get('open_audit');
+  if(openId){
+    history.replaceState(null,'',location.pathname+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):''));
+    document.getElementById('v-load').style.display='none';
+    await openDetail(openId);
+    return;
+  }
+  renderList();
+}
+
+function renderList(){
+  const totalOpen=audits.reduce((a,x)=>a+x.findings_open,0);
+  const totalOverdue=audits.reduce((a,x)=>a+x.overdue_remediation,0);
+  const inProgress=audits.filter(a=>a.status==='in_progress').length;
+  document.getElementById('summary-row').innerHTML=`
+    <div class="sum-card"><div class="sum-n">${audits.length}</div><div class="sum-l">Total audits</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:${inProgress?'#d97706':'#111827'}">${inProgress}</div><div class="sum-l">In progress</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:${totalOpen?'#ef4444':'#111827'}">${totalOpen}</div><div class="sum-l">Open findings</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:${totalOverdue?'#ef4444':'#111827'}">${totalOverdue}</div><div class="sum-l">Overdue remediation</div></div>`;
+
+  document.getElementById('audit-grid').innerHTML = audits.length ? audits.map(a=>`
+    <div class="a-card" onclick="openDetail('${a.id}')">
+      <div class="a-hdr">
+        <div><div class="a-name">${esc(a.title)}</div><div class="a-sub">${esc(a.framework_label||'No framework — manual')} · ${a.audit_type.replace('_',' ')}</div></div>
+        <span class="status-badge s-${a.status}">${a.status.replace('_',' ')}</span>
+      </div>
+      <div class="a-meta">${a.start_date?esc(a.start_date):'No start date'} → ${a.end_date?esc(a.end_date):'—'}${a.lead_auditor_name?' · '+esc(a.lead_auditor_name):''}</div>
+      <div class="readiness-row"><span>Audit Readiness Score</span><b>${a.audit_readiness_score}%</b></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${a.audit_readiness_score}%"></div></div>
+      <div class="a-foot">
+        <span>${a.findings_closed}/${a.findings_total} findings closed</span>
+        ${a.overdue_remediation?`<span class="chip bad">${a.overdue_remediation} overdue</span>`:`<span class="chip ok">On track</span>`}
+      </div>
+    </div>`).join('') : '<div class="empty">No audits yet. Click "+ New Audit" to plan one.</div>';
+
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-list').hidden=false;
+}
+
+function openNewAudit(){
+  ['na-title','na-scope','na-auditor-name','na-auditor-org','na-stakeholders','na-start','na-end'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('na-type').value='internal'; document.getElementById('na-framework').value='';
+  openModal('ov-new-audit');
+}
+async function submitNewAudit(){
+  const title=document.getElementById('na-title').value.trim();
+  if(!title){showToast('Title is required');return;}
+  const r=await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    action:'create_audit', cloud_account_id:currentAccountId, title,
+    audit_type:document.getElementById('na-type').value, framework:document.getElementById('na-framework').value||null,
+    scope_description:document.getElementById('na-scope').value, lead_auditor_name:document.getElementById('na-auditor-name').value,
+    lead_auditor_org:document.getElementById('na-auditor-org').value, stakeholders:document.getElementById('na-stakeholders').value,
+    start_date:document.getElementById('na-start').value||null, end_date:document.getElementById('na-end').value||null,
+  })});
+  const d=await r.json();
+  if(!r.ok){showToast(d.error||'Failed to create audit');return;}
+  closeModal('ov-new-audit');
+  showToast(d.findings_seeded ? `Audit created — ${d.findings_seeded} real finding(s) seeded from live scan data` : 'Audit created');
+  loadAll();
+}
+
+async function openDetail(auditId){
+  activeAuditId=auditId;
+  document.getElementById('v-list').hidden=true;
+  document.getElementById('v-detail').hidden=false;
+  document.getElementById('v-detail').innerHTML='<div class="spin-wrap"><div class="spinner"></div></div>';
+  await refreshDetail();
+}
+async function refreshDetail(){
+  const r=await fetch(AUDIT_API+'?audit_detail='+encodeURIComponent(activeAuditId));
+  activeAuditDetail=await r.json();
+  renderDetail();
+}
+function backToList(){activeAuditId=null;document.getElementById('v-detail').hidden=true;loadAll();}
+
+function renderDetail(){
+  const a=activeAuditDetail;
+  const sevOrder={CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3};
+  const findingsHtml=(a.findings||[]).map(f=>`
+    <div class="finding-card">
+      <div class="finding-hdr" onclick="toggleFinding('${f.id}')">
+        <div class="sev-dot sev-${f.severity}"></div>
+        <div style="flex:1">
+          <div class="finding-title">${esc(f.title)}${f.check_id?` <span style="color:#9ca3af;font-weight:400">(${esc(f.check_id)})</span>`:''}</div>
+          <div class="finding-sub">${f.source==='scan'?'From live scan':'Manual observation'}${f.resource_name?' · '+esc(f.resource_name):''}</div>
+        </div>
+        <span class="finding-status fs-${f.status}">${f.status.replace('_',' ')}</span>
+      </div>
+      <div class="finding-body" id="fb-${f.id}" hidden>
+        ${f.description?`<p style="margin-top:10px">${esc(f.description)}</p>`:''}
+        ${f.remediation?`<p style="margin-top:8px;color:#6b7280"><strong>Remediation guidance:</strong> ${esc(f.remediation)}</p>`:''}
+        <label class="f-lbl">Root cause</label>
+        <textarea class="f-ta" id="rc-${f.id}" placeholder="Why did this happen?" onclick="event.stopPropagation()">${esc(f.root_cause||'')}</textarea>
+        <button class="btn-ghost btn-sm" style="margin-top:6px" onclick="event.stopPropagation();saveRootCause('${f.id}')">Save root cause</button>
+        <div class="sec-hdr" style="margin-top:14px;font-size:11.5px">
+          <span>Remediation tasks</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn-ghost btn-sm" onclick="event.stopPropagation();openTaskModal('${f.id}')">+ Task</button>
+            ${f.status!=='closed'?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation();setFindingStatus('${f.id}','closed')">Close finding</button>`:''}
+          </div>
+        </div>
+        ${(f.remediation_tasks||[]).length ? f.remediation_tasks.map(t=>`
+          <div class="task-row">
+            <span style="flex:1">${esc(t.title)}${t.owner_name?' — '+esc(t.owner_name):''}${t.due_date?' (due '+esc(t.due_date)+')':''}</span>
+            ${t.overdue?'<span class="chip bad">Overdue</span>':''}
+            <span class="finding-status fs-${t.status==='verified'?'verified':t.status==='completed'?'in_remediation':'open'}">${t.status.replace('_',' ')}</span>
+            ${t.status!=='verified'?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation();openVerifyModal('${t.id}')">Verify</button>`:''}
+          </div>
+          ${t.verification_notes?`<div style="font-size:10.5px;color:#9ca3af;margin:-2px 0 6px 2px">✓ ${esc(t.verification_notes)} — ${esc(t.verified_by||'')}</div>`:''}
+        `).join('') : '<div class="empty" style="padding:10px 0">No remediation tasks yet.</div>'}
+        <div class="sec-hdr" style="margin-top:14px;font-size:11.5px"><span>Notes &amp; comments</span></div>
+        ${(f.comments||[]).length ? f.comments.map(c=>`
+          <div class="comment-row"><strong>${esc(c.author||'Admin')}</strong><span class="comment-meta">${esc((c.created_at||'').slice(0,16).replace('T',' '))}</span>
+            <div>${esc(c.body)}</div>
+          </div>`).join('') : '<div class="empty" style="padding:6px 0">No comments yet.</div>'}
+        <div class="comment-form" style="display:flex;gap:6px;margin-top:6px" onclick="event.stopPropagation()">
+          <input class="f-in" id="cm-${f.id}" placeholder="Add a note…" style="flex:1">
+          <button class="btn-ghost btn-sm" onclick="event.stopPropagation();submitComment('${f.id}')">Add</button>
+        </div>
+      </div>
+    </div>`).join('');
+
+  const evidenceHtml=(a.evidence||[]).length ? a.evidence.map(e=>`
+    <div class="evidence-row">
+      <span style="flex:1">📎 ${esc(e.title)}${e.source==='trust_center'?' <span class="chip ok">Trust Center</span>':''}</span>
+      ${e.has_file?`<button class="btn-ghost btn-sm" onclick="downloadEvidence('${e.id}')">Download</button>`:''}
+    </div>`).join('') : '<div class="empty" style="padding:10px 0">No evidence linked yet.</div>';
+
+  document.getElementById('v-detail').innerHTML=`
+    <span class="back-link" onclick="backToList()">← All audits</span>
+    <div class="detail-hdr">
+      <div class="detail-top">
+        <div>
+          <div class="detail-title">${esc(a.title)}</div>
+          <div class="detail-meta">
+            <span>${esc(a.framework_label||'No framework')}</span>
+            <span>${a.audit_type.replace('_',' ')}</span>
+            <span>${a.start_date||'—'} → ${a.end_date||'—'}</span>
+            ${a.lead_auditor_name?`<span>Lead: ${esc(a.lead_auditor_name)}${a.lead_auditor_org?' ('+esc(a.lead_auditor_org)+')':''}</span>`:''}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <select class="f-sel" style="width:auto" onchange="setAuditStatus(this.value)">
+            ${['planned','in_progress','completed','closed'].map(s=>`<option value="${s}" ${s===a.status?'selected':''}>${s.replace('_',' ')}</option>`).join('')}
+          </select>
+          <button class="btn-ghost" onclick="window.print()">🖨 Export / Print</button>
+          <button class="btn-danger" onclick="deleteAudit()">Delete</button>
+        </div>
+      </div>
+      ${a.scope_description?`<p style="margin-top:12px;font-size:12px;color:#6b7280">${esc(a.scope_description)}</p>`:''}
+      ${a.stakeholders?`<p style="margin-top:6px;font-size:11.5px;color:#9ca3af">Stakeholders: ${esc(a.stakeholders)}</p>`:''}
+      <div class="summary-row" style="margin:16px 0 0">
+        <div class="sum-card"><div class="sum-n">${a.audit_readiness_score}%</div><div class="sum-l">Audit Readiness Score</div></div>
+        <div class="sum-card"><div class="sum-n">${a.evidence_completeness_pct}%</div><div class="sum-l">Evidence completeness</div></div>
+        <div class="sum-card"><div class="sum-n" style="color:${a.findings_open?'#ef4444':'#111827'}">${a.findings_open}</div><div class="sum-l">Open findings</div></div>
+        <div class="sum-card"><div class="sum-n" style="color:${a.overdue_remediation?'#ef4444':'#111827'}">${a.overdue_remediation}</div><div class="sum-l">Overdue remediation</div></div>
+      </div>
+    </div>
+
+    <div class="sec-hdr"><span>Findings Register (${a.findings.length})</span><button class="btn-ghost btn-sm" onclick="openModal('ov-manual-finding')">+ Manual finding</button></div>
+    ${findingsHtml || '<div class="empty">No findings yet.</div>'}
+
+    <div class="sec-hdr"><span>Evidence</span><button class="btn-ghost btn-sm" onclick="openModal('ov-evidence')">+ Add evidence</button></div>
+    ${evidenceHtml}
+  `;
+}
+
+function toggleFinding(id){const el=document.getElementById('fb-'+id);el.hidden=!el.hidden;}
+
+async function setAuditStatus(status){
+  await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'update_audit',audit_id:activeAuditId,status})});
+  showToast('Status updated'); refreshDetail();
+}
+async function deleteAudit(){
+  if(!confirm('Delete this audit and all its findings/remediation/evidence? This cannot be undone.'))return;
+  await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete_audit',audit_id:activeAuditId})});
+  showToast('Audit deleted'); backToList();
+}
+async function setFindingStatus(findingId,status){
+  await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'update_finding_status',finding_id:findingId,status})});
+  showToast('Finding updated'); refreshDetail();
+}
+async function saveRootCause(findingId){
+  const root_cause=document.getElementById('rc-'+findingId).value;
+  await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'update_finding_root_cause',finding_id:findingId,root_cause})});
+  showToast('Root cause saved'); refreshDetail();
+}
+async function submitComment(findingId){
+  const el=document.getElementById('cm-'+findingId);
+  const body=el.value.trim();
+  if(!body)return;
+  await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add_finding_comment',finding_id:findingId,body,author:'Admin'})});
+  showToast('Comment added'); refreshDetail();
+}
+
+function submitManualFinding(){pendingFindingId=null;
+  const title=document.getElementById('mf-title').value.trim();
+  if(!title){showToast('Title is required');return;}
+  fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    action:'add_manual_finding', audit_id:activeAuditId, title,
+    description:document.getElementById('mf-desc').value, severity:document.getElementById('mf-sev').value,
+    risk_rating:document.getElementById('mf-risk').value, root_cause:document.getElementById('mf-root').value,
+  })}).then(r=>r.json()).then(()=>{
+    ['mf-title','mf-desc','mf-risk','mf-root'].forEach(id=>document.getElementById(id).value='');
+    closeModal('ov-manual-finding'); showToast('Finding added'); refreshDetail();
+  });
+}
+
+function openTaskModal(findingId){pendingFindingId=findingId;
+  ['tk-title','tk-owner','tk-owner-email','tk-due'].forEach(id=>document.getElementById(id).value='');
+  openModal('ov-task');
+}
+function submitTask(){
+  const title=document.getElementById('tk-title').value.trim();
+  if(!title){showToast('Task title is required');return;}
+  fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    action:'create_remediation_task', finding_id:pendingFindingId, title,
+    owner_name:document.getElementById('tk-owner').value, owner_email:document.getElementById('tk-owner-email').value,
+    due_date:document.getElementById('tk-due').value||null,
+  })}).then(r=>r.json()).then(()=>{closeModal('ov-task');showToast('Task added');refreshDetail();});
+}
+
+function openVerifyModal(taskId){pendingTaskId=taskId;
+  document.getElementById('vf-by').value=''; document.getElementById('vf-notes').value='';
+  openModal('ov-verify');
+}
+async function submitVerify(){
+  const notes=document.getElementById('vf-notes').value.trim();
+  if(!notes){showToast('Verification notes are required');return;}
+  const r=await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    action:'update_remediation_task', task_id:pendingTaskId, status:'verified',
+    verification_notes:notes, verified_by:document.getElementById('vf-by').value||'Admin',
+  })});
+  const d=await r.json();
+  if(!r.ok){showToast(d.error||'Failed to verify');return;}
+  closeModal('ov-verify'); showToast('Remediation verified — finding closed'); refreshDetail();
+}
+
+function submitEvidence(){
+  const fileInput=document.getElementById('ev-file'); const file=fileInput.files[0];
+  const title=document.getElementById('ev-title').value.trim()||(file?file.name:'Evidence');
+  if(!file){showToast('Choose a file first');return;}
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const b64=reader.result.split(',')[1];
+    fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      action:'upload_evidence', audit_id:activeAuditId, title, filename:file.name, file_base64:b64, uploaded_by:'Admin',
+    })}).then(r=>r.json()).then(()=>{
+      document.getElementById('ev-title').value=''; fileInput.value='';
+      closeModal('ov-evidence'); showToast('Evidence uploaded'); refreshDetail();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+async function downloadEvidence(evidenceId){
+  const r=await fetch(AUDIT_API+'?download_evidence='+encodeURIComponent(evidenceId));
+  const d=await r.json();
+  if(d.download_url) window.open(d.download_url,'_blank');
+  else showToast(d.error||'No file for this evidence entry');
+}
+
+loadAll();
+</script>
+</body>
+</html>
