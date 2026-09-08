@@ -24,10 +24,22 @@ What's built here instead, for real:
     "AI-Powered Search" examples almost verbatim: highest risks,
     account/framework compliance, internet-facing criticals, failing
     framework controls, expiring vendor certificates, audit evidence.
+  - An executive-summary intent (AC5) that aggregates real, already-
+    verified metrics — overall compliance, open findings by severity,
+    vendor/certificate counts, audit status — into one summarized
+    answer. No invented KPIs or trend lines that aren't backed by an
+    actual query.
   - One real, human-confirmed action: create a remediation task in
     Audit Management from a finding already surfaced in that audit's
     real findings register. The agent proposes the exact task; nothing
     is created until a human confirms — no autonomous execution.
+  - A real permission check on that action (AC6): this product has no
+    existing app-level roles anywhere, so rather than fake a check
+    against a role system that doesn't exist, this adds actual Cognito
+    groups (Admin / Viewer) and verifies the caller's real access token
+    against real group membership before executing. A missing token or
+    a non-Admin caller gets refused with the reason stated, not a
+    silent failure.
   - A full audit trail: every question, the real data used to answer
     it, the generated answer, and whether an action was taken.
 
@@ -75,8 +87,10 @@ CORS_HEADERS = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
+
+ADMIN_GROUP_NAME = "Admin"
 
 GROQ_MODEL_ID = os.environ.get("GROQ_MODEL_ID", "openai/gpt-oss-120b")
 GROQ_SECRET_NAME = os.environ.get("GROQ_SECRET_NAME", "cspm/questionnaire/groq-api-key")
@@ -146,7 +160,7 @@ INTERNET_FACING_CHECK_PREFIXES = ("S3.2.", "S3.3.")
 INTENTS = (
     "highest_risks", "account_compliance", "internet_facing_critical",
     "framework_status", "vendor_certs_expiring", "audit_evidence_needed",
-    "unsupported",
+    "executive_summary", "unsupported",
 )
 
 BOOTSTRAP_SQL = """
@@ -180,6 +194,36 @@ def _get_connection():
 
 def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body, default=str)}
+
+
+def _get_caller_admin_status(event):
+    """Real Cognito-group check (AC6) — no fabricated role system. Returns
+    (is_admin, email_or_none, reason_if_denied)."""
+    headers = event.get("headers") or {}
+    auth = headers.get("Authorization") or headers.get("authorization") or ""
+    if not auth.startswith("Bearer "):
+        return False, None, "No access token was provided with this request."
+    token = auth[7:].strip()
+    if not token:
+        return False, None, "No access token was provided with this request."
+    region = os.environ.get("SECRET_REGION", "eu-west-1")
+    cognito = boto3.client("cognito-idp", region_name=region)
+    try:
+        user = cognito.get_user(AccessToken=token)
+    except Exception:
+        return False, None, "This access token is invalid or expired."
+    username = user["Username"]
+    email = next((a["Value"] for a in user["UserAttributes"] if a["Name"] == "email"), None)
+    try:
+        groups_resp = cognito.admin_list_groups_for_user(
+            UserPoolId=os.environ["COGNITO_USER_POOL_ID"], Username=username
+        )
+    except Exception:
+        return False, email, "Could not verify this account's role."
+    group_names = [g["GroupName"] for g in groups_resp.get("Groups", [])]
+    if ADMIN_GROUP_NAME not in group_names:
+        return False, email, f"This account does not have the {ADMIN_GROUP_NAME} role required for this action."
+    return True, email, None
 
 
 # ── Groq (same pattern as questionnaire_handler.py) ─────────────────────
@@ -237,6 +281,8 @@ def _classify_intent(question):
         "compliance framework.\n"
         "- vendor_certs_expiring: asking about vendor/third-party certificates expiring or expired.\n"
         "- audit_evidence_needed: asking what evidence is needed for an audit of one named framework.\n"
+        "- executive_summary: asking for an executive summary, board-level report, or an overview "
+        "of security/compliance/risk posture across the whole account (not one specific framework).\n"
         "- unsupported: anything about a cloud provider other than AWS, a tool this platform "
         "doesn't integrate with (Jira, ServiceNow, Okta, CrowdStrike, Wiz, etc.), or asking the "
         "agent to autonomously change/remediate infrastructure itself.\n\n"
@@ -364,6 +410,46 @@ def _q_audit_evidence_needed(cur, account_id, framework_code):
             "audit_title": audit_title, "audit_status": audit_status, "findings": findings}
 
 
+def _q_executive_summary(cur, account_id):
+    cur.execute("""
+        SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS')
+        FROM findings f JOIN resources r ON f.resource_id = r.id
+        WHERE r.cloud_account_id = %s
+    """, (account_id,))
+    total, passed = cur.fetchone()
+    overall_score = round(passed * 100.0 / total, 1) if total else None
+
+    cur.execute("""
+        SELECT UPPER(f.severity), COUNT(*)
+        FROM findings f JOIN resources r ON f.resource_id = r.id
+        WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+        GROUP BY UPPER(f.severity)
+    """, (account_id,))
+    open_findings_by_severity = {row[0]: row[1] for row in cur.fetchall()}
+
+    cur.execute("SELECT COUNT(*) FROM tprm_vendors WHERE cloud_account_id = %s", (account_id,))
+    vendor_count = cur.fetchone()[0]
+    certs_expiring_or_expired = len(_q_vendor_certs_expiring(cur, account_id))
+
+    cur.execute("SELECT status, COUNT(*) FROM audits WHERE cloud_account_id = %s GROUP BY status", (account_id,))
+    audits_by_status = {row[0]: row[1] for row in cur.fetchall()}
+
+    cur.execute("""
+        SELECT COUNT(*) FROM audit_findings af JOIN audits a ON af.audit_id = a.id
+        WHERE a.cloud_account_id = %s AND af.status IN ('open', 'in_remediation')
+    """, (account_id,))
+    open_audit_findings = cur.fetchone()[0]
+
+    return {
+        "overall_compliance_score": overall_score,
+        "open_findings_by_severity": open_findings_by_severity,
+        "vendor_count": vendor_count,
+        "vendor_certs_expiring_or_expired": certs_expiring_or_expired,
+        "audits_by_status": audits_by_status,
+        "open_audit_findings": open_audit_findings,
+    }
+
+
 def _run_intent(cur, account_id, intent, framework_code):
     if intent == "highest_risks":
         return {"findings": _q_highest_risks(cur, account_id)}
@@ -373,6 +459,8 @@ def _run_intent(cur, account_id, intent, framework_code):
         return _q_internet_facing_critical(cur, account_id)
     if intent == "framework_status":
         return _q_framework_status(cur, account_id, framework_code)
+    if intent == "executive_summary":
+        return _q_executive_summary(cur, account_id)
     if intent == "vendor_certs_expiring":
         return {"certificates": _q_vendor_certs_expiring(cur, account_id)}
     if intent == "audit_evidence_needed":
@@ -386,7 +474,7 @@ UNSUPPORTED_MESSAGE = (
     "CrowdStrike, Wiz, or any other tool, and I can't autonomously change your infrastructure. "
     "I can tell you about: your highest risks, compliance scores per framework, internet-facing "
     "S3 exposure, which controls are failing for a named framework, vendor certificates expiring, "
-    "and what evidence exists for a framework's audit."
+    "what evidence exists for a framework's audit, and an executive summary of your overall posture."
 )
 
 
@@ -483,6 +571,10 @@ def handler(event, context):
                 return _resp(200, {"id": query_id, "intent": intent, "evidence": evidence, "answer": answer})
 
             if action == "create_remediation_task":
+                is_admin, caller_email, deny_reason = _get_caller_admin_status(event)
+                if not is_admin:
+                    return _resp(403, {"error": "Refused: administrative action requires the Admin role.",
+                                        "reason": deny_reason})
                 query_id = body.get("query_id")
                 finding_id = body.get("finding_id")
                 title = body.get("title")
@@ -505,7 +597,8 @@ def handler(event, context):
                         cur.execute("""
                             UPDATE ai_agent_queries SET action_taken = 'create_remediation_task',
                                    action_details = %s WHERE id = %s
-                        """, (json.dumps({"task_id": task_id, "finding_id": finding_id, "title": title}), query_id))
+                        """, (json.dumps({"task_id": task_id, "finding_id": finding_id, "title": title,
+                                          "performed_by": caller_email}), query_id))
                 return _resp(200, {"task_id": task_id})
 
             return _resp(400, {"error": f"unknown action: {action}"})

@@ -311,13 +311,16 @@ async function confirmCreateTask(){
   const owner_email=document.getElementById('task-owner-email').value.trim();
   const due_date=document.getElementById('task-due-date').value||null;
   if(!title){showToast('Title is required');return;}
-  const r=await fetch(AGENT_API,{method:'POST',body:JSON.stringify({
-    action:'create_remediation_task', query_id:pendingTask.queryId, finding_id:pendingTask.findingId,
-    title, owner_email, due_date
-  })});
+  const token=localStorage.getItem('niagaros_token')||'';
+  const r=await fetch(AGENT_API,{method:'POST',
+    headers: token?{Authorization:'Bearer '+token}:{},
+    body:JSON.stringify({
+      action:'create_remediation_task', query_id:pendingTask.queryId, finding_id:pendingTask.findingId,
+      title, owner_email, due_date
+    })});
   const d=await r.json();
   if(r.ok){showToast('Remediation task created');closeTaskModal();}
-  else{showToast(d.error||'Could not create task');}
+  else{showToast(d.reason || d.error || 'Could not create task');}
 }
 
 loadAll();
