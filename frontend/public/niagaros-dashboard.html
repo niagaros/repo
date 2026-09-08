@@ -876,13 +876,18 @@ function switchAccount(id){
   closeAcctDd();
   loadData();
 }
+// Security fix (CodeQL js/xss-through-dom): account/resource/project names
+// are real, user-controlled or externally-sourced text, previously
+// concatenated straight into innerHTML with no escaping — a genuine stored-
+// XSS risk if any of those names ever contained HTML/script meta-characters.
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function renderAcctList(){
   document.getElementById('acct-list').innerHTML=allAccounts.map(a=>{
     const sel=a.id===currentAccountId;
     return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'
       +'<div class="acct-dot" style="background:'+(sel?'#ef4444':'#10b981')+'"></div>'
-      +'<div class="acct-item-name">'+a.name+'</div>'
-      +'<div class="acct-item-id">'+(a.aws_account_id||a.id.substring(0,8)+'…')+'</div>'
+      +'<div class="acct-item-name">'+esc(a.name)+'</div>'
+      +'<div class="acct-item-id">'+esc(a.aws_account_id||a.id.substring(0,8)+'…')+'</div>'
     +'</div>';
   }).join('');
 }
@@ -1365,7 +1370,7 @@ function render(d){
     return `<div class="res-card card anim" style="animation-delay:${i*.05}s" onclick="goSvc('${rc.svc.toLowerCase()}')">
       <div class="res-top"><div class="res-ico" style="background:${rc.bg}">${rc.ico}</div></div>
       <div class="res-count">${failCount}</div>
-      <div class="res-name">${rc.name}</div>
+      <div class="res-name">${esc(rc.name)}</div>
       <div class="res-open">Open issues</div>
       <div class="sev-strip">
         ${c?`<div class="ss-c" style="width:${c/tot2*100}%"></div>`:''}
@@ -1518,7 +1523,7 @@ function render(d){
     const rp=rf.filter(f=>f.result==='PASS').length, rf2=rf.filter(f=>f.result==='FAIL').length;
     const rs=rf.length?Math.round(rp/rf.length*100):0;
     return `<div class="report-card"><div class="rc-ico">${r.ico}</div>
-      <div class="rc-title">${r.name}</div>
+      <div class="rc-title">${esc(r.name)}</div>
       <div class="rc-sub">${r.sub}</div>
       <div style="display:flex;gap:10px;margin:8px 0;font-size:12px">
         <span style="color:#10b981;font-weight:600">✓ ${rp}</span>
@@ -1544,7 +1549,7 @@ function render(d){
   ];
   document.getElementById('proj-grid').innerHTML=projects.map(p=>`
     <div class="proj-card"><div class="proj-hdr">
-      <div class="proj-name">${p.name}</div>
+      <div class="proj-name">${esc(p.name)}</div>
       <span class="proj-pri pri-${p.pri==='High'?'hi':p.pri==='Medium'?'me':'lo'}">${p.pri}</span>
     </div>
     <div class="proj-desc">${p.desc}</div>
@@ -1693,7 +1698,7 @@ function renderInv(){
   const sdots={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
   document.getElementById('inv-body').innerHTML=items.slice(0,50).map(i=>`
     <div class="inv-row">
-      <div><div class="inv-name">${i.name}</div></div>
+      <div><div class="inv-name">${esc(i.name)}</div></div>
       <div><span class="svc-tag ${tagCls[i.svc]||'tag-cw'}">${i.svc}</span></div>
       <div style="font-size:12px;color:#6b7280">${i.fw}</div>
       <div><span class="sev-pill p-${i.sev.substring(0,2)}"><span class="sd d-${i.sev.substring(0,2)}"></span>${i.sev.charAt(0)+i.sev.slice(1).toLowerCase()}</span></div>
