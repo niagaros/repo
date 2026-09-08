@@ -904,7 +904,7 @@ function show(v,el){
   document.querySelectorAll('.ni-item').forEach(n=>n.classList.remove('on'));
   if(el) {
     el.classList.add('on');
-    if(window.location.hash.slice(1)!==v) history.replaceState(null, '', '#'+v);
+    if(window.location.hash.slice(1)!==v) history.pushState(null, '', '#'+v);
   } else if(NAV_IDS[v]){
     const navEl = document.getElementById(NAV_IDS[v]);
     if(navEl) navEl.classList.add('on');
