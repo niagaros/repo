@@ -157,6 +157,8 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
           <div class="suggestion-chip" onclick="ask('How compliant are we across all frameworks?')">How compliant are we overall?</div>
           <div class="suggestion-chip" onclick="ask('Which SOC 2 controls are failing?')">Which SOC 2 controls are failing?</div>
           <div class="suggestion-chip" onclick="ask('Do we have any vendor certificates expiring soon?')">Vendor certs expiring soon?</div>
+          <div class="suggestion-chip" onclick="ask('Which of my AWS accounts are not compliant?')">Which of my accounts are not compliant?</div>
+          <div class="suggestion-chip" onclick="ask('Give me an executive summary of our security posture')">Executive summary</div>
         </div>
         <div class="chat-input-row">
           <input class="chat-input" id="chat-input" placeholder="Ask about your risks, compliance, vendors, or audits…" onkeydown="if(event.key==='Enter')askFromInput()">
@@ -280,10 +282,13 @@ async function ask(question){
   document.getElementById('ask-btn').disabled=true;
 
   try{
-    const r=await fetch(AGENT_API,{method:'POST',body:JSON.stringify({
-      action:'ask', cloud_account_id:currentAccountId, question,
-      asked_by: localStorage.getItem('niagaros_display_name')||'Admin'
-    })});
+    const token=localStorage.getItem('niagaros_token')||'';
+    const r=await fetch(AGENT_API,{method:'POST',
+      headers: token?{Authorization:'Bearer '+token}:{},
+      body:JSON.stringify({
+        action:'ask', cloud_account_id:currentAccountId, question,
+        asked_by: localStorage.getItem('niagaros_display_name')||'Admin'
+      })});
     const d=await r.json();
     typingRow.remove();
     const actionsHtml=findingActionsHtml(d.evidence, d.id);

@@ -158,7 +158,7 @@ FRAMEWORK_DB_VALUES = {
 INTERNET_FACING_CHECK_PREFIXES = ("S3.2.", "S3.3.")
 
 INTENTS = (
-    "highest_risks", "account_compliance", "internet_facing_critical",
+    "highest_risks", "account_compliance", "accounts_compliance", "internet_facing_critical",
     "framework_status", "vendor_certs_expiring", "audit_evidence_needed",
     "executive_summary", "unsupported",
 )
@@ -196,24 +196,34 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body, default=str)}
 
 
-def _get_caller_admin_status(event):
-    """Real Cognito-group check (AC6) — no fabricated role system. Returns
-    (is_admin, email_or_none, reason_if_denied)."""
+def _get_authenticated_caller(event):
+    """Verifies the caller's real Cognito access token. Returns
+    (username_or_none, email_or_none, reason_if_invalid)."""
     headers = event.get("headers") or {}
     auth = headers.get("Authorization") or headers.get("authorization") or ""
     if not auth.startswith("Bearer "):
-        return False, None, "No access token was provided with this request."
+        return None, None, "No access token was provided with this request."
     token = auth[7:].strip()
     if not token:
-        return False, None, "No access token was provided with this request."
+        return None, None, "No access token was provided with this request."
     region = os.environ.get("SECRET_REGION", "eu-west-1")
     cognito = boto3.client("cognito-idp", region_name=region)
     try:
         user = cognito.get_user(AccessToken=token)
     except Exception:
-        return False, None, "This access token is invalid or expired."
-    username = user["Username"]
+        return None, None, "This access token is invalid or expired."
     email = next((a["Value"] for a in user["UserAttributes"] if a["Name"] == "email"), None)
+    return user["Username"], email, None
+
+
+def _get_caller_admin_status(event):
+    """Real Cognito-group check (AC6) — no fabricated role system. Returns
+    (is_admin, email_or_none, reason_if_denied)."""
+    username, email, reason = _get_authenticated_caller(event)
+    if not username:
+        return False, None, reason
+    region = os.environ.get("SECRET_REGION", "eu-west-1")
+    cognito = boto3.client("cognito-idp", region_name=region)
     try:
         groups_resp = cognito.admin_list_groups_for_user(
             UserPoolId=os.environ["COGNITO_USER_POOL_ID"], Username=username
@@ -274,7 +284,10 @@ def _classify_intent(question):
         "Classify this security/compliance question into exactly one intent from "
         f"this fixed list: {', '.join(INTENTS)}.\n\n"
         "- highest_risks: asking about top/highest/worst risks or vulnerabilities in general.\n"
-        "- account_compliance: asking about overall or per-framework compliance score/posture.\n"
+        "- account_compliance: asking about overall or per-framework compliance score/posture "
+        "for the CURRENT single account.\n"
+        "- accounts_compliance: asking specifically which of the user's MULTIPLE AWS accounts "
+        "are or are not compliant — a cross-account comparison, not one account's detail.\n"
         "- internet_facing_critical: asking specifically about internet-exposed or "
         "publicly-accessible critical issues.\n"
         "- framework_status: asking which controls are failing/passing for one named "
@@ -406,8 +419,35 @@ def _q_audit_evidence_needed(cur, account_id, framework_code):
     """, (audit_id,))
     findings = [{"id": str(r[0]), "title": r[1], "status": r[2], "has_root_cause": bool(r[3])}
                 for r in cur.fetchall()]
+    cur.execute("""
+        SELECT title, source, filename FROM audit_evidence WHERE audit_id = %s ORDER BY created_at DESC
+    """, (audit_id,))
+    existing_evidence = [{"title": r[0], "source": r[1], "filename": r[2]} for r in cur.fetchall()]
     return {"framework": fw_label, "audit_exists": True, "audit_id": str(audit_id),
-            "audit_title": audit_title, "audit_status": audit_status, "findings": findings}
+            "audit_title": audit_title, "audit_status": audit_status, "findings": findings,
+            "existing_evidence": existing_evidence,
+            "evidence_already_collected_count": len(existing_evidence)}
+
+
+def _q_accounts_compliance(cur, owner_email):
+    cur.execute("""
+        SELECT id, account_name FROM cloud_accounts WHERE owner_email = %s ORDER BY account_name
+    """, (owner_email,))
+    accounts = [{"id": str(r[0]), "name": r[1]} for r in cur.fetchall()]
+    if not accounts:
+        return {"error": "No AWS accounts found for this user."}
+    results = []
+    for acct in accounts:
+        cur.execute("""
+            SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS')
+            FROM findings f JOIN resources r ON f.resource_id = r.id
+            WHERE r.cloud_account_id = %s
+        """, (acct["id"],))
+        total, passed = cur.fetchone()
+        score = round(passed * 100.0 / total, 1) if total else None
+        results.append({"account_name": acct["name"], "compliance_score": score})
+    results.sort(key=lambda a: (a["compliance_score"] is None, a["compliance_score"]))
+    return {"accounts": results}
 
 
 def _q_executive_summary(cur, account_id):
@@ -472,9 +512,10 @@ UNSUPPORTED_MESSAGE = (
     "I can only answer questions about this AWS account's own real, scanned data right now — "
     "I'm not connected to Azure, GCP, Kubernetes, GitHub, GitLab, Jira, ServiceNow, Okta, "
     "CrowdStrike, Wiz, or any other tool, and I can't autonomously change your infrastructure. "
-    "I can tell you about: your highest risks, compliance scores per framework, internet-facing "
-    "S3 exposure, which controls are failing for a named framework, vendor certificates expiring, "
-    "what evidence exists for a framework's audit, and an executive summary of your overall posture."
+    "I can tell you about: your highest risks, compliance scores per framework, which of your "
+    "AWS accounts are compliant, internet-facing S3 exposure, which controls are failing for a "
+    "named framework, vendor certificates expiring, what evidence exists for a framework's audit, "
+    "and an executive summary of your overall posture."
 )
 
 
@@ -555,9 +596,26 @@ def handler(event, context):
                     return _resp(200, {"intent": "unsupported", "answer": UNSUPPORTED_MESSAGE,
                                         "evidence": {}, "_debug": str(e)})
 
+                needs_login = False
                 with conn.cursor() as cur:
-                    evidence = _run_intent(cur, account_id, intent, framework_code) if intent != "unsupported" else {}
-                answer = _phrase_answer(question, intent, evidence)
+                    if intent == "unsupported":
+                        evidence = {}
+                    elif intent == "accounts_compliance":
+                        _, caller_email, auth_reason = _get_authenticated_caller(event)
+                        if not caller_email:
+                            needs_login = True
+                            evidence = {}
+                        else:
+                            evidence = _q_accounts_compliance(cur, caller_email)
+                    else:
+                        evidence = _run_intent(cur, account_id, intent, framework_code)
+
+                if needs_login:
+                    answer = ("I need you to be signed in to compare across your AWS accounts "
+                               f"({auth_reason}). Please ask this again from the AI Agent page "
+                               "while logged in.")
+                else:
+                    answer = _phrase_answer(question, intent, evidence)
 
                 with conn:
                     with conn.cursor() as cur:
