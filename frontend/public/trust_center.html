@@ -244,13 +244,24 @@ async function loadAll(){
   document.getElementById('v-content').hidden=true;
   const token=localStorage.getItem('niagaros_token')||'';
   const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
-  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}}), dd=await dr.json();
+  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}});
+  if(dr.status===401){location.href='/';return;}
+  const dd=await dr.json();
   if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
   if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
   document.getElementById('last-scan').textContent = dd.last_scan_at ? 'Last scan: '+dd.last_scan_at.substring(0,16) : 'No scan yet';
+  if(!currentAccountId){
+    document.getElementById('v-load').innerHTML='<div class="empty" style="color:#9ca3af;font-size:12.5px;text-align:center;padding:40px 0">No account found. Please open this page from the dashboard.</div>';
+    return;
+  }
 
   const r=await fetch(TC_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
-  state=await r.json();
+  const d=await r.json();
+  if(!r.ok || !d.settings){
+    document.getElementById('v-load').innerHTML='<div class="empty" style="color:#9ca3af;font-size:12.5px;text-align:center;padding:40px 0">Could not load Trust Center data. Please refresh or try again shortly.</div>';
+    return;
+  }
+  state=d;
   render();
 }
 

@@ -381,7 +381,7 @@ function toggleDrop(){const d=document.getElementById('drop-items'),a=document.g
 function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
 document.addEventListener('click',function(e){var w=document.querySelector('.acct-wrap');if(w&&!w.contains(e.target))document.getElementById('acct-dd').classList.remove('open');});
 function switchAccount(id){if(id===currentAccountId){document.getElementById('acct-dd').classList.remove('open');return;}currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');backToList();loadAll();}
-function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:#059669"></div>'+'<div class="acct-item-name">'+a.name+'</div>'+'<div class="acct-item-id">'+(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:#059669"></div>'+'<div class="acct-item-name">'+esc(a.name)+'</div>'+'<div class="acct-item-id">'+esc(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 function closeOv(e,id){if(e.target===document.getElementById(id))closeOvDirect(id);}
 function closeOvDirect(id){document.getElementById(id).classList.remove('open');}
@@ -393,10 +393,16 @@ async function loadAll(){
   try{
     const token=localStorage.getItem('niagaros_token')||'';
     const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
-    const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}}), dd=await dr.json();
+    const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}});
+    if(dr.status===401){location.href='/';return;}
+    const dd=await dr.json();
     if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
     if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
     document.getElementById('last-scan').textContent = dd.last_scan_at ? 'Last scan: '+dd.last_scan_at.substring(0,16) : 'No scan yet';
+    if(!currentAccountId){
+      document.getElementById('v-load').innerHTML='<div style="color:#9ca3af;font-size:12.5px;text-align:center;padding:40px 0">No account found. Please open this page from the dashboard.</div>';
+      return;
+    }
 
     const qr=await fetch(QNR_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
     const qd=await qr.json();

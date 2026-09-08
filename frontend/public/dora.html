@@ -367,7 +367,8 @@ function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?
 function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
 document.addEventListener('click',function(e){var w=document.querySelector('.acct-wrap');if(w&&!w.contains(e.target))document.getElementById('acct-dd').classList.remove('open');});
 function switchAccount(id){if(id===currentAccountId){document.getElementById('acct-dd').classList.remove('open');return;}currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadData();}
-function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:#7c3aed"></div>'+'<div class="acct-item-name">'+a.name+'</div>'+'<div class="acct-item-id">'+(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:#7c3aed"></div>'+'<div class="acct-item-name">'+esc(a.name)+'</div>'+'<div class="acct-item-id">'+esc(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
 
 const PAGE_CONTROLS = {
   "DORA.6": { title:'ICT Risk Management Framework', section:'Art. 6-7 — ICT Risk Management Framework', desc:'Financial entities shall have a sound, comprehensive, and well-documented ICT risk management framework, including strategies, policies, and tools to protect ICT assets.' },
