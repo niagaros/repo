@@ -889,7 +889,9 @@ def _export_csv(cur, cloud_account_id):
 # (that one includes computed fields like risk score / cert counts, which
 # make no sense as input). Each real row becomes a real _create_vendor call
 # — same onboarding/audit-log/assessment side effects as adding one by hand,
-# just looped. A malformed row is skipped and reported, never guessed at.
+# just looped, including the real website TLS check when a Website is given
+# (same as the single "create_vendor" action — see below). A malformed row
+# is skipped and reported, never guessed at.
 CSV_IMPORT_COLUMNS = ["Name", "Category", "Criticality", "Business Owner", "Contact Email",
                       "Website", "Country", "Subprocessors", "Registration Number",
                       "Business Owner Email", "Services Provided", "Internal Systems Accessed",
@@ -931,6 +933,9 @@ def _import_csv(conn, cloud_account_id, csv_text, actor):
             (row.get("Internal Systems Accessed") or "").strip() or None,
             sensitive, actor,
         )
+        website = (row.get("Website") or "").strip()
+        if website:
+            _run_website_check(conn, vendor_id, website, actor)
         created.append({"id": vendor_id, "name": name})
     return created, errors
 
@@ -1168,6 +1173,12 @@ def handler(event, context):
                     body.get("services_provided"), body.get("internal_systems_accessed"),
                     body.get("handles_sensitive_data"), actor,
                 )
+                # Run the real TLS check immediately if a website was given,
+                # instead of leaving it "not checked yet" until someone
+                # separately clicks "Check now" — same real check, just run
+                # at creation time when there's already a website to check.
+                if body.get("website"):
+                    _run_website_check(conn, vendor_id, body["website"], actor)
                 return _resp(200, {"id": vendor_id})
             if action == "import_csv":
                 if not body.get("csv_text"):
