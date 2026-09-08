@@ -898,7 +898,16 @@ CSV_IMPORT_COLUMNS = ["Name", "Category", "Criticality", "Business Owner", "Cont
 def _import_csv(conn, cloud_account_id, csv_text, actor):
     import csv
     import io
-    reader = csv.DictReader(io.StringIO(csv_text))
+    csv_text = csv_text.lstrip("﻿")  # strip a UTF-8 BOM (common from Excel exports)
+    # Excel on a non-US locale (e.g. Dutch Windows) exports CSV with ';' as
+    # the delimiter, not ',', even though the file extension stays ".csv".
+    # Sniff the real delimiter instead of assuming comma, so a real,
+    # legitimately-exported spreadsheet isn't misread as one giant column.
+    try:
+        dialect = csv.Sniffer().sniff(csv_text.split("\n", 1)[0], delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(io.StringIO(csv_text), dialect=dialect)
     created, errors = [], []
     for i, row in enumerate(reader, start=2):  # row 1 is the header
         name = (row.get("Name") or "").strip()
