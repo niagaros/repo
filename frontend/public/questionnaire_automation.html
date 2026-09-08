@@ -53,6 +53,11 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .btn-danger-txt{background:none;border:none;color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;padding:4px 8px;border-radius:5px}
 .btn-danger-txt:hover{background:#fef2f2}
 .avatar{width:34px;height:34px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0}
+.tp-scan{font-size:12px;color:#6b7280;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.tp-dot{width:7px;height:7px;background:#1d4ed8;border-radius:50%;animation:blink 2s infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1}60%{opacity:.6}}
+.btn-icon{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;font-size:14px;transition:background .12s;flex-shrink:0}
+.btn-icon:hover{background:#f9fafb}
 .acct-wrap{position:relative}
 .acct-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer;white-space:nowrap}
 .acct-chip:hover{background:#f3f4f6}
@@ -233,9 +238,11 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       </div>
     </div>
     <div class="tp-right">
+      <div class="tp-scan"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
       <button class="btn-ghost" onclick="openLibrary()">📚 Answer Library</button>
       <button class="btn-ghost" onclick="openAnalytics()">📈 Analytics</button>
       <button class="btn-primary" id="btn-upload" onclick="openUploadModal()">+ Upload Questionnaire</button>
+      <div class="btn-icon">🔔</div>
       <div class="avatar">DN</div>
     </div>
   </header>
@@ -384,6 +391,7 @@ async function loadAll(){
     const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}}), dd=await dr.json();
     if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
     if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
+    document.getElementById('last-scan').textContent = dd.last_scan_at ? 'Last scan: '+dd.last_scan_at.substring(0,16) : 'No scan yet';
 
     const qr=await fetch(QNR_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
     const qd=await qr.json();
@@ -558,17 +566,17 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 async function submitUpload(){
   const name=document.getElementById('in-q-name').value.trim();
-  if(!name){showToast('Geef de questionnaire een naam');return;}
-  if(!chosenFileBase64){showToast('Kies eerst een bestand');return;}
+  if(!name){showToast('Give the questionnaire a name');return;}
+  if(!chosenFileBase64){showToast('Choose a file first');return;}
   const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'upload',cloud_account_id:currentAccountId,name,filename:chosenFilename,file_base64:chosenFileBase64})});
   const d=await r.json();
-  if(!r.ok){showToast('⚠ '+(d.error||'Upload mislukt'));return;}
+  if(!r.ok){showToast('⚠ '+(d.error||'Upload failed'));return;}
   closeOvDirect('ov-upload');
-  showToast(d.questions_imported+' vragen geïmporteerd'+(d.reused_from_prior_approvals?' · '+d.reused_from_prior_approvals+' hergebruikt van eerder goedgekeurde antwoorden':''));
+  showToast(d.questions_imported+' question(s) imported'+(d.reused_from_prior_approvals?' · '+d.reused_from_prior_approvals+' reused from prior approved answers':''));
   loadAll();
 }
 async function deleteQuestionnaire(id,name){
-  if(!confirm('Questionnaire "'+name+'" en alle items verwijderen?'))return;
+  if(!confirm('Delete questionnaire "'+name+'" and all its items?'))return;
   await fetch(QNR_API+'?questionnaire_id='+encodeURIComponent(id),{method:'DELETE'});
   showToast('Verwijderd');
   loadAll();
@@ -676,21 +684,21 @@ async function postComment(itemId){
 }
 
 async function generateItem(itemId){
-  showToast('Bezig met evidence zoeken…');
+  showToast('Searching for evidence…');
   const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'generate_item',item_id:itemId})});
   const d=await r.json();
-  if(d.generated) showToast('AI-concept gegenereerd');
-  else if(d.reason==='bedrock_unavailable') showToast('Evidence gevonden, maar AI-tekstgeneratie is nu niet bereikbaar — probeer later opnieuw');
-  else showToast('Geen bewijs gevonden — vul handmatig in');
+  if(d.generated) showToast('AI draft generated');
+  else if(d.reason==='bedrock_unavailable') showToast('Evidence found, but AI text generation is unreachable right now — try again later');
+  else showToast('No evidence found — fill in manually');
   await openDetail(activeQuestionnaire.id);
 }
 async function generateAll(){
   const btn=document.getElementById('btn-genall');
-  btn.disabled=true; btn.textContent='Bezig…';
+  btn.disabled=true; btn.textContent='Working…';
   const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'generate_all',questionnaire_id:activeQuestionnaire.id})});
   const d=await r.json();
   btn.disabled=false; btn.textContent='✨ Generate AI Drafts';
-  showToast(`${d.generated} gegenereerd · ${d.bedrock_unavailable} evidence gevonden (AI niet bereikbaar) · ${d.no_evidence} zonder bewijs`);
+  showToast(`${d.generated} generated · ${d.bedrock_unavailable} evidence found (AI unreachable) · ${d.no_evidence} without evidence`);
   await openDetail(activeQuestionnaire.id);
 }
 async function saveItem(itemId,status){
@@ -730,7 +738,7 @@ async function createShareLink(){
   showToast('Link aangemaakt');
 }
 async function revokeShareLink(token){
-  if(!confirm('Deze link intrekken? Hij werkt dan niet meer.')) return;
+  if(!confirm('Revoke this link? It will stop working.')) return;
   await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'revoke_share_link',token})});
   const r=await fetch(QNR_API+'?questionnaire_id='+encodeURIComponent(activeQuestionnaire.id));
   activeQuestionnaire=await r.json();

@@ -53,31 +53,31 @@ body{font-family:'Inter',sans-serif;background:#f5f6f8;color:#111827;font-size:1
 <body>
 
 <div class="wrap">
-  <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Laden…</span></div>
+  <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Loading…</span></div>
   <div id="v-error" hidden class="error-box"></div>
   <div id="v-content" hidden></div>
 </div>
 
 <div class="overlay" id="ov-request" onclick="if(event.target===this)closeOv()">
   <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">Toegang aanvragen</div><button class="modal-close" onclick="closeOv()">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Request access</div><button class="modal-close" onclick="closeOv()">✕</button></div>
     <div class="modal-body">
-      <label class="f-lbl">Naam</label>
+      <label class="f-lbl">Name</label>
       <input class="f-in" id="req-name">
-      <label class="f-lbl">E-mailadres</label>
+      <label class="f-lbl">Email address</label>
       <input class="f-in" id="req-email">
-      <label class="f-lbl">Reden (optioneel)</label>
-      <textarea class="f-ta" id="req-reason" placeholder="bv. onderdeel van leveranciersbeoordeling"></textarea>
+      <label class="f-lbl">Reason (optional)</label>
+      <textarea class="f-ta" id="req-reason" placeholder="e.g. part of a vendor assessment"></textarea>
       <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:10px">
         <label style="display:flex;align-items:flex-start;gap:8px;font-size:11.5px;color:#374151;line-height:1.5;cursor:pointer">
           <input type="checkbox" id="req-nda" style="margin-top:2px">
-          <span>Ik ga ermee akkoord de inhoud van dit document vertrouwelijk te behandelen en niet met derden te delen zonder toestemming.</span>
+          <span>I agree to keep the contents of this document confidential and not share it with third parties without permission.</span>
         </label>
-        <label class="f-lbl" style="margin-top:8px">Volledige naam ter bevestiging</label>
-        <input class="f-in" id="req-nda-name" placeholder="Typ je volledige naam" style="margin-bottom:0">
+        <label class="f-lbl" style="margin-top:8px">Full name to confirm</label>
+        <input class="f-in" id="req-nda-name" placeholder="Type your full name" style="margin-bottom:0">
       </div>
     </div>
-    <div class="modal-foot"><button class="btn-outline" onclick="closeOv()">Annuleren</button><button class="btn" onclick="submitRequest()">Aanvraag versturen</button></div>
+    <div class="modal-foot"><button class="btn-outline" onclick="closeOv()">Cancel</button><button class="btn" onclick="submitRequest()">Send request</button></div>
   </div>
 </div>
 
@@ -86,7 +86,7 @@ body{font-family:'Inter',sans-serif;background:#f5f6f8;color:#111827;font-size:1
 <script>
 const TC_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trust-center';
 let data=null, requestingDocId=null;
-function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&lt;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 function closeOv(){document.getElementById('ov-request').classList.remove('open');}
 
@@ -98,18 +98,18 @@ async function load(){
     const r=await fetch(TC_API+'?download_document='+encodeURIComponent(downloadDoc)+'&access_token='+encodeURIComponent(token));
     const d=await r.json();
     if(r.ok && d.download_url){ location.href=d.download_url; return; }
-    showError(d.error||'Deze link werkt niet meer.');
+    showError(d.error||'This link no longer works.');
     return;
   }
-  if(!slug){ showError('Geen Trust Center opgegeven.'); return; }
+  if(!slug){ showError('No Trust Center specified.'); return; }
   try{
     const r=await fetch(TC_API+'?slug='+encodeURIComponent(slug));
     const d=await r.json();
-    if(!r.ok){ showError(d.error||'Deze pagina bestaat niet.'); return; }
+    if(!r.ok){ showError(d.error||'This page does not exist.'); return; }
     data=d;
     render();
   }catch(e){
-    showError('Kon deze pagina niet laden.');
+    showError('Could not load this page.');
   }
 }
 function showError(msg){
@@ -121,41 +121,41 @@ function render(){
   document.getElementById('v-content').innerHTML=`
     <div class="hdr">
       <div class="hdr-icon">🛡</div>
-      <div><div class="company">${esc(data.company_name||'Trust Center')}</div><div class="powered">Aangedreven door Niagaros — live compliance data, geen momentopname</div></div>
+      <div><div class="company">${esc(data.company_name||'Trust Center')}</div><div class="powered">Powered by Niagaros — live compliance data, not a snapshot</div></div>
     </div>
     ${data.intro_text?`<div class="intro">${esc(data.intro_text)}</div>`:''}
 
     <div class="section">
-      <h2>Compliance-status</h2>
-      <div class="sub">Continu gemeten, niet een eenmalig certificaat — elke score toont wanneer hij voor het laatst is geverifieerd.</div>
+      <h2>Compliance status</h2>
+      <div class="sub">Continuously measured, not a one-time certificate — every score shows when it was last verified.</div>
       <div class="compliance-grid">
         ${data.compliance.map(c=>`
           <div class="fw-card">
             <div class="fw-score">${c.score}%</div>
             <div class="fw-name">${esc(c.framework)}</div>
-            <div class="fw-verified">Geverifieerd: ${c.last_verified?new Date(c.last_verified).toLocaleDateString():'onbekend'}</div>
+            <div class="fw-verified">Verified: ${c.last_verified?new Date(c.last_verified).toLocaleDateString():'unknown'}</div>
           </div>
         `).join('')}
       </div>
     </div>
 
     <div class="section">
-      <h2>Beveiligingsaanpak</h2>
-      <div class="sub">Gebaseerd op onze gepubliceerde security-documentatie.</div>
+      <h2>Security approach</h2>
+      <div class="sub">Based on our published security documentation.</div>
       ${data.security_posture.map(sp=>`
         <div style="margin-bottom:14px">
           <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">${esc(sp.topic)}</div>
           ${sp.content
             ? `<div style="font-size:12.5px;color:#374151;line-height:1.6;white-space:pre-wrap">${esc(sp.content.length>420?sp.content.slice(0,420)+'…':sp.content)}</div>`
-            : `<div style="font-size:11.5px;color:#9ca3af;font-style:italic">Nog niet gepubliceerd.</div>`}
+            : `<div style="font-size:11.5px;color:#9ca3af;font-style:italic">Not published yet.</div>`}
         </div>
       `).join('')}
     </div>
 
     ${data.qa_highlights.length?`
     <div class="section">
-      <h2>Veelgestelde beveiligingsvragen</h2>
-      <div class="sub">Eerder intern goedgekeurde antwoorden, automatisch hergebruikt uit onze vragenlijstbibliotheek.</div>
+      <h2>Frequently asked security questions</h2>
+      <div class="sub">Previously internally-approved answers, automatically reused from our questionnaire library.</div>
       ${data.qa_highlights.map(qa=>`
         <div style="margin-bottom:12px">
           <div style="font-weight:600;font-size:12.5px;margin-bottom:3px">${esc(qa.question)}</div>
@@ -165,20 +165,20 @@ function render(){
     </div>` : ''}
 
     <div class="section">
-      <h2>Documenten</h2>
-      <div class="sub">Openbare documenten zijn direct te downloaden. Voor overige documenten kun je toegang aanvragen.</div>
+      <h2>Documents</h2>
+      <div class="sub">Public documents can be downloaded directly. For other documents, you can request access.</div>
       ${data.documents.length?data.documents.map(d=>`
         <div class="doc-row">
           <div class="doc-icon">📄</div>
           <div class="doc-title">${esc(d.title)}<div class="doc-cat">${esc(d.category)}</div></div>
           ${d.visibility==='public'
             ? `<a class="btn" href="${d.download_url}" style="text-decoration:none">Download</a>`
-            : `<button class="btn-outline" onclick="openRequest('${d.id}')">Toegang aanvragen</button>`}
+            : `<button class="btn-outline" onclick="openRequest('${d.id}')">Request access</button>`}
         </div>
-      `).join(''):'<div style="color:#9ca3af;font-size:12.5px">Nog geen documenten beschikbaar.</div>'}
+      `).join(''):'<div style="color:#9ca3af;font-size:12.5px">No documents available yet.</div>'}
     </div>
 
-    ${data.contact_email?`<div class="section"><h2>Contact</h2><div class="contact">Vragen over deze compliance-informatie? Neem contact op via <a href="mailto:${esc(data.contact_email)}">${esc(data.contact_email)}</a>.</div></div>`:''}
+    ${data.contact_email?`<div class="section"><h2>Contact</h2><div class="contact">Questions about this compliance information? Reach out via <a href="mailto:${esc(data.contact_email)}">${esc(data.contact_email)}</a>.</div></div>`:''}
   `;
   document.getElementById('v-load').hidden=true;
   document.getElementById('v-content').hidden=false;
@@ -197,17 +197,17 @@ async function submitRequest(){
   const email=document.getElementById('req-email').value.trim();
   const ndaChecked=document.getElementById('req-nda').checked;
   const ndaName=document.getElementById('req-nda-name').value.trim();
-  if(!name||!email){showToast('Naam en e-mailadres zijn verplicht');return;}
-  if(!ndaChecked||!ndaName){showToast('Bevestig de geheimhouding en typ je volledige naam');return;}
+  if(!name||!email){showToast('Name and email address are required');return;}
+  if(!ndaChecked||!ndaName){showToast('Confirm the confidentiality notice and type your full name');return;}
   const r=await fetch(TC_API,{method:'POST',body:JSON.stringify({
     action:'request_access',document_id:requestingDocId,requester_name:name,requester_email:email,
     reason:document.getElementById('req-reason').value.trim(),
     nda_accepted_name:ndaName,
   })});
   const d=await r.json();
-  if(!r.ok){ showToast(d.error||'Aanvraag mislukt'); return; }
+  if(!r.ok){ showToast(d.error||'Request failed'); return; }
   closeOv();
-  showToast('Aanvraag verstuurd — je ontvangt bericht zodra deze is beoordeeld.');
+  showToast('Request sent — you will be notified once it has been reviewed.');
 }
 load();
 </script>
