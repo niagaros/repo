@@ -464,7 +464,7 @@ async function loadData() {
     allFindings = (d.findings || []).filter(f => {
       const svc=(f.service||'').toString().toUpperCase();
       const fw=(f.framework||'').toString().toUpperCase();
-      return fw.includes('NIST') || svc==='NIST';
+      return fw==='NIST CSF V2.0' || svc==='NIST';
     });
     document.getElementById('v-load').hidden = true;
     document.getElementById('v-content').hidden = false;

@@ -419,7 +419,7 @@ async function loadData() {
     allFindings = (d.findings || []).filter(f => {
       const svc = (f.service || '').toString().toUpperCase();
       const fw = (f.framework || '').toString().toUpperCase();
-      return fw.includes('CIS') || (svc && !['ISO27001','NIST'].includes(svc));
+      return fw==='CIS AWS FOUNDATIONS BENCHMARK V5.0.0' || fw==='AWS FOUNDATIONAL SECURITY BEST PRACTICES' || svc==='CISAWS' || svc==='FSBP';
     });
     document.getElementById('v-load').hidden = true;
     document.getElementById('v-content').hidden = false;
