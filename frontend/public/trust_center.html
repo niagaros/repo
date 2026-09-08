@@ -38,9 +38,11 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .btn-icon:hover{background:#f9fafb}
 .content{flex:1;overflow-y:auto;padding:20px 22px}
 [hidden]{display:none!important}
-.page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.page-title{font-size:15px;font-weight:700}
-.page-sub{font-size:12px;color:#9ca3af;margin-top:3px;max-width:640px}
+.page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.page-hdr-main{display:flex;align-items:center;gap:14px}
+.page-icon{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;background:#ecfdf5;color:#16a34a}
+.page-title{font-size:19px;font-weight:800;color:#111827}
+.page-sub{font-size:12.5px;color:#6b7280;margin-top:3px;max-width:640px}
 .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px}
 .card h3{font-size:13px;font-weight:700;margin-bottom:12px}
 .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0}
@@ -127,9 +129,12 @@ input:checked + .slider::before{transform:translateX(18px)}
 
     <div id="v-content" hidden>
       <div class="page-hdr">
-        <div>
-          <div class="page-title">Trust Center settings</div>
-          <div class="page-sub">Manage what external visitors (customers, auditors, partners) see on your public Trust Center page.</div>
+        <div class="page-hdr-main">
+          <div class="page-icon">🔒</div>
+          <div>
+            <div class="page-title">Trust Center settings</div>
+            <div class="page-sub">Manage what external visitors (customers, auditors, partners) see on your public Trust Center page.</div>
+          </div>
         </div>
       </div>
 
