@@ -97,7 +97,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 <div class="main">
   <header class="topbar">
     <div style="font-size:15px;font-weight:700">Third-Party Risk Management</div>
-    <div class="tp-badge"><span>🤝</span> Vendor risico &amp; compliance-tracking</div>
+    <div class="tp-badge"><span>🤝</span> Vendor risk &amp; compliance tracking</div>
     <div class="acct-wrap">
       <div class="acct-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
       <div class="acct-dd" id="acct-dd"><div id="acct-list"></div></div>
@@ -106,17 +106,19 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
   </header>
 
   <div class="content">
-    <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Laden…</span></div>
+    <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Loading…</span></div>
 
     <div id="v-content" hidden>
       <div class="page-hdr">
         <div>
           <div class="page-title">Vendors</div>
-          <div class="page-sub">Risicoscore berekend uit echte, verifieerbare factoren: criticaliteit, certificaat-vervaldatum, en of er een goedgekeurde beveiligingsassessment is — geen externe of verzonnen data.</div>
+          <div class="page-sub">Risk score calculated from real, verifiable factors: criticality, certificate expiry, and whether an approved security assessment exists — no external or fabricated data.</div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn-ghost" onclick="exportCsv()">⬇ Export CSV</button>
-          <button class="btn-primary" onclick="openAddVendor()">+ Vendor toevoegen</button>
+          <button class="btn-ghost" onclick="document.getElementById('csv-import-file').click()">⬆ Import CSV</button>
+          <input type="file" id="csv-import-file" accept=".csv" hidden onchange="importCsv(this.files[0])">
+          <button class="btn-primary" onclick="openAddVendor()">+ Add vendor</button>
         </div>
       </div>
 
@@ -130,13 +132,13 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 <!-- Add vendor modal -->
 <div class="overlay" id="ov-add" onclick="if(event.target===this)closeAdd()">
   <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">Vendor toevoegen</div><button class="modal-close" onclick="closeAdd()">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Add vendor</div><button class="modal-close" onclick="closeAdd()">✕</button></div>
     <div class="modal-body">
-      <label class="f-lbl">Naam *</label>
-      <input class="f-in" id="add-name" placeholder="bv. Stripe">
-      <label class="f-lbl">Categorie</label>
-      <input class="f-in" id="add-category" placeholder="bv. Payment Processor">
-      <label class="f-lbl">Criticaliteit</label>
+      <label class="f-lbl">Name *</label>
+      <input class="f-in" id="add-name" placeholder="e.g. Stripe">
+      <label class="f-lbl">Category</label>
+      <input class="f-in" id="add-category" placeholder="e.g. Payment Processor">
+      <label class="f-lbl">Criticality</label>
       <select class="f-sel" id="add-criticality">
         <option value="low">Low</option>
         <option value="medium" selected>Medium</option>
@@ -144,28 +146,28 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <option value="critical">Critical</option>
       </select>
       <label class="f-lbl">Business owner</label>
-      <input class="f-in" id="add-owner" placeholder="bv. Finance Team">
-      <label class="f-lbl">Contact e-mail</label>
+      <input class="f-in" id="add-owner" placeholder="e.g. Finance Team">
+      <label class="f-lbl">Contact email</label>
       <input class="f-in" id="add-email" placeholder="security@vendor.com">
       <label class="f-lbl">Website</label>
       <input class="f-in" id="add-website" placeholder="https://...">
-      <label class="f-lbl">Land (voor data-residency risico)</label>
-      <input class="f-in" id="add-country" placeholder="bv. Germany, India, United States">
-      <label class="f-lbl">Sub-processors (door vendor zelf opgegeven)</label>
-      <input class="f-in" id="add-subprocessors" placeholder="bv. AWS (hosting), Twilio (SMS)">
-      <label class="f-lbl">Registratienummer (bv. KVK, Companies House — voor handmatige verificatie)</label>
-      <input class="f-in" id="add-regnum" placeholder="bv. KVK 12345678">
-      <label class="f-lbl">E-mail van de business owner (voor meldingen)</label>
-      <input class="f-in" id="add-owner-email" placeholder="naam@bedrijf.nl">
-      <label class="f-lbl">Geleverde diensten</label>
-      <input class="f-in" id="add-services" placeholder="bv. Cloud hosting, Payment processing">
-      <label class="f-lbl">Welke interne systemen/data heeft deze vendor toegang toe?</label>
-      <input class="f-in" id="add-systems" placeholder="bv. Klantendatabase, Facturatiesysteem">
-      <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin:10px 0"><input type="checkbox" id="add-sensitive"> Deze vendor verwerkt gevoelige/persoonsgegevens</label>
-      <label class="f-lbl">Notities</label>
+      <label class="f-lbl">Country (for data-residency risk)</label>
+      <input class="f-in" id="add-country" placeholder="e.g. Germany, India, United States">
+      <label class="f-lbl">Sub-processors (self-reported by vendor)</label>
+      <input class="f-in" id="add-subprocessors" placeholder="e.g. AWS (hosting), Twilio (SMS)">
+      <label class="f-lbl">Registration number (e.g. Chamber of Commerce, Companies House — for manual verification)</label>
+      <input class="f-in" id="add-regnum" placeholder="e.g. registry no. 12345678">
+      <label class="f-lbl">Business owner email (for notifications)</label>
+      <input class="f-in" id="add-owner-email" placeholder="name@company.com">
+      <label class="f-lbl">Services provided</label>
+      <input class="f-in" id="add-services" placeholder="e.g. Cloud hosting, Payment processing">
+      <label class="f-lbl">Which internal systems/data does this vendor have access to?</label>
+      <input class="f-in" id="add-systems" placeholder="e.g. Customer database, Billing system">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin:10px 0"><input type="checkbox" id="add-sensitive"> This vendor processes sensitive/personal data</label>
+      <label class="f-lbl">Notes</label>
       <textarea class="f-ta" id="add-notes"></textarea>
     </div>
-    <div class="modal-foot"><button class="btn-ghost" onclick="closeAdd()">Annuleren</button><button class="btn-primary" onclick="submitAddVendor()">Toevoegen</button></div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeAdd()">Cancel</button><button class="btn-primary" onclick="submitAddVendor()">Add</button></div>
   </div>
 </div>
 
@@ -174,14 +176,14 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
   <div class="modal" style="width:600px">
     <div class="modal-hdr"><div class="modal-title" id="detail-title">Vendor</div><button class="modal-close" onclick="closeDetail()">✕</button></div>
     <div class="modal-body" id="detail-body"></div>
-    <div class="modal-foot"><button class="btn-ghost" style="color:#ef4444" onclick="deleteCurrentVendor()">Verwijderen</button><button class="btn-ghost" onclick="closeDetail()">Sluiten</button></div>
+    <div class="modal-foot"><button class="btn-ghost" style="color:#ef4444" onclick="deleteCurrentVendor()">Delete</button><button class="btn-ghost" onclick="closeDetail()">Close</button></div>
   </div>
 </div>
 
 <!-- Upload certification modal -->
 <div class="overlay" id="ov-cert" onclick="if(event.target===this)closeCertModal()">
   <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">Certificaat toevoegen</div><button class="modal-close" onclick="closeCertModal()">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Add certificate</div><button class="modal-close" onclick="closeCertModal()">✕</button></div>
     <div class="modal-body">
       <label class="f-lbl">Type</label>
       <select class="f-sel" id="cert-type">
@@ -191,32 +193,32 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <option value="gdpr_dpa">GDPR DPA</option>
         <option value="hipaa_baa">HIPAA BAA</option>
         <option value="iso27701">ISO 27701</option>
-        <option value="other">Overig</option>
+        <option value="other">Other</option>
       </select>
-      <label class="f-lbl">Uitgiftedatum</label>
+      <label class="f-lbl">Issue date</label>
       <input class="f-in" type="date" id="cert-issued">
-      <label class="f-lbl">Vervaldatum</label>
+      <label class="f-lbl">Expiry date</label>
       <input class="f-in" type="date" id="cert-expiry">
-      <label class="f-lbl">Bestand (bewijs)</label>
+      <label class="f-lbl">File (evidence)</label>
       <input type="file" id="cert-file">
     </div>
-    <div class="modal-foot"><button class="btn-ghost" onclick="closeCertModal()">Annuleren</button><button class="btn-primary" onclick="submitCert()">Toevoegen</button></div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeCertModal()">Cancel</button><button class="btn-primary" onclick="submitCert()">Add</button></div>
   </div>
 </div>
 
 <!-- Assessment modal -->
 <div class="overlay" id="ov-assess" onclick="if(event.target===this)closeAssessModal()">
   <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">Assessment versturen</div><button class="modal-close" onclick="closeAssessModal()">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Send assessment</div><button class="modal-close" onclick="closeAssessModal()">✕</button></div>
     <div class="modal-body">
-      <label class="f-lbl">Type vragenlijst</label>
+      <label class="f-lbl">Questionnaire type</label>
       <select class="f-sel" id="assess-type">
-        <option value="caiq">CAIQ (echte vragen worden automatisch toegevoegd)</option>
+        <option value="caiq">CAIQ (real questions added automatically)</option>
         <option value="sig_lite">SIG Lite</option>
         <option value="sig_core">SIG Core</option>
         <option value="custom">Custom</option>
       </select>
-      <label class="f-lbl">Risicodomein</label>
+      <label class="f-lbl">Risk domain</label>
       <select class="f-sel" id="assess-domain">
         <option value="cybersecurity">Cybersecurity</option>
         <option value="privacy">Privacy</option>
@@ -226,26 +228,26 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <option value="data_residency">Data residency</option>
       </select>
     </div>
-    <div class="modal-foot"><button class="btn-ghost" onclick="closeAssessModal()">Annuleren</button><button class="btn-primary" onclick="submitAssessment()">Versturen (markeren als 'sent')</button></div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeAssessModal()">Cancel</button><button class="btn-primary" onclick="submitAssessment()">Send (marks as 'sent')</button></div>
   </div>
 </div>
 
 <!-- Log incident modal -->
 <div class="overlay" id="ov-incident" onclick="if(event.target===this)closeIncidentModal()">
   <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">Bekend incident loggen</div><button class="modal-close" onclick="closeIncidentModal()">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Log known incident</div><button class="modal-close" onclick="closeIncidentModal()">✕</button></div>
     <div class="modal-body">
-      <div style="font-size:11px;color:#9ca3af;margin-bottom:10px">Alleen voor een echt, publiek gerapporteerd incident dat je zelf hebt gelezen — geen automatische monitoring, dus een bron-URL wordt aangeraden.</div>
-      <label class="f-lbl">Titel *</label>
-      <input class="f-in" id="inc-title" placeholder="bv. Data breach reported by vendor">
-      <label class="f-lbl">Omschrijving</label>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:10px">Only for a real, publicly reported incident you've personally read about — there's no automated monitoring, so a source URL is recommended.</div>
+      <label class="f-lbl">Title *</label>
+      <input class="f-in" id="inc-title" placeholder="e.g. Data breach reported by vendor">
+      <label class="f-lbl">Description</label>
       <textarea class="f-ta" id="inc-desc"></textarea>
-      <label class="f-lbl">Bron-URL</label>
+      <label class="f-lbl">Source URL</label>
       <input class="f-in" id="inc-url" placeholder="https://...">
-      <label class="f-lbl">Datum van het incident</label>
+      <label class="f-lbl">Date of the incident</label>
       <input class="f-in" type="date" id="inc-date">
     </div>
-    <div class="modal-foot"><button class="btn-ghost" onclick="closeIncidentModal()">Annuleren</button><button class="btn-primary" onclick="submitIncident()">Loggen</button></div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeIncidentModal()">Cancel</button><button class="btn-primary" onclick="submitIncident()">Log</button></div>
   </div>
 </div>
 
@@ -254,32 +256,32 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
   <div class="modal">
     <div class="modal-hdr"><div class="modal-title">Contract</div><button class="modal-close" onclick="closeContractModal()">✕</button></div>
     <div class="modal-body">
-      <label class="f-lbl">Startdatum</label>
+      <label class="f-lbl">Start date</label>
       <input class="f-in" type="date" id="contract-start">
-      <label class="f-lbl">Einddatum (voor verlengingssignalering)</label>
+      <label class="f-lbl">End date (for renewal alerts)</label>
       <input class="f-in" type="date" id="contract-end">
-      <label class="f-lbl">Contractdocument</label>
+      <label class="f-lbl">Contract document</label>
       <input type="file" id="contract-file">
     </div>
-    <div class="modal-foot"><button class="btn-ghost" onclick="closeContractModal()">Annuleren</button><button class="btn-primary" onclick="submitContract()">Opslaan</button></div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeContractModal()">Cancel</button><button class="btn-primary" onclick="submitContract()">Save</button></div>
   </div>
 </div>
 
 <!-- Remediation task modal -->
 <div class="overlay" id="ov-task" onclick="if(event.target===this)closeTaskModal()">
   <div class="modal">
-    <div class="modal-hdr"><div class="modal-title">Remediation-actie aanmaken</div><button class="modal-close" onclick="closeTaskModal()">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Create remediation action</div><button class="modal-close" onclick="closeTaskModal()">✕</button></div>
     <div class="modal-body">
-      <label class="f-lbl">Titel *</label>
-      <input class="f-in" id="task-title" placeholder="bv. Vraag bijgewerkt SOC 2-rapport op">
-      <label class="f-lbl">Omschrijving</label>
+      <label class="f-lbl">Title *</label>
+      <input class="f-in" id="task-title" placeholder="e.g. Request updated SOC 2 report">
+      <label class="f-lbl">Description</label>
       <textarea class="f-ta" id="task-desc"></textarea>
-      <label class="f-lbl">Deadline</label>
+      <label class="f-lbl">Due date</label>
       <input class="f-in" type="date" id="task-due">
-      <label class="f-lbl">Toegewezen aan</label>
+      <label class="f-lbl">Assigned to</label>
       <input class="f-in" id="task-assignee">
     </div>
-    <div class="modal-foot"><button class="btn-ghost" onclick="closeTaskModal()">Annuleren</button><button class="btn-primary" onclick="submitTask()">Aanmaken</button></div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeTaskModal()">Cancel</button><button class="btn-primary" onclick="submitTask()">Create</button></div>
   </div>
 </div>
 
@@ -326,7 +328,7 @@ function render(){
   vendors.forEach(v=>counts[v.risk.level]=(counts[v.risk.level]||0)+1);
   const sc=(level,label,color,levels)=>`<div class="sum-card" style="cursor:pointer;${riskFilter&&JSON.stringify(riskFilter)===JSON.stringify(levels)?'outline:2px solid '+color:''}" onclick='toggleRiskFilter(${JSON.stringify(levels)})'><div class="sum-n" style="color:${color}">${level}</div><div class="sum-l">${label}</div></div>`;
   document.getElementById('summary-row').innerHTML=
-    `<div class="sum-card" style="cursor:pointer;${!riskFilter?'outline:2px solid #1d4ed8':''}" onclick="toggleRiskFilter(null)"><div class="sum-n">${vendors.length}</div><div class="sum-l">Totaal vendors (klik om filter te wissen)</div></div>` +
+    `<div class="sum-card" style="cursor:pointer;${!riskFilter?'outline:2px solid #1d4ed8':''}" onclick="toggleRiskFilter(null)"><div class="sum-n">${vendors.length}</div><div class="sum-l">Total vendors (click to clear filter)</div></div>` +
     sc(counts.critical,'Critical risk','#ef4444',['critical']) +
     sc(counts.high,'High risk','#d97706',['high']) +
     sc(counts.low+counts.medium,'Low/Medium risk','#16a34a',['low','medium']);
@@ -344,16 +346,16 @@ function render(){
       </div>
       <div class="v-meta"><span class="crit-pill">${v.criticality}</span> ${v.onboarding_stage!=='active'?`<span class="crit-pill" style="background:#fef3c7;color:#92400e">onboarding: ${v.onboarding_stage.replace('_',' ')}</span>`:''} ${v.business_owner?' · '+esc(v.business_owner):''}</div>
       <div class="v-chips">
-        ${validCerts?`<span class="chip ok">✓ ${validCerts} cert(s) geldig</span>`:''}
-        ${expiringCerts?`<span class="chip warn">⚠ ${expiringCerts} verlopen binnenkort</span>`:''}
-        ${expiredCerts?`<span class="chip bad">✗ ${expiredCerts} verlopen</span>`:''}
-        ${!v.certifications.length?`<span class="chip bad">Geen certificaten</span>`:''}
-        <span class="chip ${approvedAssessment?'ok':'warn'}">${approvedAssessment?'✓ Assessment goedgekeurd':'Geen goedgekeurde assessment'}</span>
-        ${v.is_adequate_country===false?`<span class="chip bad">🌍 ${esc(v.country)} — geen EU-adequaatheidsbesluit</span>`:''}
-        ${v.is_adequate_country===true?`<span class="chip ok">🌍 ${esc(v.country)} — adequaat land</span>`:''}
+        ${validCerts?`<span class="chip ok">✓ ${validCerts} cert(s) valid</span>`:''}
+        ${expiringCerts?`<span class="chip warn">⚠ ${expiringCerts} expiring soon</span>`:''}
+        ${expiredCerts?`<span class="chip bad">✗ ${expiredCerts} expired</span>`:''}
+        ${!v.certifications.length?`<span class="chip bad">No certificates</span>`:''}
+        <span class="chip ${approvedAssessment?'ok':'warn'}">${approvedAssessment?'✓ Assessment approved':'No approved assessment'}</span>
+        ${v.is_adequate_country===false?`<span class="chip bad">🌍 ${esc(v.country)} — no EU adequacy decision</span>`:''}
+        ${v.is_adequate_country===true?`<span class="chip ok">🌍 ${esc(v.country)} — adequate country</span>`:''}
       </div>
     </div>`;
-  }).join('') : (riskFilter ? '<div class="empty">Geen vendors met dit risiconiveau.</div>' : '<div class="empty">Nog geen vendors toegevoegd. Klik op "+ Vendor toevoegen" om te beginnen.</div>');
+  }).join('') : (riskFilter ? '<div class="empty">No vendors at this risk level.</div>' : '<div class="empty">No vendors added yet. Click "+ Add vendor" to get started.</div>');
 
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-content').hidden=false;
@@ -372,6 +374,17 @@ async function exportCsv(){
   a.download='tprm_vendors.csv';
   document.body.appendChild(a); a.click(); a.remove();
 }
+async function importCsv(file){
+  if(!file)return;
+  const csv_text=await file.text();
+  const r=await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'import_csv',cloud_account_id:currentAccountId,csv_text,actor_name:actorName()})});
+  const d=await r.json();
+  document.getElementById('csv-import-file').value='';
+  if(!r.ok){showToast(d.error||'Import failed');return;}
+  showToast(`Imported ${d.created.length} vendor(s)`+(d.errors.length?`, ${d.errors.length} row(s) skipped`:''));
+  if(d.errors.length) console.warn('CSV import row issues:', d.errors);
+  loadAll();
+}
 async function downloadEvidencePackage(vendorId){
   const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&evidence_package='+vendorId);
   const pkg=await r.json();
@@ -380,7 +393,7 @@ async function downloadEvidencePackage(vendorId){
   a.href=URL.createObjectURL(blob);
   a.download='evidence_package_'+(pkg.vendor?pkg.vendor.name:vendorId)+'.json';
   document.body.appendChild(a); a.click(); a.remove();
-  showToast('Evidence package gedownload');
+  showToast('Evidence package downloaded');
 }
 
 function openAddVendor(){
@@ -392,7 +405,7 @@ function openAddVendor(){
 function closeAdd(){document.getElementById('ov-add').classList.remove('open');}
 async function submitAddVendor(){
   const name=document.getElementById('add-name').value.trim();
-  if(!name){showToast('Naam is verplicht');return;}
+  if(!name){showToast('Name is required');return;}
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
     action:'create_vendor',cloud_account_id:currentAccountId,name,
     category:document.getElementById('add-category').value.trim(),
@@ -411,7 +424,7 @@ async function submitAddVendor(){
     actor_name:actorName(),
   })});
   closeAdd();
-  showToast('Vendor toegevoegd');
+  showToast('Vendor added');
   loadAll();
 }
 
@@ -424,23 +437,23 @@ function openDetail(id){
   const certRows=v.certifications.map(c=>`
     <div class="row-item">
       <span class="chip ${c.computed_status==='valid'?'ok':c.computed_status==='expiring_soon'?'warn':'bad'}">${c.computed_status.replace('_',' ')}</span>
-      <div style="flex:1"><b>${c.certification_type.toUpperCase()}</b> ${c.expiry_date?'· vervalt '+c.expiry_date:''}</div>
+      <div style="flex:1"><b>${c.certification_type.toUpperCase()}</b> ${c.expiry_date?'· expires '+c.expiry_date:''}</div>
       ${c.filename?`<button class="btn-ghost btn-sm" onclick="downloadCert('${c.id}')">Download</button>`:''}
-    </div>`).join('') || '<div class="empty">Geen certificaten.</div>';
+    </div>`).join('') || '<div class="empty">No certificates.</div>';
   const assessRows=v.assessments.map(a=>`
     <div class="row-item" style="flex-direction:column;align-items:stretch;gap:6px">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="chip ${a.status==='approved'?'ok':a.status==='received'?'warn':''}">${a.status}</span>
-        <div style="flex:1"><b>${a.questionnaire_type.toUpperCase()}</b> · ${a.domain.replace('_',' ')} ${a.total_items?` · ${a.answered_items}/${a.total_items} beantwoord`:''} ${a.flagged_no_count?`<span class="chip bad">⚠ ${a.flagged_no_count}x "no"</span>`:''}</div>
+        <div style="flex:1"><b>${a.questionnaire_type.toUpperCase()}</b> · ${a.domain.replace('_',' ')} ${a.total_items?` · ${a.answered_items}/${a.total_items} answered`:''} ${a.flagged_no_count?`<span class="chip bad">⚠ ${a.flagged_no_count}x "no"</span>`:''}</div>
         ${a.status!=='approved'?`<select class="f-sel" style="width:auto" onchange="updateAssessmentStatus('${a.id}', this.value)">
-          <option value="">Status wijzigen…</option>
+          <option value="">Change status…</option>
           <option value="in_progress">In progress</option>
           <option value="received">Received</option>
           <option value="approved">Approved</option>
         </select>`:''}
       </div>
-      ${a.questionnaire_type==='caiq'?`<button class="btn-ghost btn-sm" style="align-self:flex-start" onclick="openCaiqItems('${a.id}')">Bekijk/beantwoord echte CAIQ-vragen</button>`:''}
-    </div>`).join('') || '<div class="empty">Nog geen assessment verstuurd.</div>';
+      ${a.questionnaire_type==='caiq'?`<button class="btn-ghost btn-sm" style="align-self:flex-start" onclick="openCaiqItems('${a.id}')">View/answer real CAIQ questions</button>`:''}
+    </div>`).join('') || '<div class="empty">No assessment sent yet.</div>';
 
   const stageIdx=ONBOARDING_STAGES.indexOf(v.onboarding_stage);
   const nextStage=ONBOARDING_STAGES[stageIdx+1];
@@ -456,15 +469,15 @@ function openDetail(id){
           <button class="btn-ghost btn-sm" onclick="acceptTaskRisk('${t.id}')">Accept risk</button>`:''}
       </div>
       ${t.description?`<div style="font-size:11.5px;color:#6b7280">${esc(t.description)}</div>`:''}
-      ${t.acceptance_reason?`<div style="font-size:11px;color:#92400e">Risico geaccepteerd door ${esc(t.accepted_by||'')}: ${esc(t.acceptance_reason)}</div>`:''}
-    </div>`).join('') || '<div class="empty">Geen openstaande acties.</div>';
+      ${t.acceptance_reason?`<div style="font-size:11px;color:#92400e">Risk accepted by ${esc(t.accepted_by||'')}: ${esc(t.acceptance_reason)}</div>`:''}
+    </div>`).join('') || '<div class="empty">No open actions.</div>';
 
   const incidentRows=(v.incidents||[]).map(i=>`
     <div class="row-item" style="flex-direction:column;align-items:stretch;gap:2px">
       <div style="font-size:12px;font-weight:600">${esc(i.title)} ${i.occurred_date?'· '+i.occurred_date:''}</div>
       ${i.description?`<div style="font-size:11.5px;color:#6b7280">${esc(i.description)}</div>`:''}
-      ${i.source_url?`<a href="${esc(i.source_url)}" target="_blank" style="font-size:11px;color:#1d4ed8">Bron ↗</a>`:''}
-    </div>`).join('') || '<div class="empty">Geen bekende incidenten gelogd.</div>';
+      ${i.source_url?`<a href="${esc(i.source_url)}" target="_blank" style="font-size:11px;color:#1d4ed8">Source ↗</a>`:''}
+    </div>`).join('') || '<div class="empty">No known incidents logged.</div>';
 
   document.getElementById('detail-body').innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
@@ -474,26 +487,26 @@ function openDetail(id){
       <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="downloadEvidencePackage('${v.id}')">📦 Evidence package</button>
     </div>
     <div style="font-size:11.5px;color:#6b7280;margin-bottom:14px">${esc(v.category||'')} ${v.business_owner?' · Owner: '+esc(v.business_owner):''} ${v.contact_email?' · '+esc(v.contact_email):''} ${v.registration_number?' · Reg: '+esc(v.registration_number):''}</div>
-    ${v.subprocessors?`<div style="font-size:11.5px;color:#6b7280;margin-bottom:10px"><b>Sub-processors (zelf opgegeven door vendor):</b> ${esc(v.subprocessors)}</div>`:''}
-    ${v.handles_sensitive_data?'<span class="chip bad" style="margin-bottom:10px;display:inline-block">⚠ Verwerkt gevoelige/persoonsgegevens</span>':''}
-    ${v.website?`<div style="font-size:11.5px;color:#6b7280;margin-bottom:10px">Website TLS: ${v.website_tls_valid===true?'<span class="chip ok">geldig</span>':v.website_tls_valid===false?'<span class="chip bad">ongeldig</span>':'<span class="chip">nog niet gecontroleerd</span>'} ${v.website_checked_at?'· gecontroleerd '+v.website_checked_at.substring(0,10):''} <button class="btn-ghost btn-sm" onclick="checkWebsite()">Nu controleren</button></div>`:''}
+    ${v.subprocessors?`<div style="font-size:11.5px;color:#6b7280;margin-bottom:10px"><b>Sub-processors (self-reported by vendor):</b> ${esc(v.subprocessors)}</div>`:''}
+    ${v.handles_sensitive_data?'<span class="chip bad" style="margin-bottom:10px;display:inline-block">⚠ Processes sensitive/personal data</span>':''}
+    ${v.website?`<div style="font-size:11.5px;color:#6b7280;margin-bottom:10px">Website TLS: ${v.website_tls_valid===true?'<span class="chip ok">valid</span>':v.website_tls_valid===false?'<span class="chip bad">invalid</span>':'<span class="chip">not checked yet</span>'} ${v.website_checked_at?'· checked '+v.website_checked_at.substring(0,10):''} <button class="btn-ghost btn-sm" onclick="checkWebsite()">Check now</button></div>`:''}
     <div style="font-size:11.5px;color:#6b7280;margin-bottom:10px">
-      <b>Contract:</b> ${v.contract_start_date||v.contract_end_date?`${v.contract_start_date||'?'} → ${v.contract_end_date||'?'}`:'niet ingesteld'}
+      <b>Contract:</b> ${v.contract_start_date||v.contract_end_date?`${v.contract_start_date||'?'} → ${v.contract_end_date||'?'}`:'not set'}
       ${v.contract_filename?` (${esc(v.contract_filename)}) <button class="btn-ghost btn-sm" onclick="downloadContract('${v.id}')">Download</button>`:''}
-      <button class="btn-ghost btn-sm" onclick="openContractModal()">Bewerken</button>
+      <button class="btn-ghost btn-sm" onclick="openContractModal()">Edit</button>
     </div>
 
-    <div class="sec-hdr">Onboarding-voortgang</div>
+    <div class="sec-hdr">Onboarding progress</div>
     <div style="margin-bottom:4px">${stepper}</div>
-    ${nextStage?`<button class="btn-primary btn-sm" onclick="advanceOnboarding('${nextStage}')">→ Naar "${nextStage.replace('_',' ')}"</button>`:'<div class="empty" style="padding:8px 0">Volledig actief.</div>'}
+    ${nextStage?`<button class="btn-primary btn-sm" onclick="advanceOnboarding('${nextStage}')">→ Advance to "${nextStage.replace('_',' ')}"</button>`:'<div class="empty" style="padding:8px 0">Fully active.</div>'}
 
-    <div class="sec-hdr">Certificaten <button class="btn-ghost btn-sm" onclick="openCertModal()">+ Toevoegen</button></div>
+    <div class="sec-hdr">Certificates <button class="btn-ghost btn-sm" onclick="openCertModal()">+ Add</button></div>
     ${certRows}
-    <div class="sec-hdr">Assessments <button class="btn-ghost btn-sm" onclick="openAssessModal()">+ Versturen</button></div>
+    <div class="sec-hdr">Assessments <button class="btn-ghost btn-sm" onclick="openAssessModal()">+ Send</button></div>
     ${assessRows}
-    <div class="sec-hdr">Bekende incidenten (handmatig gelogd, echte bron vereist) <button class="btn-ghost btn-sm" onclick="openIncidentModal()">+ Loggen</button></div>
+    <div class="sec-hdr">Known incidents (manually logged, real source required) <button class="btn-ghost btn-sm" onclick="openIncidentModal()">+ Log</button></div>
     ${incidentRows}
-    <div class="sec-hdr">Remediation &amp; risk acceptance <button class="btn-ghost btn-sm" onclick="openTaskModal()">+ Actie aanmaken</button></div>
+    <div class="sec-hdr">Remediation &amp; risk acceptance <button class="btn-ghost btn-sm" onclick="openTaskModal()">+ Create action</button></div>
     ${taskRows}
   `;
   document.getElementById('ov-detail').classList.add('open');
@@ -515,29 +528,29 @@ async function openCaiqItems(assessmentId){
         ${['yes','no','na','unknown'].map(ans=>`<button class="btn-ghost btn-sm" style="${i.answer===ans?'background:#1d4ed8;color:#fff;border-color:#1d4ed8':''}" onclick="answerCaiq('${i.id}','${ans}','${assessmentId}')">${ans}</button>`).join('')}
       </div>
     </div>`).join('');
-  document.getElementById('detail-title').textContent='CAIQ — echte CSA CCM-vragen';
-  document.getElementById('detail-body').innerHTML = `<button class="btn-ghost btn-sm" onclick="openDetail(activeVendorId)" style="margin-bottom:10px">← Terug naar vendor</button>` + rows;
+  document.getElementById('detail-title').textContent='CAIQ — real CSA CCM questions';
+  document.getElementById('detail-body').innerHTML = `<button class="btn-ghost btn-sm" onclick="openDetail(activeVendorId)" style="margin-bottom:10px">← Back to vendor</button>` + rows;
 }
 async function answerCaiq(itemId, answer, assessmentId){
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'answer_assessment_item',item_id:itemId,answer,actor_name:actorName()})});
-  showToast('Beantwoord: '+answer);
+  showToast('Answered: '+answer);
   await loadAll();
   openCaiqItems(assessmentId);
 }
 function closeDetail(){document.getElementById('ov-detail').classList.remove('open');}
 async function deleteCurrentVendor(){
   if(!activeVendorId)return;
-  if(!confirm('Deze vendor en alle bijbehorende data verwijderen?'))return;
+  if(!confirm('Delete this vendor and all its data?'))return;
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'delete_vendor',vendor_id:activeVendorId,actor_name:actorName()})});
   closeDetail();
-  showToast('Vendor verwijderd');
+  showToast('Vendor deleted');
   loadAll();
 }
 async function downloadCert(certId){
   const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&download_certification='+certId);
   const d=await r.json();
   if(d.download_url) window.open(d.download_url,'_blank');
-  else showToast(d.error||'Geen bestand beschikbaar');
+  else showToast(d.error||'No file available');
 }
 
 function openCertModal(){
@@ -565,7 +578,7 @@ async function submitCert(){
     filename, file_base64, actor_name:actorName(),
   })});
   closeCertModal();
-  showToast('Certificaat toegevoegd');
+  showToast('Certificate added');
   await loadAll();
   openDetail(activeVendorId);
 }
@@ -595,7 +608,7 @@ async function submitContract(){
     filename,file_base64,actor_name:actorName(),
   })});
   closeContractModal();
-  showToast('Contract opgeslagen');
+  showToast('Contract saved');
   await loadAll();
   openDetail(activeVendorId);
 }
@@ -603,11 +616,11 @@ async function downloadContract(vendorId){
   const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&download_contract='+vendorId);
   const d=await r.json();
   if(d.download_url) window.open(d.download_url,'_blank');
-  else showToast(d.error||'Geen contractbestand beschikbaar');
+  else showToast(d.error||'No contract file available');
 }
 async function checkWebsite(){
   const v=vendors.find(x=>x.id===activeVendorId);
-  showToast('Website wordt gecontroleerd…');
+  showToast('Checking website…');
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'check_website',vendor_id:activeVendorId,website:v.website,actor_name:actorName()})});
   await loadAll();
   openDetail(activeVendorId);
@@ -620,7 +633,7 @@ function openTaskModal(){
 function closeTaskModal(){document.getElementById('ov-task').classList.remove('open');}
 async function submitTask(){
   const title=document.getElementById('task-title').value.trim();
-  if(!title){showToast('Titel is verplicht');return;}
+  if(!title){showToast('Title is required');return;}
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
     action:'create_remediation_task',vendor_id:activeVendorId,title,
     description:document.getElementById('task-desc').value.trim(),
@@ -629,21 +642,21 @@ async function submitTask(){
     actor_name:actorName(),
   })});
   closeTaskModal();
-  showToast('Actie aangemaakt');
+  showToast('Action created');
   await loadAll();
   openDetail(activeVendorId);
 }
 async function resolveTask(taskId){
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'update_remediation_task',task_id:taskId,vendor_id:activeVendorId,status:'resolved',actor_name:actorName()})});
-  showToast('Actie afgerond');
+  showToast('Action resolved');
   await loadAll();
   openDetail(activeVendorId);
 }
 async function acceptTaskRisk(taskId){
-  const reason=prompt('Waarom accepteer je dit risico? (verplicht)');
+  const reason=prompt('Why are you accepting this risk? (required)');
   if(!reason)return;
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({action:'update_remediation_task',task_id:taskId,vendor_id:activeVendorId,status:'accepted_risk',acceptance_reason:reason,actor_name:actorName()})});
-  showToast('Risico geaccepteerd en vastgelegd');
+  showToast('Risk accepted and logged');
   await loadAll();
   openDetail(activeVendorId);
 }
@@ -655,7 +668,7 @@ function openIncidentModal(){
 function closeIncidentModal(){document.getElementById('ov-incident').classList.remove('open');}
 async function submitIncident(){
   const title=document.getElementById('inc-title').value.trim();
-  if(!title){showToast('Titel is verplicht');return;}
+  if(!title){showToast('Title is required');return;}
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
     action:'create_incident',vendor_id:activeVendorId,title,
     description:document.getElementById('inc-desc').value.trim(),
@@ -664,7 +677,7 @@ async function submitIncident(){
     actor_name:actorName(),
   })});
   closeIncidentModal();
-  showToast('Incident gelogd');
+  showToast('Incident logged');
   await loadAll();
   openDetail(activeVendorId);
 }
@@ -679,7 +692,7 @@ async function submitAssessment(){
     actor_name:actorName(),
   })});
   closeAssessModal();
-  showToast('Assessment verstuurd');
+  showToast('Assessment sent');
   await loadAll();
   openDetail(activeVendorId);
 }
@@ -688,7 +701,7 @@ async function updateAssessmentStatus(assessmentId, status){
   await fetch(TPRM_API,{method:'POST',body:JSON.stringify({
     action:'update_assessment',assessment_id:assessmentId,vendor_id:activeVendorId,status,actor_name:actorName(),
   })});
-  showToast('Status bijgewerkt: '+status);
+  showToast('Status updated: '+status);
   await loadAll();
   openDetail(activeVendorId);
 }

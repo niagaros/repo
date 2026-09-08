@@ -885,6 +885,47 @@ def _export_csv(cur, cloud_account_id):
     return out.getvalue()
 
 
+# Bulk import — a different, input-shaped column set than the export above
+# (that one includes computed fields like risk score / cert counts, which
+# make no sense as input). Each real row becomes a real _create_vendor call
+# — same onboarding/audit-log/assessment side effects as adding one by hand,
+# just looped. A malformed row is skipped and reported, never guessed at.
+CSV_IMPORT_COLUMNS = ["Name", "Category", "Criticality", "Business Owner", "Contact Email",
+                      "Website", "Country", "Subprocessors", "Registration Number",
+                      "Business Owner Email", "Services Provided", "Internal Systems Accessed",
+                      "Sensitive Data (yes/no)", "Notes"]
+
+def _import_csv(conn, cloud_account_id, csv_text, actor):
+    import csv
+    import io
+    reader = csv.DictReader(io.StringIO(csv_text))
+    created, errors = [], []
+    for i, row in enumerate(reader, start=2):  # row 1 is the header
+        name = (row.get("Name") or "").strip()
+        if not name:
+            errors.append(f"row {i}: Name is required, skipped")
+            continue
+        criticality = (row.get("Criticality") or "medium").strip().lower()
+        if criticality not in CRITICALITY_LEVELS:
+            errors.append(f"row {i} ({name}): invalid criticality '{criticality}', defaulted to medium")
+            criticality = "medium"
+        sensitive = (row.get("Sensitive Data (yes/no)") or "").strip().lower() in ("yes", "true", "1")
+        vendor_id = _create_vendor(
+            conn, cloud_account_id, name, (row.get("Category") or "").strip() or None,
+            criticality, (row.get("Business Owner") or "").strip() or None,
+            (row.get("Contact Email") or "").strip() or None, (row.get("Website") or "").strip() or None,
+            (row.get("Notes") or "").strip() or None, (row.get("Country") or "").strip() or None,
+            (row.get("Subprocessors") or "").strip() or None, None,
+            (row.get("Registration Number") or "").strip() or None,
+            (row.get("Business Owner Email") or "").strip() or None,
+            (row.get("Services Provided") or "").strip() or None,
+            (row.get("Internal Systems Accessed") or "").strip() or None,
+            sensitive, actor,
+        )
+        created.append({"id": vendor_id, "name": name})
+    return created, errors
+
+
 # ── audit log ────────────────────────────────────────────────────────────
 
 def _get_audit_log(cur, cloud_account_id, vendor_id=None):
@@ -1119,6 +1160,11 @@ def handler(event, context):
                     body.get("handles_sensitive_data"), actor,
                 )
                 return _resp(200, {"id": vendor_id})
+            if action == "import_csv":
+                if not body.get("csv_text"):
+                    return _resp(400, {"error": "csv_text is required"})
+                created, errors = _import_csv(conn, body["cloud_account_id"], body["csv_text"], actor)
+                return _resp(200, {"created": created, "errors": errors})
             if action == "upload_contract":
                 _upload_contract(
                     conn, body["vendor_id"], body.get("start_date"), body.get("end_date"),
