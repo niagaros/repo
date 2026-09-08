@@ -186,25 +186,33 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .rp-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .rp-title{font-size:13px;font-weight:700;color:#111827}
 .rp-status{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px}
-.gauge-wrap{display:flex;justify-content:center;margin-bottom:14px}
-.gauge-rel{position:relative;width:118px;height:118px}
-.gauge-rel svg{transform:rotate(-90deg)}
-.g-bg{fill:none;stroke:#f3f4f6;stroke-width:11}
-.g-fg{fill:none;stroke:#ef4444;stroke-width:11;stroke-linecap:round;stroke-dasharray:339;stroke-dashoffset:339;transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1)}
-.gauge-ctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.gauge-n{font-size:24px;font-weight:800;color:#111827;line-height:1}
-.gauge-d{font-size:11px;color:#9ca3af;margin-top:1px}
 .rp-checks{text-align:center;font-size:12px;color:#6b7280;margin-bottom:14px}
-.rp-stats{display:flex;justify-content:space-around;padding:12px 0;border-top:1px solid #f3f4f6;border-bottom:1px solid #f3f4f6;margin-bottom:14px}
-.rp-s{text-align:center}
-.rp-sn{font-size:20px;font-weight:700}
-.rp-sn.g{color:#10b981} .rp-sn.r{color:#ef4444}
-.rp-sl{font-size:10px;color:#9ca3af;margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.rp-divider{border-top:1px solid #f3f4f6;margin:0 0 14px}
 .rp-sev-ttl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:9px}
-.rp-sev-row{display:flex;align-items:center;gap:7px;margin-bottom:8px}
-.rp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.rp-lbl{flex:1;font-size:12px;color:#374151}
-.rp-cnt{font-size:13px;font-weight:700}
+/* Framework Readiness (replaces the old single blended gauge — no real
+   GRC tool we researched blends heterogeneous framework scores into one
+   number, so this shows the honest spread instead). */
+.rp-fw-range{margin-bottom:14px}
+.rp-fw-row{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:8px;background:#f9fafb;border-radius:8px}
+.rp-fw-row:last-child{margin-bottom:0}
+.rp-fw-bar{width:4px;align-self:stretch;border-radius:2px;flex-shrink:0}
+.rp-fw-info{flex:1;min-width:0}
+.rp-fw-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af}
+.rp-fw-name{font-size:12px;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.rp-fw-val{font-size:20px;font-weight:800;flex-shrink:0}
+/* Top Impact — real, live-derived leverage ranking: which raw AWS
+   findings are cited by the most currently-failing framework controls
+   (from findings.details.mapped_checks, written by every mapper Lambda).
+   Fixing #1 in this list is worth more than fixing any single framework
+   control by hand. Rows are clickable — they jump straight to that
+   check's filtered issues (see goCheck()). */
+.rp-impact-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;margin-bottom:8px;background:#f9fafb;border-radius:8px;cursor:pointer;transition:background .15s}
+.rp-impact-row:hover{background:#f3f4f6}
+.rp-impact-row:last-child{margin-bottom:0}
+.rp-impact-txt{min-width:0}
+.rp-impact-title{font-size:12.5px;font-weight:700;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rp-impact-sub{font-size:10.5px;color:#9ca3af;margin-top:2px}
+.rp-impact-badge{flex-shrink:0;background:#fee2e2;color:#dc2626;font-size:14px;font-weight:800;padding:4px 11px;border-radius:12px}
 
 /* ── PLACEHOLDER VIEWS ────────────────────────────── */
 .placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:55vh;gap:12px;text-align:center}
@@ -529,6 +537,12 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="ni-item" onclick="location.href='tprm.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')">
       <span class="ni">🤝</span><span class="nt">Third-Party Risk</span>
     </div>
+    <div class="ni-item" onclick="location.href='audit_management.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')">
+      <span class="ni">📋</span><span class="nt">Audit Management</span>
+    </div>
+    <div class="ni-item" onclick="location.href='calculators.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')">
+      <span class="ni">🧮</span><span class="nt">Calculators</span>
+    </div>
     <div class="ni-item" id="ni-rep" onclick="show('reports',this)">
       <span class="ni">📊</span><span class="nt">Reports</span>
     </div>
@@ -585,8 +599,8 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
         <div class="sum-bar" id="sum-bar"></div>
 
         <div class="section-hdr mb20">
-          <div class="section-title">Overview</div>
-          <div class="section-note">Click a card to filter issues</div>
+          <div class="section-title">Real Issues</div>
+          <div class="section-note">Unique, deduplicated — click a card to filter issues</div>
         </div>
         <div class="ov-grid mb20" id="ov-grid"></div>
 
@@ -801,28 +815,15 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 
     <aside class="rp" id="rp" hidden>
       <div class="rp-hdr">
-        <div class="rp-title">Security Posture</div>
+        <div class="rp-title">Framework Readiness</div>
         <span class="rp-status" id="rp-status">—</span>
       </div>
-      <div class="gauge-wrap">
-        <div class="gauge-rel">
-          <svg width="118" height="118" viewBox="0 0 118 118">
-            <circle class="g-bg" cx="59" cy="59" r="54"/>
-            <circle class="g-fg" id="g-fg" cx="59" cy="59" r="54"/>
-          </svg>
-          <div class="gauge-ctr">
-            <div class="gauge-n" id="g-num">—</div>
-            <div class="gauge-d">/100</div>
-          </div>
-        </div>
-      </div>
-      <div class="rp-checks" id="rp-checks">— of — checks passing</div>
-      <div class="rp-stats">
-        <div class="rp-s"><div class="rp-sn g" id="rp-pass">—</div><div class="rp-sl">Passing</div></div>
-        <div class="rp-s"><div class="rp-sn r" id="rp-fail">—</div><div class="rp-sl">Failing</div></div>
-      </div>
-      <div class="rp-sev-ttl">Severity Breakdown</div>
-      <div id="rp-sev"></div>
+      <div class="rp-checks" id="rp-fw-count">— frameworks tracked</div>
+      <div class="rp-fw-range" id="rp-fw-range"></div>
+      <div class="rp-checks" id="rp-fw-statusline">— On Track · — At Risk · — Critical</div>
+      <div class="rp-divider"></div>
+      <div class="rp-sev-ttl">Top Impact</div>
+      <div id="rp-impact"></div>
     </aside>
 
   </div>
@@ -1195,10 +1196,23 @@ async function loadData(){
 
 // ── Render ───────────────────────────────────────────
 function render(d){
-  const tot=d.total||{}, score=tot.score||0, passed=tot.passed||0, total=tot.total||0;
-  const failed=total-passed, bySev=d.by_severity||{}, svcs=d.services||[];
+  const bySev=d.by_severity||{}, svcs=d.services||[];
   allF=d.findings||[]; filtF=[...allF];
   lastCrossCompliance=d.cross_compliance||null;
+  // Headline "Security Posture" score/gauge is deliberately computed from
+  // the exact same inclusive finding set (allF = every framework's own
+  // copy of every check) that the Compliance Tracking cards below are
+  // built from — so the top score can never disagree with the frameworks
+  // it's supposed to summarize. It is a true weighted rollup, not a
+  // separate number: sum every card's passed/total and you get this.
+  const total=allF.length, passed=allF.filter(f=>f.result==='PASS').length;
+  const failed=total-passed;
+  const score=total?Math.round(passed/total*1000)/10:0;
+  // Open Issues / nav badge stay on the raw, non-duplicated issue count
+  // (one real problem counted once, not once per framework that flags it)
+  // — a different, deliberately separate metric from the framework score.
+  const rawTot=d.total||{};
+  const rawFailed=(rawTot.total||0)-(rawTot.passed||0);
   const fwSel0=document.getElementById('hm-fw-filter');
   if(fwSel0){ fwSel0.innerHTML='<option value="">All Frameworks</option>'; }
   drResults=d.dr_test_results||[];
@@ -1209,17 +1223,18 @@ function render(d){
   renderAcctList();
 
   document.getElementById('last-scan').innerHTML='Last scan: '+(d.last_scan_at||'—').substring(0,16)+(d.is_stale?' <span style="color:#f59e0b;font-weight:700">⚠ stale (>'+d.stale_threshold_days+'d)</span>':'');
-  document.getElementById('nav-count').textContent=failed;
+  document.getElementById('nav-count').textContent=rawFailed;
   if(d.account_name) document.getElementById('chip-account').textContent='🏢 '+d.account_name+' ▾';
   else if(d.account_id) document.getElementById('chip-account').textContent='🏢 '+d.account_id.substring(0,8)+'… ▾';
 
   // ── Summary bar ─────────────────────────────────
-  // Open Issues / Compliance Score use the raw, non-duplicated issue count
-  // (d.total, scoped server-side to the raw scanner output) — not a sum
-  // across all 27 frameworks, which would count one real problem once per
-  // framework that happens to flag it.
+  // Open Issues keeps the raw, non-duplicated issue count (d.total, scoped
+  // server-side to the raw scanner output) — one real problem counted
+  // once, not once per framework that happens to flag it. Compliance
+  // Score uses `score`, the framework-wide rollup defined above, so it
+  // agrees with the Compliance Tracking cards it sits above.
   const totalAssets = new Set(allF.map(f=>f.resource_id).filter(Boolean)).size;
-  const openIssues  = failed;
+  const openIssues  = rawFailed;
   const activeProjects = 6; // static until projects come from DB
   const sumStats=[
     {ico:'📦',bg:'#eff6ff',n:totalAssets,  l:'Total Assets',      clr:'#3b82f6', action:()=>show('inventory',document.getElementById('ni-inv'))},
@@ -1367,23 +1382,85 @@ function render(d){
   }).join('');
   document.getElementById('res-total').textContent=totalIssues+' total issues';
 
-  // ── Right panel ─────────────────────────────────
-  document.getElementById('g-num').textContent=score;
-  document.getElementById('rp-checks').textContent=passed+' of '+total+' checks passing';
-  document.getElementById('rp-pass').textContent=passed;
-  document.getElementById('rp-fail').textContent=failed;
+  // ── Right panel: Framework Readiness ─────────────
+  // No blended average across frameworks — AWS Security Hub, Vanta,
+  // Drata and Wiz all keep per-framework scores separate and never
+  // collapse them into one number (different denominators, different
+  // control weighting per framework make an average statistically
+  // meaningless). This shows the honest spread instead.
+  const fwSorted=[...fws].sort((a,b)=>a.sc-b.sc);
+  const lowest=fwSorted[0], highest=fwSorted[fwSorted.length-1];
+  const midIdx=fwSorted.length/2;
+  const median=Number.isInteger(midIdx)
+    ? Math.round((fwSorted[midIdx-1].sc+fwSorted[midIdx].sc)/2*10)/10
+    : fwSorted[Math.floor(midIdx)].sc;
+  const onTrack=fws.filter(f=>f.sc>=75).length;
+  const atRisk=fws.filter(f=>f.sc>=50&&f.sc<75).length;
+  const criticalCt=fws.filter(f=>f.sc<50).length;
+  document.getElementById('rp-fw-count').textContent=fws.length+' frameworks tracked';
+  document.getElementById('rp-fw-range').innerHTML=[
+    {lbl:'Lowest',  fw:lowest,  clr:'#ef4444'},
+    {lbl:'Median',  fw:null, val:median, clr:'#6b7280'},
+    {lbl:'Highest', fw:highest, clr:'#10b981'},
+  ].map(r=>`<div class="rp-fw-row"><div class="rp-fw-bar" style="background:${r.clr}"></div>
+    <div class="rp-fw-info">
+      <div class="rp-fw-lbl">${r.lbl}</div>
+      ${r.fw?`<div class="rp-fw-name">${r.fw.name}</div>`:''}
+    </div>
+    <div class="rp-fw-val" style="color:${r.clr}">${r.fw?r.fw.sc:r.val}%</div></div>`).join('');
+  document.getElementById('rp-fw-statusline').textContent=onTrack+' On Track · '+atRisk+' At Risk · '+criticalCt+' Critical';
   const st=document.getElementById('rp-status');
-  if(score>=75){st.textContent='Good';st.style='background:#f0fdf4;color:#10b981;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
-  else if(score>=50){st.textContent='Fair';st.style='background:#fffbeb;color:#f59e0b;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
-  else{st.textContent='At Risk';st.style='background:#fef2f2;color:#ef4444;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
-  later(()=>{document.getElementById('g-fg').style.strokeDashoffset=339*(1-score/100);});
-  const sc2={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
-  document.getElementById('rp-sev').innerHTML=['CRITICAL','HIGH','MEDIUM','LOW'].map(k=>{
-    const sd=bySev[k]||{};
-    return `<div class="rp-sev-row"><div class="rp-dot" style="background:${sc2[k]}"></div>
-      <div class="rp-lbl">${k.charAt(0)+k.slice(1).toLowerCase()}</div>
-      <div class="rp-cnt" style="color:${sc2[k]}">${sd.failed||0}</div></div>`;
-  }).join('');
+  if(criticalCt>0){st.textContent='Attention';st.style='background:#fef2f2;color:#ef4444;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
+  else if(atRisk>0){st.textContent='Mixed';st.style='background:#fffbeb;color:#f59e0b;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
+  else{st.textContent='Good';st.style='background:#f0fdf4;color:#10b981;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px';}
+
+  // ── Top Impact ────────────────────────────────────
+  // Every mapper Lambda already stamps findings.details.mapped_checks —
+  // the exact list of raw AWS check_ids a framework control depends on
+  // (worst-case: control FAILs if any of them FAILs). So for every raw,
+  // still-open finding we can count, live, how many currently-failing
+  // framework controls actually cite it — real data already sitting in
+  // the DB, not a static/hardcoded table. That's the highest-leverage
+  // fix list: one real AWS misconfiguration, ranked by how many
+  // compliance controls it's dragging down at once.
+  // Raw findings carry a `service` of CloudWatch/S3/IAM/RDS/KMS/Cognito/
+  // GitHub/Other (their scanner's raw check_id family) — framework-mapped
+  // copies carry one of these short codes instead. Same list already used
+  // for the CIS AWS card above (cisSvcs), reused here for consistency.
+  const FW_SVC=['ISO27001','NIST','GDPR','SOC2','ISO42001','ISO27017','AWSFTR','MVSP','TISAX','HIPAA','NIS2','PCIDSS','NIST80053','BSIC5','CSACCM','FEDRAMP','HITRUST','DORA','CRIPROFILE','EUAIACT','NISTAIRMF','ISO27701','ISO27018','SSPA','CISCTRL','NYDFS','NISTPRIV'];
+  const rawFailsByCheck=new Map();
+  allF.filter(f=>f.result==='FAIL'&&!FW_SVC.includes(f.service)).forEach(f=>{
+    if(!rawFailsByCheck.has(f.check_id)) rawFailsByCheck.set(f.check_id,f);
+  });
+  const impactByCheck={};
+  allF.filter(f=>f.result==='FAIL'&&FW_SVC.includes(f.service)).forEach(f=>{
+    let mapped=[];
+    // details comes back as a real object (JSONB auto-decoded by psycopg2),
+    // not a JSON string — but tolerate a string form too, just in case.
+    try{
+      const d = typeof f.details==='string' ? JSON.parse(f.details||'{}') : (f.details||{});
+      mapped = d.mapped_checks||[];
+    }catch(e){}
+    mapped.forEach(cid=>{
+      if(!impactByCheck[cid]) impactByCheck[cid]={frameworks:new Set(),controls:0};
+      impactByCheck[cid].frameworks.add(f.framework);
+      impactByCheck[cid].controls++;
+    });
+  });
+  const topImpact=[...rawFailsByCheck.values()]
+    .map(f=>({f, imp:impactByCheck[f.check_id]}))
+    .filter(x=>x.imp)
+    .sort((a,b)=>b.imp.controls-a.imp.controls)
+    .slice(0,3);
+  document.getElementById('rp-impact').innerHTML = topImpact.length
+    ? topImpact.map(x=>`<div class="rp-impact-row" onclick="goCheck('${x.f.check_id}')">
+        <div class="rp-impact-txt">
+          <div class="rp-impact-title">${x.f.check_id} — ${(x.f.title||'').substring(0,34)}</div>
+          <div class="rp-impact-sub">${x.imp.frameworks.size} frameworks · ${x.imp.controls} controls</div>
+        </div>
+        <div class="rp-impact-badge">${x.imp.controls}</div>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:#9ca3af">No high-impact issues linked</div>';
 
   // ── Top Findings (from real data) ────────────────
   const sevOrder=['CRITICAL','HIGH','MEDIUM','LOW'];
@@ -1635,6 +1712,12 @@ function goSev(s){
 function goSvc(s){
   svcF=s; document.getElementById('f-sev').value='';
   document.getElementById('f-res').value=''; document.getElementById('f-q').value='';
+  applyF(); show('issues',document.getElementById('ni-issues'));
+}
+function goCheck(checkId){
+  svcF=''; document.getElementById('f-sev').value='';
+  document.getElementById('f-res').value='FAIL';
+  document.getElementById('f-q').value=checkId;
   applyF(); show('issues',document.getElementById('ni-issues'));
 }
 

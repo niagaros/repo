@@ -33,10 +33,17 @@ import base64
 import json
 import logging
 import os
+import re
 from datetime import date, datetime, timezone
 
 import boto3
 import psycopg2
+
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _is_uuid(value):
+    return bool(value) and bool(_UUID_RE.match(value))
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -1058,8 +1065,12 @@ def handler(event, context):
     try:
         if method == "GET":
             account_id = qs.get("cloud_account_id")
-            if not account_id:
-                return _resp(400, {"error": "cloud_account_id required"})
+            if not _is_uuid(account_id):
+                # Never crash on a missing/garbage account_id (e.g. the
+                # literal string "null" from a page loaded before login
+                # resolved an account) — degrade to an empty vendor list
+                # rather than a raw Postgres UUID-cast error.
+                return _resp(200, {"vendors": []})
             with conn.cursor() as cur:
                 if qs.get("audit_log"):
                     return _resp(200, {"entries": _get_audit_log(cur, account_id, qs.get("vendor_id"))})

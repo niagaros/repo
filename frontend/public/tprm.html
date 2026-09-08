@@ -89,6 +89,8 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="ni-item" onclick="location.href='questionnaire_automation.html'"><span class="ni">🧾</span><span>Questionnaires</span></div>
     <div class="ni-item" onclick="location.href='trust_center.html'"><span class="ni">🔒</span><span>Trust Center</span></div>
     <div class="ni-item on" onclick="location.href='tprm.html'"><span class="ni">🤝</span><span>Third-Party Risk</span></div>
+    <div class="ni-item" onclick="location.href='audit_management.html'"><span class="ni">📋</span><span>Audit Management</span></div>
+    <div class="ni-item" onclick="location.href='calculators.html'"><span class="ni">🧮</span><span>Calculators</span></div>
   </nav>
 </aside>
 
@@ -302,9 +304,15 @@ async function loadAll(){
   document.getElementById('v-content').hidden=true;
   const token=localStorage.getItem('niagaros_token')||'';
   const durl=currentAccountId?DASH_API+'?account_id='+encodeURIComponent(currentAccountId):DASH_API;
-  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}}), dd=await dr.json();
+  const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}});
+  if(dr.status===401){location.href='/';return;}
+  const dd=await dr.json();
   if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
   if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
+  if(!currentAccountId){
+    document.getElementById('v-load').innerHTML='<div class="empty">No account found. Please open this page from the dashboard.</div>';
+    return;
+  }
 
   const r=await fetch(TPRM_API+'?cloud_account_id='+encodeURIComponent(currentAccountId));
   const d=await r.json();
