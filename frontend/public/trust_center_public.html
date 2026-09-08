@@ -129,13 +129,15 @@ function render(){
       <h2>Compliance status</h2>
       <div class="sub">Continuously measured, not a one-time certificate — every score shows when it was last verified.</div>
       <div class="compliance-grid">
-        ${data.compliance.map(c=>`
+        ${data.compliance.map(c=>{
+          const clr = c.score>=75 ? '#16a34a' : c.score>=50 ? '#d97706' : '#dc2626';
+          return `
           <div class="fw-card">
-            <div class="fw-score">${c.score}%</div>
+            <div class="fw-score" style="color:${clr}">${c.score}%</div>
             <div class="fw-name">${esc(c.framework)}</div>
             <div class="fw-verified">Verified: ${c.last_verified?new Date(c.last_verified).toLocaleDateString():'unknown'}</div>
           </div>
-        `).join('')}
+        `;}).join('')}
       </div>
     </div>
 

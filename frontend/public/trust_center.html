@@ -259,9 +259,10 @@ function render(){
   document.getElementById('in-intro').value=s.intro_text||'';
   document.getElementById('in-contact').value=s.contact_email||'';
 
-  document.getElementById('compliance-grid').innerHTML=state.compliance.map(c=>`
-    <div class="fw-chip"><div class="n">${c.score}%</div>${esc(c.framework)}</div>
-  `).join('');
+  document.getElementById('compliance-grid').innerHTML=state.compliance.map(c=>{
+    const clr = c.score>=75 ? '#16a34a' : c.score>=50 ? '#d97706' : '#dc2626';
+    return `<div class="fw-chip"><div class="n" style="color:${clr}">${c.score}%</div>${esc(c.framework)}</div>`;
+  }).join('');
 
   document.getElementById('doc-list').innerHTML=state.documents.length?state.documents.map(d=>`
     <div class="doc-row">

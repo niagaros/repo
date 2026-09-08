@@ -348,11 +348,13 @@ async function loadData(){
 }
 
 function render(){
+  // Score by control (one row = one pass/fail), same as the dashboard —
+  // not by summing embedded details.passed/details.failed sub-check
+  // credits, which gave a failing control partial credit and disagreed
+  // with the dashboard's own number for this framework/account.
   let passed=0, failed=0;
   allF.forEach(f=>{
-    const d=f.details||{};
-    passed += typeof d.passed==='number' ? d.passed : (f.result==='PASS'?1:0);
-    failed += typeof d.failed==='number' ? d.failed : (f.result==='FAIL'?1:0);
+    if(f.result==='PASS') passed++; else failed++;
   });
   const total=passed+failed, score=total?Math.round(passed/total*100):0;
   const controls=new Set(allF.map(f=>f.check_id)).size;
@@ -395,12 +397,8 @@ function applyFilter(){
 function renderControls(){
   const byCtrl={};
   filtF.forEach(f=>{
-    const d=f.details||{};
-    const p=typeof d.passed==='number'?d.passed:(f.result==='PASS'?1:0);
-    const fl=typeof d.failed==='number'?d.failed:(f.result==='FAIL'?1:0);
     if(!byCtrl[f.check_id]) byCtrl[f.check_id]={fail:0,pass:0};
-    byCtrl[f.check_id].fail+=fl;
-    byCtrl[f.check_id].pass+=p;
+    if(f.result==='PASS') byCtrl[f.check_id].pass++; else byCtrl[f.check_id].fail++;
   });
   const entries=Object.entries(byCtrl);
   document.getElementById('ctrl-grid').innerHTML=entries.length?entries.map(([id,data],i)=>{
@@ -446,7 +444,7 @@ function openModal(id){
   const ctrl=PAGE_CONTROLS[id]||{title:id,section:'',desc:''};
   const findings=allF.filter(f=>f.check_id===id);
   let passSum=0, failSum=0;
-  findings.forEach(x=>{const d=x.details||{};passSum+=typeof d.passed==='number'?d.passed:(x.result==='PASS'?1:0);failSum+=typeof d.failed==='number'?d.failed:(x.result==='FAIL'?1:0);});
+  findings.forEach(x=>{ if(x.result==='PASS') passSum++; else failSum++; });
   const fail=failSum, totalChecks=passSum+failSum;
   const f=findings[0]||{};
   document.getElementById('m-title').textContent=ctrl.title;
