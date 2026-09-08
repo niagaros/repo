@@ -363,7 +363,8 @@ function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?
 function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
 document.addEventListener('click',function(e){var w=document.querySelector('.acct-wrap');if(w&&!w.contains(e.target))document.getElementById('acct-dd').classList.remove('open');});
 function switchAccount(id){if(id===currentAccountId){document.getElementById('acct-dd').classList.remove('open');return;}currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadData();}
-function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:#14b8a6"></div>'+'<div class="acct-item-name">'+a.name+'</div>'+'<div class="acct-item-id">'+(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:#14b8a6"></div>'+'<div class="acct-item-name">'+esc(a.name)+'</div>'+'<div class="acct-item-id">'+esc(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
 
 const PAGE_CONTROLS = {
   "NIS2-1.1.1": { title:'Security Policy for Network and Information Systems', section:'Art. 21(2)(a) — Policy', desc:'Relevant entities shall set out their approach to managing the security of their network and information systems, including objectives, commitments to continual improvement, and documentation retention requirements.' },
