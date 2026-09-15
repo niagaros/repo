@@ -115,6 +115,11 @@
   var input = document.getElementById("niagaros-ai-input");
   var sendBtn = document.getElementById("niagaros-ai-send");
   var historyLoaded = false;
+  // Tracks the last question asked in this chat so a short, contextless
+  // follow-up ("which one is newest?") can be resolved server-side against
+  // what was actually being discussed, instead of being rejected as
+  // unrelated. Seeded from real stored history when the panel first opens.
+  var lastQuestion = "";
 
   bubble.addEventListener("click", function () {
     var willOpen = !panel.classList.contains("open");
@@ -160,8 +165,10 @@
     fetch(AGENT_API + "?cloud_account_id=" + encodeURIComponent(accountId))
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        var history = (d.history || []).slice().reverse();
-        if (!history.length) return;
+        var raw = d.history || [];
+        if (!raw.length) return;
+        lastQuestion = raw[0].question || ""; // raw is newest-first
+        var history = raw.slice().reverse();
         clearEmpty();
         history.forEach(function (h) {
           scroll.appendChild(bubbleEl("user", esc(h.question)));
@@ -192,6 +199,8 @@
     try { token = localStorage.getItem("niagaros_token") || ""; } catch (e) {}
 
     var pageContext = getPageContext();
+    var previousQuestion = lastQuestion;
+    lastQuestion = question;
 
     fetch(AGENT_API, {
       method: "POST",
@@ -199,6 +208,7 @@
       body: JSON.stringify({
         action: "ask", cloud_account_id: accountId, question: question,
         page_title: pageContext.page_title, page_text: pageContext.page_text,
+        previous_question: previousQuestion,
         asked_by: (function () { try { return localStorage.getItem("niagaros_display_name") || "Admin"; } catch (e) { return "Admin"; } })(),
       }),
     })

@@ -213,6 +213,21 @@ CREATE TABLE IF NOT EXISTS ai_agent_queries (
 );
 CREATE INDEX IF NOT EXISTS ai_agent_queries_account_idx ON ai_agent_queries(cloud_account_id, created_at DESC);
 GRANT SELECT, INSERT, UPDATE, DELETE ON ai_agent_queries TO cspm_lambda;
+
+-- findings.detected_at is overwritten to NOW() on every scan run for every
+-- finding (see db_writer.py's ON CONFLICT DO UPDATE), so it really means
+-- "last verified at", not "first appeared at" — there was no real way to
+-- answer "which issue was most recently added". first_detected_at is set
+-- once on INSERT and never touched by any ON CONFLICT DO UPDATE clause
+-- (none of them list it), so it stays truthful across every future rescan.
+-- Existing rows are backfilled to their current detected_at as an honest
+-- floor — their true original detection time predates this column and
+-- isn't recoverable, so this is the earliest truthful value available,
+-- not a guess at history.
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS first_detected_at TIMESTAMPTZ;
+UPDATE findings SET first_detected_at = detected_at WHERE first_detected_at IS NULL;
+ALTER TABLE findings ALTER COLUMN first_detected_at SET DEFAULT NOW();
+GRANT SELECT, INSERT, UPDATE ON findings TO cspm_lambda;
 """
 
 
@@ -313,7 +328,7 @@ def _call_groq(prompt, max_tokens=400):
     return payload["choices"][0]["message"]["content"].strip()
 
 
-def _classify_intent(question, has_page_context=False):
+def _classify_intent(question, has_page_context=False, previous_question=None):
     fw_codes = "\n".join(f"  {code}: {label}" for code, label in sorted(FRAMEWORK_LABELS.items()))
     page_note = (
         "\nNote: the user is currently looking at a specific dashboard page, and the real, literal "
@@ -324,10 +339,22 @@ def _classify_intent(question, has_page_context=False):
         "be classified as general_data_question, NOT unsupported.\n"
         if has_page_context else ""
     )
+    # A short chat follow-up ("give me the one that was added most recently")
+    # reads as topic-less on its own — the topic (findings, a severity level,
+    # a framework) usually lives in the PREVIOUS question. Without this, a
+    # real, on-topic follow-up gets wrongly rejected as unsupported just
+    # because it's ambiguous in isolation.
+    history_note = (
+        f"\nThe user's previous question in this same chat was: \"{previous_question}\". Use it ONLY "
+        "to resolve an implied subject in a short follow-up (e.g. 'which one is newest', 'and the "
+        "critical ones?') — classify based on what the CURRENT question is really asking, informed by "
+        "that context, not the previous question's own intent.\n"
+        if previous_question else ""
+    )
     prompt = (
         "Classify this security/compliance question into exactly one intent from "
         f"this fixed list: {', '.join(INTENTS)}.\n"
-        f"{page_note}\n"
+        f"{page_note}{history_note}"
         "- highest_risks: asking about top/highest/worst risks or vulnerabilities in general.\n"
         "- account_compliance: asking about overall or per-framework compliance score/posture "
         "for the CURRENT single account.\n"
@@ -556,7 +583,7 @@ SEVERITY_SYNONYMS = {
 }
 
 
-def _q_general_data_question(cur, account_id, question):
+def _q_general_data_question(cur, account_id, question, previous_question=None):
     """Open-ended fallback — the same token-overlap retrieval already
     proven in questionnaire_handler.py, applied here instead of the
     fixed intents above. Covers anything real but not worth a dedicated
@@ -579,7 +606,13 @@ def _q_general_data_question(cur, account_id, question):
     # in a finding's title/description prose, so the keyword-overlap search
     # below can never match it. Answer it with a real, direct filter instead.
     ql = question.lower()
+    # A follow-up like "which one is newest?" doesn't repeat "medium
+    # severity" — that scope lived in the previous question. Fall back to
+    # it only when the current question names no severity of its own.
     wanted_severities = sorted({sev for word, sev in SEVERITY_SYNONYMS.items() if word in ql})
+    if not wanted_severities and previous_question:
+        prev_ql = previous_question.lower()
+        wanted_severities = sorted({sev for word, sev in SEVERITY_SYNONYMS.items() if word in prev_ql})
     severity_findings = []
     severity_total = 0
     if wanted_severities:
@@ -604,6 +637,62 @@ def _q_general_data_question(cur, account_id, question):
             {"check_id": r[0], "title": r[1], "severity": r[2], "resource_name": r[3], "framework": r[4]}
             for r in cur.fetchall()
         ]
+
+    # "Which issue was added most recently?" needs a real first-seen
+    # timestamp, not detected_at (which is bumped to NOW() on every rescan
+    # for every finding, old or new — see the first_detected_at migration).
+    # Detect the question asking about recency/newness in English or Dutch.
+    RECENCY_WORDS = (
+        "recent", "recently", "latest", "newest", "new issue", "new finding",
+        "just added", "last added", "most recent",
+        "laatst", "laatste", "nieuwste", "nieuw ", "bijgekomen", "toegevoegd", "recentelijk",
+    )
+    recent_findings = []
+    if any(w in ql for w in RECENCY_WORDS):
+        base_sql = """
+            SELECT f.check_id, f.title, f.severity, r.resource_name, f.framework, f.first_detected_at
+            FROM findings f JOIN resources r ON r.id = f.resource_id
+            WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+              AND (f.framework IS NULL OR f.framework NOT IN %s)
+        """
+        if wanted_severities:
+            cur.execute(base_sql + " AND UPPER(f.severity) = ANY(%s) ORDER BY f.first_detected_at DESC NULLS LAST LIMIT 5",
+                        (account_id, MAPPED_FRAMEWORK_NAMES, wanted_severities))
+        else:
+            cur.execute(base_sql + " ORDER BY f.first_detected_at DESC NULLS LAST LIMIT 5",
+                        (account_id, MAPPED_FRAMEWORK_NAMES))
+        recent_findings = [
+            {"check_id": r[0], "title": r[1], "severity": r[2], "resource_name": r[3],
+             "framework": r[4], "first_detected_at": r[5].isoformat() if r[5] else None}
+            for r in cur.fetchall()
+        ]
+        # first_detected_at only started being tracked from the migration
+        # that added it — every finding that already existed at that point
+        # was backfilled to roughly the same timestamp, so "most recent"
+        # among those is not a meaningful historical order, just whichever
+        # row happened to sort first. Only findings inserted for the FIRST
+        # time after that backfill have a genuinely earned, distinct
+        # first_detected_at. Flag this honestly instead of presenting a
+        # backfill artifact as if it were a real answer.
+        if recent_findings:
+            cur.execute("""
+                SELECT MIN(f.first_detected_at), MAX(f.first_detected_at)
+                FROM findings f JOIN resources r ON r.id = f.resource_id
+                WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+                  AND (f.framework IS NULL OR f.framework NOT IN %s)
+            """, (account_id, MAPPED_FRAMEWORK_NAMES))
+            earliest, latest = cur.fetchone()
+            spread_seconds = (latest - earliest).total_seconds() if earliest and latest else 0
+            if spread_seconds < 300:
+                recent_findings = {
+                    "no_real_history_yet": True,
+                    "explanation": (
+                        "This account's findings were all backfilled to essentially the same "
+                        "first-detected timestamp when this tracking was just set up, so there is "
+                        "no genuine 'most recently added' answer yet — that will only become "
+                        "meaningful once a future scan introduces a real new finding."
+                    ),
+                }
 
     cur.execute("""
         SELECT f.check_id, MAX(f.title) AS title, MAX(f.description) AS description,
@@ -647,10 +736,20 @@ def _q_general_data_question(cur, account_id, question):
             "findings_shown": severity_findings,
             "note": f"showing {len(severity_findings)} of {severity_total} matching findings" if severity_total > len(severity_findings) else None,
         }
+    if recent_findings:
+        if isinstance(recent_findings, dict):
+            result["most_recently_added_findings"] = recent_findings
+        else:
+            result["most_recently_added_findings"] = {
+                "note": "ordered newest-first by first_detected_at — the timestamp each finding was "
+                        "FIRST ever seen, not last verified. This is the real answer to 'which issue "
+                        "was added most recently'.",
+                "findings": recent_findings,
+            }
     return result
 
 
-def _run_intent(cur, account_id, intent, framework_code, question=None):
+def _run_intent(cur, account_id, intent, framework_code, question=None, previous_question=None):
     if intent == "highest_risks":
         return {"findings": _q_highest_risks(cur, account_id)}
     if intent == "account_compliance":
@@ -666,7 +765,7 @@ def _run_intent(cur, account_id, intent, framework_code, question=None):
     if intent == "audit_evidence_needed":
         return _q_audit_evidence_needed(cur, account_id, framework_code)
     if intent == "general_data_question":
-        return _q_general_data_question(cur, account_id, question)
+        return _q_general_data_question(cur, account_id, question, previous_question)
     return None
 
 
@@ -759,13 +858,15 @@ def handler(event, context):
                 question = (body.get("question") or "").strip()
                 page_title = (body.get("page_title") or "").strip()[:200]
                 page_text = (body.get("page_text") or "").strip()[:4000]
+                previous_question = (body.get("previous_question") or "").strip()[:500] or None
                 if not _is_uuid(account_id):
                     return _resp(400, {"error": "cloud_account_id is required"})
                 if not question:
                     return _resp(400, {"error": "question is required"})
 
                 try:
-                    intent, framework_code = _classify_intent(question, has_page_context=bool(page_text))
+                    intent, framework_code = _classify_intent(
+                        question, has_page_context=bool(page_text), previous_question=previous_question)
                 except Exception as e:
                     logger.exception("intent classification failed")
                     return _resp(200, {"intent": "unsupported", "answer": UNSUPPORTED_MESSAGE,
@@ -783,7 +884,7 @@ def handler(event, context):
                         else:
                             evidence = _q_accounts_compliance(cur, caller_email)
                     else:
-                        evidence = _run_intent(cur, account_id, intent, framework_code, question)
+                        evidence = _run_intent(cur, account_id, intent, framework_code, question, previous_question)
 
                 if isinstance(evidence, dict) and page_text:
                     evidence = dict(evidence)
