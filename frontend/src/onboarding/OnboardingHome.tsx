@@ -8,13 +8,18 @@ import { useRequireAuth } from "../settings/useRequireAuth";
 // individual settings pages together into one sequence with a visible
 // progress indicator.
 //
-// Honesty over completeness: only Step 1 (Cloud Infrastructure) has a real
-// backend signal to check today. Steps 2, 3, 4 and 5 (Team, Auditors,
+// Honesty over completeness: Steps 1 and 2 (Cloud Infrastructure, Team) have
+// real backend signals to check today. Steps 3, 4 and 5 (Auditors,
 // Workspace, Training) have no settings page or API behind them yet — they
 // are shown as "In progress" rather than faked as clickable/complete.
 // (Note: the existing /settings/github page is a source-code scanner
 // connection, not the Jira/ServiceNow-style "Connect Workspace" step #268
 // describes — deliberately not reused here to avoid overstating progress.)
+//
+// Step 2's /team endpoint (api/team_handler.py) is written but not yet
+// registered on API Gateway — see api_inventory.md. Until it's deployed,
+// the fetch below fails and Step 2 correctly shows "not done" rather than
+// crashing the page.
 
 function getApiBase(): string {
   return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
@@ -42,7 +47,7 @@ const STEPS: Step[] = [
     n: 2, id: "team",
     title: "Invite Team",
     description: "Add team members, assign roles and enforce MFA policies.",
-    href: "/settings/team", available: false,
+    href: "/settings/team", available: true,
   },
   {
     n: 3, id: "auditor",
@@ -68,13 +73,13 @@ export default function OnboardingHome() {
   const { loading: authLoading, email } = useRequireAuth();
   const navigate = useNavigate();
   const [infraState, setInfraState] = useState<StepState>("loading");
+  const [teamState, setTeamState]   = useState<StepState>("loading");
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
 
-  // Step 1 is the only step with a real backend signal today — same check
-  // used by Infrastructure.tsx, kept in sync deliberately rather than
-  // introducing a second source of truth.
+  // Step 1 — same check used by Infrastructure.tsx, kept in sync
+  // deliberately rather than introducing a second source of truth.
   useEffect(() => {
     if (authLoading || !email) return;
     (async () => {
@@ -95,16 +100,35 @@ export default function OnboardingHome() {
     })();
   }, [authLoading, email]);
 
+  // Step 2 — "done" once at least one other member has joined or has a
+  // pending invite. Fails gracefully to "not_done" while /team isn't
+  // deployed yet (see comment above).
+  useEffect(() => {
+    if (authLoading || !email) return;
+    (async () => {
+      try {
+        const resp = await fetch(`${getApiBase()}/team`, { cache: "no-store", headers: authHeader() });
+        if (!resp.ok) throw new Error(String(resp.status));
+        const data = await resp.json();
+        const hasGrownTheTeam = (data.members?.length || 0) > 1 || (data.pending_invites?.length || 0) > 0;
+        setTeamState(hasGrownTheTeam ? "done" : "not_done");
+      } catch {
+        setTeamState("not_done");
+      }
+    })();
+  }, [authLoading, email]);
+
   const stateFor = (step: Step): StepState => {
     if (!step.available) return "unavailable";
     if (step.id === "infrastructure") return infraState;
+    if (step.id === "team") return teamState;
     return "not_done";
   };
 
   const doneCount = STEPS.filter(s => stateFor(s) === "done").length;
   const progressPct = Math.round((doneCount / STEPS.length) * 100);
 
-  if (authLoading || infraState === "loading") return (
+  if (authLoading || infraState === "loading" || teamState === "loading") return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#080b12", color: "#64748b", fontSize: 14 }}>
       Loading…
     </div>

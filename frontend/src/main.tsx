@@ -10,6 +10,7 @@ import Company         from "./settings/Company";
 import Plans           from "./settings/Plans";
 import GitHub          from "./settings/GitHub";
 import Infrastructure  from "./settings/Infrastructure";
+import Team            from "./settings/Team";
 import OnboardingHome  from "./onboarding/OnboardingHome";
 
 async function bootstrap() {
@@ -51,6 +52,7 @@ async function bootstrap() {
           <Route path="/settings/company"        element={<Company       />} />
           <Route path="/settings/plans"          element={<Plans         />} />
           <Route path="/settings/infrastructure" element={<Infrastructure />} />
+          <Route path="/settings/team"           element={<Team           />} />
           <Route path="/settings/github"         element={<GitHub        />} />
 
           {/* ── Existing app (login / onboarding / dashboard redirect) ── */}
