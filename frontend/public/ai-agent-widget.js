@@ -65,18 +65,19 @@
     + '  <div id="niagaros-ai-panel">'
     + '    <div id="niagaros-ai-hdr">'
     + '      <span style="font-size:18px">🤖</span>'
-    + '      <div><b>Niagaros AI Agent</b><span>Antwoorden op basis van jullie echte data</span></div>'
+    + '      <div><b>Niagaros AI Agent</b><span>Answers grounded in your real data</span></div>'
     + '      <button id="niagaros-ai-close">✕</button>'
     + "    </div>"
-    + '    <div id="niagaros-ai-scroll"><div class="empty">Stel een vraag over jullie risico\'s, compliance, leveranciers of audits.</div></div>'
+    + '    <div id="niagaros-ai-scroll"><div class="empty">Ask anything about your risks, compliance, vendors, or audits — type your own question below.</div></div>'
     + '    <div id="niagaros-ai-sugg">'
-    + '      <div class="nai-chip" data-q="Wat zijn onze grootste risico\'s?">Grootste risico\'s?</div>'
-    + '      <div class="nai-chip" data-q="Hoe compliant zijn we in totaal?">Compliance overzicht</div>'
-    + '      <div class="nai-chip" data-q="Geef een executive summary">Executive summary</div>'
+    + '      <div class="nai-chip" data-q="What are our highest risks?">Highest risks?</div>'
+    + '      <div class="nai-chip" data-q="How compliant are we overall?">Compliance overview</div>'
+    + '      <div class="nai-chip" data-q="What is our RPO?">What\'s our RPO?</div>'
+    + '      <div class="nai-chip" data-q="Give me an executive summary">Executive summary</div>'
     + "    </div>"
     + '    <div id="niagaros-ai-inputrow">'
-    + '      <input id="niagaros-ai-input" placeholder="Stel je vraag…">'
-    + '      <button id="niagaros-ai-send">Vraag</button>'
+    + '      <input id="niagaros-ai-input" placeholder="Ask your own question…">'
+    + '      <button id="niagaros-ai-send">Ask</button>'
     + "    </div>"
     + "  </div>"
     + '  <button id="niagaros-ai-bubble" title="Niagaros AI Agent">🤖</button>'
@@ -153,7 +154,7 @@
     var accountId = getAccountId();
     if (!accountId) {
       clearEmpty();
-      scroll.appendChild(bubbleEl("bot", "Ik kan geen account vinden op deze pagina. Open de AI Agent vanuit het dashboard."));
+      scroll.appendChild(bubbleEl("bot", "I can't find an account on this page. Open the AI Agent from the dashboard."));
       return;
     }
     clearEmpty();
@@ -184,7 +185,7 @@
       })
       .catch(function () {
         typingRow.remove();
-        scroll.appendChild(bubbleEl("bot", "Kon de AI Agent-dienst niet bereiken. Probeer het opnieuw."));
+        scroll.appendChild(bubbleEl("bot", "Could not reach the AI Agent service. Please try again."));
         scroll.scrollTop = scroll.scrollHeight;
       })
       .finally(function () { sendBtn.disabled = false; });
