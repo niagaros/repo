@@ -52,7 +52,21 @@ class SqliteTeamDb:
                 action TEXT, target_user_id TEXT, details TEXT
             )
         """)
+        self.conn.execute("""
+            CREATE TABLE cloud_accounts (id TEXT PRIMARY KEY, owner_email TEXT, account_name TEXT)
+        """)
         self.conn.commit()
+
+    def add_cloud_account(self, owner_email: str, account_name: str) -> str:
+        account_id = str(uuid.uuid4())
+        self.conn.execute("INSERT INTO cloud_accounts VALUES (?, ?, ?)", (account_id, owner_email, account_name))
+        self.conn.commit()
+        return account_id
+
+    def cloud_accounts_owned_by(self, email: str):
+        return self.conn.execute(
+            "SELECT id, account_name, owner_email FROM cloud_accounts WHERE owner_email = ?", (email,)
+        ).fetchall()
 
     def seed(self, org_name: str, admin_email: str) -> tuple[str, str]:
         org_id, user_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -165,6 +179,25 @@ class SqliteTeamDb:
         self.conn.execute("UPDATE team_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
         self.conn.commit()
         return {"organization_id": organization_id, "role": role}
+
+    def get_user_by_id(self, user_id, organization_id):
+        row = self.conn.execute(
+            "SELECT id, email, full_name, role, status FROM users WHERE id = ? AND organization_id = ?",
+            (user_id, organization_id),
+        ).fetchone()
+        if not row:
+            return None
+        # No real cognito_sub in this stand-in — see main()'s comment on
+        # why session termination is faked rather than exercised for real.
+        return {"id": row[0], "email": row[1], "cognito_sub": f"fake-sub-{row[0][:8]}", "role": row[3], "status": row[4]}
+
+    def reassign_owned_cloud_accounts(self, from_email, to_email):
+        cur = self.conn.execute(
+            "UPDATE cloud_accounts SET owner_email = ? WHERE owner_email = ?",
+            (to_email, from_email),
+        )
+        self.conn.commit()
+        return cur.rowcount
 
     def deactivate_user(self, user_id, organization_id):
         cur = self.conn.execute(
@@ -304,6 +337,32 @@ def main():
          patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
         call("PATCH", "/team/mfa-policy", body={"required": True})
         call("GET", "/team")  # mfa_required should now read true
+
+    # Acceptance criterion #4: new.colleague owns an AWS account and then
+    # leaves the organization.
+    setup_conn = fresh_db()
+    cloud_account_id = setup_conn.add_cloud_account("new.colleague@acme.com", "prod-aws-account")
+    setup_conn.close()
+    print(f"\n[new.colleague@acme.com owns a connected AWS account: {cloud_account_id[:8]}…]")
+
+    # terminate_all_sessions() makes a real boto3 Cognito call — can't be
+    # exercised here without a real user pool. Patched to a fake success so
+    # the rest of the offboarding flow (deactivation, reassignment, audit
+    # log) can still be proven end-to-end; see
+    # backend/tests/test_cognito_admin.py for that function tested on its
+    # own terms (including failure handling).
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"), \
+         patch.object(team_handler, "terminate_all_sessions", return_value=True) as fake_terminate:
+        call("DELETE", f"/team/member/{colleague_id}", path_params={"id": colleague_id})
+        print(f"    (terminate_all_sessions called with: {fake_terminate.call_args})")
+
+    verify_conn = fresh_db()
+    still_owned = verify_conn.cloud_accounts_owned_by("new.colleague@acme.com")
+    now_owned_by_admin = verify_conn.cloud_accounts_owned_by("admin@acme.com")
+    verify_conn.close()
+    print(f"    accounts still owned by new.colleague: {len(still_owned)} (should be 0)")
+    print(f"    accounts now owned by admin@acme.com: {[a[1] for a in now_owned_by_admin]}")
 
     # Acceptance criterion #2's "and logged" half — the role change above
     # left a real row in team_audit_log.

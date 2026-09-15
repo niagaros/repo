@@ -112,6 +112,37 @@ class TestDatabaseTeamMethods:
 
         assert db.accept_pending_invite("user-1", "nobody-invited@x.com") is None
 
+    def test_get_user_by_id_found_and_scoped(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = ("u2", "b@x.com", "sub-abc", "viewer", "active")
+
+        result = db.get_user_by_id("u2", "org1")
+
+        assert result == {"id": "u2", "email": "b@x.com", "cognito_sub": "sub-abc", "role": "viewer", "status": "active"}
+        sql, params = cur.execute.call_args[0]
+        assert params == ("u2", "org1")
+
+    def test_get_user_by_id_not_found(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = None
+
+        assert db.get_user_by_id("u2", "org1") is None
+
+    def test_reassign_owned_cloud_accounts(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 3
+
+        count = db.reassign_owned_cloud_accounts("leaving@x.com", "admin@x.com")
+
+        assert count == 3
+        sql, params = cur.execute.call_args[0]
+        assert "SET owner_email = " in sql
+        assert params == ("admin@x.com", "leaving@x.com")
+        mock_conn.commit.assert_called_once()
+
     def test_deactivate_user_scoped_to_organization(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
@@ -423,19 +454,58 @@ class TestHandleDeactivateMember:
         import api.team_handler as th
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
-        db.deactivate_user.return_value = False
+        db.get_user_by_id.return_value = None
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = th.handle_deactivate_member({}, db, "someone-else")
         assert resp["statusCode"] == 404
+        db.deactivate_user.assert_not_called()
 
-    def test_successful_deactivation(self):
+    def test_successful_offboarding_revokes_reassigns_and_terminates(self):
+        """Issue #265, acceptance criterion #4 — all three parts."""
         import api.team_handler as th
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
-        db.deactivate_user.return_value = True
-        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+        db.get_user_by_id.return_value = {
+            "id": VIEWER["id"], "email": VIEWER["email"], "cognito_sub": "sub-123",
+            "role": "viewer", "status": "active",
+        }
+        db.reassign_owned_cloud_accounts.return_value = 2
+
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]), \
+             patch.object(th, "terminate_all_sessions", return_value=True) as mock_terminate:
             resp = th.handle_deactivate_member({}, db, VIEWER["id"])
+
         assert resp["statusCode"] == 200
+        body = json.loads(resp["body"])
+        assert body == {"deactivated": VIEWER["id"], "reassigned_cloud_accounts": 2, "sessions_terminated": True}
+
+        db.deactivate_user.assert_called_once_with(VIEWER["id"], "org1")
+        db.reassign_owned_cloud_accounts.assert_called_once_with(VIEWER["email"], ADMIN["email"])
+        mock_terminate.assert_called_once_with("sub-123")
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org1", actor_user_id=ADMIN["id"], action="member_offboarded",
+            target_user_id=VIEWER["id"],
+            details={"reassigned_cloud_accounts": 2, "sessions_terminated": True},
+        )
+
+    def test_offboarding_succeeds_even_if_session_termination_fails(self):
+        """A Cognito hiccup must not block deactivation/reassignment."""
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_user_by_id.return_value = {
+            "id": VIEWER["id"], "email": VIEWER["email"], "cognito_sub": "sub-123",
+            "role": "viewer", "status": "active",
+        }
+        db.reassign_owned_cloud_accounts.return_value = 0
+
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]), \
+             patch.object(th, "terminate_all_sessions", return_value=False):
+            resp = th.handle_deactivate_member({}, db, VIEWER["id"])
+
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"])["sessions_terminated"] is False
+        db.deactivate_user.assert_called_once()
 
 
 class TestLambdaHandlerRouting:

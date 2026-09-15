@@ -394,6 +394,39 @@ class Database:
             """, (organization_id, actor_user_id, action, target_user_id, json.dumps(details or {})))
         self.conn.commit()
 
+    def get_user_by_id(self, user_id: str, organization_id: str) -> dict | None:
+        """
+        Scoped to organization_id — same cross-tenant protection as every
+        other team_handler.py query, so one company can't look up another
+        company's user by guessing/enumerating a user_id.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, email, cognito_sub, role, status FROM users
+                WHERE id = %s AND organization_id = %s
+            """, (user_id, organization_id))
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": str(row[0]), "email": row[1], "cognito_sub": row[2], "role": row[3], "status": row[4]}
+
+    def reassign_owned_cloud_accounts(self, from_email: str, to_email: str) -> int:
+        """
+        Issue #265, acceptance criterion #4, the 'owned resources are
+        reassigned' half. Only covers cloud_accounts — the PVA's broader
+        'Shared Resources' list (dashboards, reports, API keys, ...) is a
+        much bigger, separate feature area that's out of scope here.
+        Returns how many accounts were moved.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE cloud_accounts SET owner_email = %s WHERE owner_email = %s",
+                (to_email, from_email),
+            )
+            count = cur.rowcount
+        self.conn.commit()
+        return count
+
     def deactivate_user(self, user_id: str, organization_id: str) -> bool:
         """
         Soft-remove: flips status rather than deleting the row, so past

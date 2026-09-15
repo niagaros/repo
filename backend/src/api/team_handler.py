@@ -2,6 +2,7 @@ import json
 import logging
 
 from config.database import Database
+from auth.cognito_admin import terminate_all_sessions
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -189,6 +190,13 @@ def handle_update_role(event: dict, db: Database, user_id: str) -> dict:
 
 
 def handle_deactivate_member(event: dict, db: Database, user_id: str) -> dict:
+    """
+    Issue #265, acceptance criterion #4: "access is revoked, active
+    sessions are terminated, and owned resources are reassigned." There's
+    no "pick a successor" UI in this pass, so any cloud_accounts the
+    departing member owned transfer to the admin doing the offboarding —
+    the simplest safe default, not a real ownership-transfer workflow.
+    """
     caller = _get_caller(event, db)
     if not caller:
         return _response(401, {"error": "unauthorized"})
@@ -197,10 +205,24 @@ def handle_deactivate_member(event: dict, db: Database, user_id: str) -> dict:
     if user_id == caller["id"]:
         return _response(400, {"error": "you cannot deactivate your own account"})
 
-    deactivated = db.deactivate_user(user_id, caller["organization_id"])
-    if not deactivated:
+    target = db.get_user_by_id(user_id, caller["organization_id"])
+    if not target:
         return _response(404, {"error": "user not found in your organization"})
-    return _response(200, {"deactivated": user_id})
+
+    db.deactivate_user(user_id, caller["organization_id"])
+    reassigned = db.reassign_owned_cloud_accounts(target["email"], caller["email"])
+    sessions_terminated = terminate_all_sessions(target["cognito_sub"])
+
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="member_offboarded", target_user_id=user_id,
+        details={"reassigned_cloud_accounts": reassigned, "sessions_terminated": sessions_terminated},
+    )
+    return _response(200, {
+        "deactivated": user_id,
+        "reassigned_cloud_accounts": reassigned,
+        "sessions_terminated": sessions_terminated,
+    })
 
 
 def lambda_handler(event, context):
