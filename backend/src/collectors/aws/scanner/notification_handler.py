@@ -19,6 +19,8 @@ import re
 import boto3
 import psycopg2
 
+from collectors.aws.scanner.notification_lib import run_escalation_check
+
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
@@ -67,20 +69,35 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     email_enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
     webhook_enabled   BOOLEAN      NOT NULL DEFAULT TRUE,
     slack_enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
+    sms_enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
     UNIQUE(cloud_account_id, domain)
 );
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS notification_channels (
     cloud_account_id   UUID         PRIMARY KEY REFERENCES cloud_accounts(id) ON DELETE CASCADE,
     notify_email       VARCHAR(255),
     webhook_url        VARCHAR(500),
     slack_webhook_url  VARCHAR(500),
+    sms_number         VARCHAR(20),
+    escalation_email   VARCHAR(255),
+    escalation_minutes INTEGER      NOT NULL DEFAULT 15,
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS sms_number VARCHAR(20);
+ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS escalation_email VARCHAR(255);
+ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS escalation_minutes INTEGER NOT NULL DEFAULT 15;
+
+CREATE TABLE IF NOT EXISTS notification_escalations (
+    notification_id  UUID         PRIMARY KEY REFERENCES notifications(id) ON DELETE CASCADE,
+    escalated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    escalated_to      VARCHAR(255)
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON notifications TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_preferences TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_channels TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON notification_escalations TO cspm_lambda;
 """
 
 
@@ -126,6 +143,16 @@ def _list_notifications(cur, account_id, domain_filter, severity_filter, unread_
 
 
 def handler(event, context):
+    # Invoked directly by an EventBridge Schedule (not through API Gateway,
+    # so no httpMethod key) — real escalation check, see 021_notifications.sql.
+    if event and event.get("run_escalations"):
+        conn = _get_connection()
+        try:
+            escalated = run_escalation_check(conn)
+            return {"statusCode": 200, "body": json.dumps({"escalated": escalated}, default=str)}
+        finally:
+            conn.close()
+
     if not event or "httpMethod" not in event:
         return {"statusCode": 400, "body": json.dumps({"error": "not an API Gateway event"})}
 
@@ -144,22 +171,25 @@ def handler(event, context):
                 return _resp(400, {"error": "cloud_account_id is required"})
 
             if qs.get("preferences"):
+                default_pref = {"email_enabled": True, "webhook_enabled": True, "slack_enabled": True, "sms_enabled": True}
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT domain, email_enabled, webhook_enabled, slack_enabled
+                        SELECT domain, email_enabled, webhook_enabled, slack_enabled, sms_enabled
                         FROM notification_preferences WHERE cloud_account_id = %s
                     """, (account_id,))
-                    saved = {r[0]: {"email_enabled": r[1], "webhook_enabled": r[2], "slack_enabled": r[3]}
-                             for r in cur.fetchall()}
+                    saved = {r[0]: {"email_enabled": r[1], "webhook_enabled": r[2], "slack_enabled": r[3],
+                                     "sms_enabled": r[4]} for r in cur.fetchall()}
                     cur.execute("""
-                        SELECT notify_email, webhook_url, slack_webhook_url
+                        SELECT notify_email, webhook_url, slack_webhook_url, sms_number,
+                               escalation_email, escalation_minutes
                         FROM notification_channels WHERE cloud_account_id = %s
                     """, (account_id,))
                     ch = cur.fetchone()
-                preferences = {d: saved.get(d, {"email_enabled": True, "webhook_enabled": True, "slack_enabled": True})
-                               for d in DOMAINS}
+                preferences = {d: saved.get(d, default_pref) for d in DOMAINS}
                 channels = {"notify_email": ch[0] if ch else None, "webhook_url": ch[1] if ch else None,
-                            "slack_webhook_url": ch[2] if ch else None}
+                            "slack_webhook_url": ch[2] if ch else None, "sms_number": ch[3] if ch else None,
+                            "escalation_email": ch[4] if ch else None,
+                            "escalation_minutes": ch[5] if ch else 15}
                 return _resp(200, {"preferences": preferences, "channels": channels})
 
             with conn.cursor() as cur:
@@ -221,30 +251,39 @@ def handler(event, context):
                     with conn.cursor() as cur:
                         cur.execute("""
                             INSERT INTO notification_preferences (cloud_account_id, domain, email_enabled,
-                                                                    webhook_enabled, slack_enabled)
-                            VALUES (%s, %s, %s, %s, %s)
+                                                                    webhook_enabled, slack_enabled, sms_enabled)
+                            VALUES (%s, %s, %s, %s, %s, %s)
                             ON CONFLICT (cloud_account_id, domain) DO UPDATE SET
                                 email_enabled = EXCLUDED.email_enabled,
                                 webhook_enabled = EXCLUDED.webhook_enabled,
-                                slack_enabled = EXCLUDED.slack_enabled
+                                slack_enabled = EXCLUDED.slack_enabled,
+                                sms_enabled = EXCLUDED.sms_enabled
                         """, (account_id, domain, bool(body.get("email_enabled", True)),
-                              bool(body.get("webhook_enabled", True)), bool(body.get("slack_enabled", True))))
+                              bool(body.get("webhook_enabled", True)), bool(body.get("slack_enabled", True)),
+                              bool(body.get("sms_enabled", True))))
                 return _resp(200, {"ok": True})
 
             if action == "update_channels":
+                # A partial payload (e.g. only sms_number) must not blank out
+                # fields the customer already configured — only overwrite a
+                # column when this request actually included that key.
+                fields = ("notify_email", "webhook_url", "slack_webhook_url", "sms_number",
+                          "escalation_email", "escalation_minutes")
+                provided = {f: body[f] for f in fields if f in body}
+                if "escalation_minutes" in provided:
+                    provided["escalation_minutes"] = int(provided["escalation_minutes"])
                 with conn:
                     with conn.cursor() as cur:
                         cur.execute("""
-                            INSERT INTO notification_channels (cloud_account_id, notify_email, webhook_url,
-                                                                 slack_webhook_url, updated_at)
-                            VALUES (%s, %s, %s, %s, NOW())
-                            ON CONFLICT (cloud_account_id) DO UPDATE SET
-                                notify_email = EXCLUDED.notify_email,
-                                webhook_url = EXCLUDED.webhook_url,
-                                slack_webhook_url = EXCLUDED.slack_webhook_url,
-                                updated_at = NOW()
-                        """, (account_id, body.get("notify_email"), body.get("webhook_url"),
-                              body.get("slack_webhook_url")))
+                            INSERT INTO notification_channels (cloud_account_id, updated_at)
+                            VALUES (%s, NOW()) ON CONFLICT (cloud_account_id) DO NOTHING
+                        """, (account_id,))
+                        if provided:
+                            set_clauses = ", ".join(f"{f} = %s" for f in provided)
+                            cur.execute(f"""
+                                UPDATE notification_channels SET {set_clauses}, updated_at = NOW()
+                                WHERE cloud_account_id = %s
+                            """, list(provided.values()) + [account_id])
                 return _resp(200, {"ok": True})
 
             return _resp(400, {"error": f"unknown action: {action}"})

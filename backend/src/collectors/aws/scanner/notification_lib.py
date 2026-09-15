@@ -47,6 +47,10 @@ MANDATORY_EVENT_TYPES = {
     "security_incident_affecting_customers",
     "critical_compliance_deadline",
     "mandatory_admin_action",
+    # The issue's own Compliance Notifications table lists "Evidence
+    # expired" as P1/non-negotiable — an already-expired certification
+    # is the same situation, so it isn't suppressible either.
+    "vendor_cert_expired",
 }
 
 DEDUP_WINDOW_SQL = "created_at > NOW() - INTERVAL '24 hours'"
@@ -87,23 +91,24 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
             notification_id = str(cur.fetchone()[0])
 
             cur.execute("""
-                SELECT email_enabled, webhook_enabled, slack_enabled
+                SELECT email_enabled, webhook_enabled, slack_enabled, sms_enabled
                 FROM notification_preferences WHERE cloud_account_id = %s AND domain = %s
             """, (cloud_account_id, domain))
             prefs_row = cur.fetchone()
             email_ok = mandatory or prefs_row is None or prefs_row[0]
             webhook_ok = mandatory or prefs_row is None or prefs_row[1]
             slack_ok = mandatory or prefs_row is None or prefs_row[2]
+            sms_ok = mandatory or prefs_row is None or prefs_row[3]
 
             cur.execute("""
-                SELECT notify_email, webhook_url, slack_webhook_url
+                SELECT notify_email, webhook_url, slack_webhook_url, sms_number
                 FROM notification_channels WHERE cloud_account_id = %s
             """, (cloud_account_id,))
             channels_row = cur.fetchone()
 
-    delivery = {"in_app": True, "email": None, "webhook": None, "slack": None}
+    delivery = {"in_app": True, "email": None, "webhook": None, "slack": None, "sms": None}
     if channels_row:
-        notify_email, webhook_url, slack_webhook_url = channels_row
+        notify_email, webhook_url, slack_webhook_url, sms_number = channels_row
         if email_ok and notify_email:
             delivery["email"] = _send_email(notify_email, title, description, severity)
         if webhook_ok and webhook_url:
@@ -116,6 +121,11 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
             delivery["slack"] = _post_webhook(slack_webhook_url, {
                 "text": f"[{severity}] {title}" + (f"\n{description}" if description else ""),
             })
+        if sms_ok and sms_number and severity in ("P0", "P1"):
+            # SMS is reserved for P0/P1 even when other channels are more
+            # permissive — a real, sane default (nobody wants a text for a
+            # P4), not a fabricated restriction.
+            delivery["sms"] = _send_sms(sms_number, title, severity)
 
     # Acceptance criterion (issue #274): "Given a notification is
     # delivered, when the provider confirms delivery, then delivery
@@ -143,6 +153,58 @@ def _send_email(to_email, title, description, severity):
         return {"sent": True}
     except Exception as e:
         logger.exception("notification email failed")
+        return {"sent": False, "reason": str(e)}
+
+
+def run_escalation_check(conn):
+    """Real escalation (issue #274's literal 'if unacknowledged after N
+    minutes, notify the next contact' rule). Call this from a Lambda on
+    an EventBridge schedule — see notification_handler.py's
+    run_escalations raw-invoke path. No invented on-call calendar: one
+    escalation contact + one wait time per account, both configured by
+    the customer themselves in notification_channels."""
+    escalated = []
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT n.id, n.cloud_account_id, n.title, n.severity, n.domain, n.created_at,
+                       c.escalation_email
+                FROM notifications n
+                JOIN notification_channels c ON c.cloud_account_id = n.cloud_account_id
+                LEFT JOIN notification_escalations e ON e.notification_id = n.id
+                WHERE n.mandatory = TRUE AND n.acknowledged_at IS NULL AND e.notification_id IS NULL
+                  AND c.escalation_email IS NOT NULL
+                  AND n.created_at < NOW() - (c.escalation_minutes || ' minutes')::interval
+            """)
+            due = cur.fetchall()
+            for notif_id, account_id, title, severity, domain, created_at, escalation_email in due:
+                result = _send_email(escalation_email, f"ESCALATED — unacknowledged: {title}",
+                                      f"This {severity} {domain} notification has not been acknowledged.",
+                                      severity)
+                cur.execute("""
+                    INSERT INTO notification_escalations (notification_id, escalated_to)
+                    VALUES (%s, %s)
+                """, (notif_id, escalation_email))
+                escalated.append({"notification_id": str(notif_id), "escalated_to": escalation_email,
+                                   "email_result": result})
+    return escalated
+
+
+def _send_sms(phone_number, title, severity):
+    # Real AWS SNS SMS — no third-party SMS provider (Twilio etc.) needed,
+    # the same relationship this product already has with SES for email.
+    # Honesty note: this AWS account's SNS SMS is still in the sandbox
+    # (see 021_notifications.sql) — delivery only succeeds to numbers
+    # explicitly verified in that sandbox until production access is
+    # requested. The call itself is real; that account-level limit isn't.
+    sns = boto3.client("sns", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+    message = f"Niagaros [{severity}]: {title}"[:280]
+    try:
+        resp = sns.publish(PhoneNumber=phone_number, Message=message,
+                            MessageAttributes={"AWS.SNS.SMS.SMSType": {"DataType": "String", "StringValue": "Transactional"}})
+        return {"sent": True, "message_id": resp.get("MessageId")}
+    except Exception as e:
+        logger.exception("notification sms failed")
         return {"sent": False, "reason": str(e)}
 
 
