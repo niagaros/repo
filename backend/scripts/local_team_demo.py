@@ -67,6 +67,22 @@ class SqliteTeamDb:
         self.conn.commit()
         return user_id
 
+    def simulate_fresh_signup(self, email: str) -> tuple[str, str]:
+        """
+        Mimics what the (unmodified, not-in-this-repo) Cognito signup
+        trigger + the new assign_default_organization() Postgres trigger
+        do together: a brand new user lands in their own solo org, with
+        no idea an invite exists for them yet.
+        """
+        user_id, org_id = str(uuid.uuid4()), str(uuid.uuid4())
+        self.conn.execute("INSERT INTO organizations VALUES (?, ?)", (org_id, f"{email}'s org"))
+        self.conn.execute(
+            "INSERT INTO users VALUES (?, ?, ?, ?, 'admin', 'active')",
+            (user_id, email, None, org_id),
+        )
+        self.conn.commit()
+        return user_id, org_id
+
     def get_user_by_email(self, email):
         row = self.conn.execute(
             "SELECT id, email, full_name, organization_id, role, status FROM users WHERE email = ?",
@@ -112,6 +128,20 @@ class SqliteTeamDb:
         )
         self.conn.commit()
         return cur.rowcount > 0
+
+    def accept_pending_invite(self, user_id, email):
+        row = self.conn.execute(
+            "SELECT id, organization_id, role FROM team_invites WHERE email = ? AND status = 'pending'",
+            (email,),
+        ).fetchone()
+        if not row:
+            return None
+        invite_id, organization_id, role = row
+        self.conn.execute("UPDATE users SET organization_id = ?, role = ? WHERE id = ?",
+                           (organization_id, role, user_id))
+        self.conn.execute("UPDATE team_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
+        self.conn.commit()
+        return {"organization_id": organization_id, "role": role}
 
     def deactivate_user(self, user_id, organization_id):
         cur = self.conn.execute(
@@ -169,6 +199,24 @@ def main():
         call("GET", "/team")
 
         call("POST", "/team/invite", body={"email": "new.colleague@acme.com", "role": "viewer"})
+
+    # The invited person now signs up completely normally — landing in
+    # their own solo organization, same as anyone who signs up unrelated
+    # to an invite. They have no idea an invite is waiting for them.
+    signup_conn = fresh_db()
+    _, colleague_solo_org = signup_conn.simulate_fresh_signup("new.colleague@acme.com")
+    signup_conn.close()
+    print(f"\n[new.colleague@acme.com just signed up — landed in solo org {colleague_solo_org[:8]}…, unaware of the pending invite]")
+
+    # Their very first authenticated page load fires this automatically
+    # (see useRequireAuth.ts) — no click required from them.
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="new.colleague@acme.com"):
+        call("POST", "/team/accept-invite")
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
+        call("GET", "/team")  # new.colleague should now show up as an Acme BV member
 
         call("DELETE", f"/team/invite/{invite_id}", path_params={"id": invite_id})
 

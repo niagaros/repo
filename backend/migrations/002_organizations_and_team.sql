@@ -24,6 +24,38 @@ CREATE TABLE IF NOT EXISTS organizations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- IMPORTANT: the existing Cognito post-confirmation trigger that creates a
+-- new `users` row on signup (see aws_rds_installation.md — "Populated
+-- automatically by Cognito post-confirmation trigger") is NOT in this repo
+-- and only ever inserted (cognito_sub, email, full_name). Once
+-- organization_id below is made NOT NULL, that unmodified trigger would
+-- start failing on every new signup.
+--
+-- Fix: a BEFORE INSERT trigger on `users` that auto-creates a solo
+-- organization whenever a row arrives without one. This means the
+-- existing signup code needs zero changes AND "a brand new user starts in
+-- their own organization" keeps working — it's just enforced here instead
+-- of in application code we don't have access to.
+CREATE OR REPLACE FUNCTION assign_default_organization() RETURNS TRIGGER AS $$
+DECLARE
+    new_org_id UUID;
+BEGIN
+    IF NEW.organization_id IS NULL THEN
+        INSERT INTO organizations (name)
+        VALUES (COALESCE(NULLIF(NEW.full_name, ''), NEW.email, 'New organization'))
+        RETURNING id INTO new_org_id;
+        NEW.organization_id := new_org_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS users_default_organization ON users;
+CREATE TRIGGER users_default_organization
+    BEFORE INSERT ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION assign_default_organization();
+
 -- ── users: which organization + what role within it ─────────────────
 -- Role set matches the PVA's own Step 2 wording exactly (#265):
 -- "Assign roles (Admin, Security, Compliance, Viewer)". Anything beyond
@@ -75,9 +107,14 @@ WHERE ca.owner_email = u.email
 CREATE INDEX IF NOT EXISTS idx_cloud_accounts_organization ON cloud_accounts(organization_id);
 
 -- ── team_invites ──────────────────────────────────────────────────────
--- One row per invitation. A row moving from 'pending' to 'accepted' is
--- expected to also create the real `users` row (post-confirmation, same
--- as today's Cognito trigger) with organization_id/role copied from here.
+-- One row per invitation. The invited person signs up completely
+-- normally (existing Cognito flow, untouched) and lands in their own
+-- auto-created solo organization via the trigger above. Acceptance then
+-- happens via POST /team/accept-invite (api/team_handler.py), called once
+-- automatically after their first login: it finds this pending row by
+-- email, moves them into organization_id/role from here, and flips this
+-- row to 'accepted'. Their now-empty solo organization is left behind
+-- (harmless — a brand new user owns nothing yet) rather than deleted.
 CREATE TABLE IF NOT EXISTS team_invites (
     id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

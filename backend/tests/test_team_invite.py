@@ -89,6 +89,29 @@ class TestDatabaseTeamMethods:
 
         assert db.revoke_team_invite("does-not-exist", "org1") is False
 
+    def test_accept_pending_invite_moves_user_and_marks_accepted(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = ("invite-1", "org-target", "security")
+
+        result = db.accept_pending_invite("user-1", "new@x.com")
+
+        assert result == {"organization_id": "org-target", "role": "security"}
+        # two UPDATEs: move the user, then mark the invite accepted
+        update_calls = [c for c in cur.execute.call_args_list if "UPDATE" in c[0][0]]
+        assert len(update_calls) == 2
+        assert "UPDATE users SET organization_id" in update_calls[0][0][0]
+        assert update_calls[0][0][1] == ("org-target", "security", "user-1")
+        assert "UPDATE team_invites SET status = 'accepted'" in update_calls[1][0][0]
+        mock_conn.commit.assert_called_once()
+
+    def test_accept_pending_invite_returns_none_when_nothing_pending(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = None
+
+        assert db.accept_pending_invite("user-1", "nobody-invited@x.com") is None
+
     def test_deactivate_user_scoped_to_organization(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
@@ -179,6 +202,36 @@ class TestHandleInviteMember:
         db.create_team_invite.assert_called_once_with(
             organization_id="org1", email="new@x.com", role="viewer", invited_by="u1",
         )
+
+
+class TestHandleAcceptInvite:
+    def test_unauthorized_without_caller(self):
+        import api.team_handler as th
+        with patch.object(th, "_get_authenticated_email", return_value=None):
+            resp = th.handle_accept_invite({}, MagicMock())
+        assert resp["statusCode"] == 401
+
+    def test_no_pending_invite_is_a_harmless_noop(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        db.accept_pending_invite.return_value = None
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_accept_invite({}, db)
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"]) == {"accepted": False}
+
+    def test_pending_invite_is_accepted(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        db.accept_pending_invite.return_value = {"organization_id": "org-new", "role": "security"}
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_accept_invite({}, db)
+        assert resp["statusCode"] == 200
+        body = json.loads(resp["body"])
+        assert body == {"accepted": True, "organization_id": "org-new", "role": "security"}
+        db.accept_pending_invite.assert_called_once_with(VIEWER["id"], VIEWER["email"])
 
 
 class TestHandleDeactivateMember:

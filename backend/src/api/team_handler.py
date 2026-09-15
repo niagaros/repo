@@ -94,6 +94,27 @@ def handle_invite_member(event: dict, db: Database) -> dict:
     return _response(201, {"invite_id": invite_id, "email": email, "role": role})
 
 
+def handle_accept_invite(event: dict, db: Database) -> dict:
+    """
+    Issue #265, acceptance criterion #1. Meant to be called once,
+    automatically, right after login (see useRequireAuth.ts) — not
+    something the user clicks. A no-op (200, accepted: False) when there
+    was nothing to accept, so it's always safe to call.
+    """
+    email = _get_authenticated_email(event)
+    if not email:
+        return _response(401, {"error": "unauthorized"})
+
+    caller = db.get_user_by_email(email)
+    if not caller:
+        return _response(404, {"error": "user not found"})
+
+    result = db.accept_pending_invite(caller["id"], email)
+    if result is None:
+        return _response(200, {"accepted": False})
+    return _response(200, {"accepted": True, **result})
+
+
 def handle_revoke_invite(event: dict, db: Database, invite_id: str) -> dict:
     caller = _get_caller(event, db)
     if not caller:
@@ -130,6 +151,7 @@ def lambda_handler(event, context):
 
         GET    /team                 -> handle_list_team
         POST   /team/invite          -> handle_invite_member
+        POST   /team/accept-invite   -> handle_accept_invite
         DELETE /team/invite/{id}     -> handle_revoke_invite
         DELETE /team/member/{id}     -> handle_deactivate_member
     """
@@ -145,6 +167,8 @@ def lambda_handler(event, context):
             return handle_list_team(event, db)
         if method == "POST" and path.rstrip("/") == "/team/invite":
             return handle_invite_member(event, db)
+        if method == "POST" and path.rstrip("/") == "/team/accept-invite":
+            return handle_accept_invite(event, db)
         if method == "DELETE" and path.startswith("/team/invite/"):
             return handle_revoke_invite(event, db, params.get("id", ""))
         if method == "DELETE" and path.startswith("/team/member/"):

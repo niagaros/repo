@@ -301,6 +301,48 @@ class Database:
         self.conn.commit()
         return updated > 0
 
+    def accept_pending_invite(self, user_id: str, email: str) -> dict | None:
+        """
+        Issue #265, acceptance criterion #1: "Given an administrator
+        invites a new user, when the invitation is accepted, then the
+        user is provisioned with the assigned role and team."
+
+        Called once after a user's first login (see useRequireAuth.ts).
+        The user already exists by then (Cognito's own, untouched
+        post-confirmation flow created them, landing them in their own
+        auto-created solo organization — see the trigger in
+        002_organizations_and_team.sql). This looks for a pending invite
+        matching their email and, if found, moves them into that invite's
+        organization/role and marks it accepted.
+
+        Returns the new {"organization_id", "role"}, or None if there was
+        no pending invite (the normal case for anyone who signed up
+        without being invited — a harmless no-op, not an error).
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, organization_id, role FROM team_invites
+                WHERE email = %s AND status = 'pending'
+                ORDER BY created_at
+                LIMIT 1
+            """, (email,))
+            invite = cur.fetchone()
+            if not invite:
+                return None
+            invite_id, organization_id, role = invite
+
+            cur.execute(
+                "UPDATE users SET organization_id = %s, role = %s WHERE id = %s",
+                (organization_id, role, user_id),
+            )
+            cur.execute(
+                "UPDATE team_invites SET status = 'accepted', accepted_at = NOW() WHERE id = %s",
+                (invite_id,),
+            )
+        self.conn.commit()
+        logger.info(f"Database: user {user_id} accepted invite {invite_id} into organization {organization_id}")
+        return {"organization_id": str(organization_id), "role": role}
+
     def deactivate_user(self, user_id: str, organization_id: str) -> bool:
         """
         Soft-remove: flips status rather than deleting the row, so past
