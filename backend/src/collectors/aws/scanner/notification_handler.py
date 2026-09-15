@@ -19,7 +19,9 @@ import re
 import boto3
 import psycopg2
 
-from collectors.aws.scanner.notification_lib import run_escalation_check
+from collectors.aws.scanner.notification_lib import (
+    run_escalation_check, run_retry_check, is_admin_caller, RESTRICTED_DOMAINS_FOR_NON_ADMIN,
+)
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
@@ -53,11 +55,13 @@ CREATE TABLE IF NOT EXISTS notifications (
     actor             VARCHAR(255),
     mandatory         BOOLEAN      NOT NULL DEFAULT FALSE,
     delivery          JSONB,
+    retry_count       INTEGER      NOT NULL DEFAULT 0,
     read_at           TIMESTAMPTZ,
     acknowledged_at   TIMESTAMPTZ,
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS delivery JSONB;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS notifications_account_idx ON notifications(cloud_account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS notifications_unread_idx ON notifications(cloud_account_id, read_at) WHERE read_at IS NULL;
 CREATE INDEX IF NOT EXISTS notifications_dedup_idx ON notifications(cloud_account_id, event_type, resource_link, created_at DESC);
@@ -70,9 +74,11 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     webhook_enabled   BOOLEAN      NOT NULL DEFAULT TRUE,
     slack_enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
     sms_enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
+    teams_enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
     UNIQUE(cloud_account_id, domain)
 );
 ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS teams_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS notification_channels (
     cloud_account_id   UUID         PRIMARY KEY REFERENCES cloud_accounts(id) ON DELETE CASCADE,
@@ -82,11 +88,13 @@ CREATE TABLE IF NOT EXISTS notification_channels (
     sms_number         VARCHAR(20),
     escalation_email   VARCHAR(255),
     escalation_minutes INTEGER      NOT NULL DEFAULT 15,
+    teams_webhook_url  VARCHAR(500),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS sms_number VARCHAR(20);
 ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS escalation_email VARCHAR(255);
 ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS escalation_minutes INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS teams_webhook_url VARCHAR(500);
 
 CREATE TABLE IF NOT EXISTS notification_escalations (
     notification_id  UUID         PRIMARY KEY REFERENCES notifications(id) ON DELETE CASCADE,
@@ -116,12 +124,15 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body, default=str)}
 
 
-def _list_notifications(cur, account_id, domain_filter, severity_filter, unread_only, limit):
+def _list_notifications(cur, account_id, domain_filter, severity_filter, unread_only, limit, exclude_domains=None):
     clauses = ["cloud_account_id = %s"]
     params = [account_id]
     if domain_filter:
         clauses.append("domain = %s")
         params.append(domain_filter)
+    if exclude_domains:
+        clauses.append("domain NOT IN %s")
+        params.append(tuple(exclude_domains))
     if severity_filter:
         clauses.append("severity = %s")
         params.append(severity_filter)
@@ -149,7 +160,8 @@ def handler(event, context):
         conn = _get_connection()
         try:
             escalated = run_escalation_check(conn)
-            return {"statusCode": 200, "body": json.dumps({"escalated": escalated}, default=str)}
+            retried = run_retry_check(conn)
+            return {"statusCode": 200, "body": json.dumps({"escalated": escalated, "retried": retried}, default=str)}
         finally:
             conn.close()
 
@@ -171,17 +183,18 @@ def handler(event, context):
                 return _resp(400, {"error": "cloud_account_id is required"})
 
             if qs.get("preferences"):
-                default_pref = {"email_enabled": True, "webhook_enabled": True, "slack_enabled": True, "sms_enabled": True}
+                default_pref = {"email_enabled": True, "webhook_enabled": True, "slack_enabled": True,
+                                 "sms_enabled": True, "teams_enabled": True}
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT domain, email_enabled, webhook_enabled, slack_enabled, sms_enabled
+                        SELECT domain, email_enabled, webhook_enabled, slack_enabled, sms_enabled, teams_enabled
                         FROM notification_preferences WHERE cloud_account_id = %s
                     """, (account_id,))
                     saved = {r[0]: {"email_enabled": r[1], "webhook_enabled": r[2], "slack_enabled": r[3],
-                                     "sms_enabled": r[4]} for r in cur.fetchall()}
+                                     "sms_enabled": r[4], "teams_enabled": r[5]} for r in cur.fetchall()}
                     cur.execute("""
                         SELECT notify_email, webhook_url, slack_webhook_url, sms_number,
-                               escalation_email, escalation_minutes
+                               escalation_email, escalation_minutes, teams_webhook_url
                         FROM notification_channels WHERE cloud_account_id = %s
                     """, (account_id,))
                     ch = cur.fetchone()
@@ -189,16 +202,63 @@ def handler(event, context):
                 channels = {"notify_email": ch[0] if ch else None, "webhook_url": ch[1] if ch else None,
                             "slack_webhook_url": ch[2] if ch else None, "sms_number": ch[3] if ch else None,
                             "escalation_email": ch[4] if ch else None,
-                            "escalation_minutes": ch[5] if ch else 15}
+                            "escalation_minutes": ch[5] if ch else 15,
+                            "teams_webhook_url": ch[6] if ch else None}
                 return _resp(200, {"preferences": preferences, "channels": channels})
 
+            if qs.get("analytics"):
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT
+                            COUNT(*) AS total,
+                            COUNT(*) FILTER (WHERE acknowledged_at IS NOT NULL) AS acknowledged,
+                            COUNT(*) FILTER (WHERE mandatory) AS mandatory_count,
+                            AVG(EXTRACT(EPOCH FROM (acknowledged_at - created_at)) / 60)
+                                FILTER (WHERE acknowledged_at IS NOT NULL) AS avg_ack_minutes,
+                            COUNT(*) FILTER (WHERE delivery IS NOT NULL AND (
+                                (delivery->'email'->>'sent')::boolean OR (delivery->'webhook'->>'sent')::boolean OR
+                                (delivery->'slack'->>'sent')::boolean OR (delivery->'sms'->>'sent')::boolean OR
+                                (delivery->'teams'->>'sent')::boolean
+                            )) AS delivered_to_at_least_one_channel,
+                            COUNT(*) FILTER (WHERE delivery IS NOT NULL) AS attempted_external_delivery
+                        FROM notifications WHERE cloud_account_id = %s
+                    """, (account_id,))
+                    total, acknowledged, mandatory_count, avg_ack_minutes, delivered, attempted = cur.fetchone()
+                    cur.execute("SELECT COUNT(*) FROM notification_escalations e "
+                                "JOIN notifications n ON n.id = e.notification_id WHERE n.cloud_account_id = %s",
+                                (account_id,))
+                    escalated_count = cur.fetchone()[0]
+                return _resp(200, {
+                    "total_notifications": total,
+                    "acknowledged": acknowledged,
+                    "acknowledgement_rate_pct": round(acknowledged * 100.0 / total, 1) if total else None,
+                    "mandatory_count": mandatory_count,
+                    "avg_time_to_acknowledge_minutes": round(avg_ack_minutes, 1) if avg_ack_minutes else None,
+                    "delivery_rate_pct": round(delivered * 100.0 / attempted, 1) if attempted else None,
+                    "escalated_count": escalated_count,
+                })
+
+            domain_filter = qs.get("domain")
+            if not is_admin_caller(event) and domain_filter in RESTRICTED_DOMAINS_FOR_NON_ADMIN:
+                # A non-Admin explicitly asking for a restricted domain gets
+                # an honest empty result, not a silent all-domains fallback.
+                return _resp(200, {"notifications": [], "unread_count": 0})
+            exclude_domains = None if is_admin_caller(event) else RESTRICTED_DOMAINS_FOR_NON_ADMIN
+
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM notifications WHERE cloud_account_id = %s AND read_at IS NULL",
-                            (account_id,))
+                unread_clause = "read_at IS NULL"
+                if exclude_domains:
+                    cur.execute(f"""
+                        SELECT COUNT(*) FROM notifications
+                        WHERE cloud_account_id = %s AND {unread_clause} AND domain NOT IN %s
+                    """, (account_id, tuple(exclude_domains)))
+                else:
+                    cur.execute(f"SELECT COUNT(*) FROM notifications WHERE cloud_account_id = %s AND {unread_clause}",
+                                (account_id,))
                 unread_count = cur.fetchone()[0]
                 notifications = _list_notifications(
-                    cur, account_id, qs.get("domain"), qs.get("severity"),
-                    qs.get("unread_only") == "1", int(qs.get("limit", 50)),
+                    cur, account_id, domain_filter, qs.get("severity"),
+                    qs.get("unread_only") == "1", int(qs.get("limit", 50)), exclude_domains,
                 )
             return _resp(200, {"notifications": notifications, "unread_count": unread_count})
 
@@ -251,16 +311,18 @@ def handler(event, context):
                     with conn.cursor() as cur:
                         cur.execute("""
                             INSERT INTO notification_preferences (cloud_account_id, domain, email_enabled,
-                                                                    webhook_enabled, slack_enabled, sms_enabled)
-                            VALUES (%s, %s, %s, %s, %s, %s)
+                                                                    webhook_enabled, slack_enabled, sms_enabled,
+                                                                    teams_enabled)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (cloud_account_id, domain) DO UPDATE SET
                                 email_enabled = EXCLUDED.email_enabled,
                                 webhook_enabled = EXCLUDED.webhook_enabled,
                                 slack_enabled = EXCLUDED.slack_enabled,
-                                sms_enabled = EXCLUDED.sms_enabled
+                                sms_enabled = EXCLUDED.sms_enabled,
+                                teams_enabled = EXCLUDED.teams_enabled
                         """, (account_id, domain, bool(body.get("email_enabled", True)),
                               bool(body.get("webhook_enabled", True)), bool(body.get("slack_enabled", True)),
-                              bool(body.get("sms_enabled", True))))
+                              bool(body.get("sms_enabled", True)), bool(body.get("teams_enabled", True))))
                 return _resp(200, {"ok": True})
 
             if action == "update_channels":
@@ -268,7 +330,7 @@ def handler(event, context):
                 # fields the customer already configured — only overwrite a
                 # column when this request actually included that key.
                 fields = ("notify_email", "webhook_url", "slack_webhook_url", "sms_number",
-                          "escalation_email", "escalation_minutes")
+                          "escalation_email", "escalation_minutes", "teams_webhook_url")
                 provided = {f: body[f] for f in fields if f in body}
                 if "escalation_minutes" in provided:
                     provided["escalation_minutes"] = int(provided["escalation_minutes"])

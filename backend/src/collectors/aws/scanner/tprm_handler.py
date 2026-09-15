@@ -1067,6 +1067,13 @@ def _check_and_notify(conn, cloud_account_id):
             days_left = (date.fromisoformat(v["contract_end_date"]) - today).days
             if days_left <= CERTIFICATION_EXPIRING_SOON_DAYS:
                 contracts_ending.append({"vendor": v["name"], "end_date": v["contract_end_date"], "days_left": days_left})
+                create_notification(
+                    conn, cloud_account_id, domain="tprm", event_type="vendor_contract_ending",
+                    severity="P1" if days_left <= 0 else "P2",
+                    title=f"Contract {'ended' if days_left <= 0 else 'ending soon'}: {v['name']}",
+                    description=f"Ends {v['contract_end_date']} ({days_left} days).",
+                    resource_link=f"tprm.html?vendor_id={v['id']}",
+                )
 
         # Real technical check, run here (daily) rather than on every page
         # load — refresh if never checked or stale (>7 days).
@@ -1077,6 +1084,11 @@ def _check_and_notify(conn, cloud_account_id):
         for t in v["remediation_tasks"]:
             if t["overdue"]:
                 overdue_tasks.append({"vendor": v["name"], "task": t["title"], "due_date": t["due_date"]})
+                create_notification(
+                    conn, cloud_account_id, domain="workflow", event_type="tprm_remediation_overdue",
+                    severity="P2", title=f"Overdue: {t['title']} ({v['name']})",
+                    description=f"Was due {t['due_date']}.", resource_link=f"tprm.html?vendor_id={v['id']}",
+                )
 
         if v["risk"]["level"] == "critical":
             critical.append({"vendor": v["name"], "score": v["risk"]["score"], "email": v["business_owner_email"]})

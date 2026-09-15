@@ -70,10 +70,12 @@ CREATE TABLE IF NOT EXISTS notifications (
     actor             VARCHAR(255),
     mandatory         BOOLEAN      NOT NULL DEFAULT FALSE,
     delivery          JSONB,                   -- real per-channel delivery outcome, see notification_lib.py
+    retry_count       INTEGER      NOT NULL DEFAULT 0,
     read_at           TIMESTAMPTZ,
     acknowledged_at   TIMESTAMPTZ,
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS notifications_account_idx ON notifications(cloud_account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS notifications_unread_idx ON notifications(cloud_account_id, read_at) WHERE read_at IS NULL;
 CREATE INDEX IF NOT EXISTS notifications_dedup_idx ON notifications(cloud_account_id, event_type, resource_link, created_at DESC);
@@ -86,9 +88,11 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     webhook_enabled   BOOLEAN      NOT NULL DEFAULT TRUE,
     slack_enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
     sms_enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
+    teams_enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
     UNIQUE(cloud_account_id, domain)
 );
 ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS teams_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS notification_channels (
     cloud_account_id   UUID         PRIMARY KEY REFERENCES cloud_accounts(id) ON DELETE CASCADE,
@@ -98,11 +102,13 @@ CREATE TABLE IF NOT EXISTS notification_channels (
     sms_number         VARCHAR(20),   -- E.164 format, e.g. +31612345678
     escalation_email   VARCHAR(255),  -- who gets notified if a mandatory event goes unacknowledged
     escalation_minutes INTEGER      NOT NULL DEFAULT 15,
+    teams_webhook_url  VARCHAR(500), -- Microsoft Teams Incoming Webhook, customer-supplied
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS sms_number VARCHAR(20);
 ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS escalation_email VARCHAR(255);
 ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS escalation_minutes INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS teams_webhook_url VARCHAR(500);
 
 -- v2: real escalation — see get-notifications-escalate/ Lambda, run on an
 -- EventBridge schedule, which finds mandatory+unacknowledged notifications

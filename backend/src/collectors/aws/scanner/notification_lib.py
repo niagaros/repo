@@ -31,6 +31,40 @@ import boto3
 logger = logging.getLogger(__name__)
 
 DOMAINS = ("security", "compliance", "risk", "audit", "tprm", "ai", "workflow", "account", "billing", "platform")
+
+ADMIN_GROUP_NAME = "Admin"
+
+# Acceptance criterion (issue #274): "multiple users have different
+# roles... each receives notifications according to their permissions."
+# This product has no per-user role model beyond the real Cognito
+# Admin/Viewer groups added for the AI Agent (issue #262) — reused here
+# rather than inventing a separate, fictitious permissions system.
+# Non-Admin callers (including no/invalid token) don't see these two
+# domains; everything else is visible to everyone with account access.
+RESTRICTED_DOMAINS_FOR_NON_ADMIN = {"billing", "account"}
+
+
+def is_admin_caller(event):
+    """Real Cognito-group check, same pattern as ai_agent_handler.py's
+    _get_caller_admin_status — kept here so any handler can reuse it
+    without duplicating the Cognito calls."""
+    headers = (event or {}).get("headers") or {}
+    auth = headers.get("Authorization") or headers.get("authorization") or ""
+    if not auth.startswith("Bearer "):
+        return False
+    token = auth[7:].strip()
+    if not token:
+        return False
+    region = os.environ.get("SECRET_REGION", "eu-west-1")
+    cognito = boto3.client("cognito-idp", region_name=region)
+    try:
+        user = cognito.get_user(AccessToken=token)
+        groups_resp = cognito.admin_list_groups_for_user(
+            UserPoolId=os.environ["COGNITO_USER_POOL_ID"], Username=user["Username"]
+        )
+    except Exception:
+        return False
+    return ADMIN_GROUP_NAME in [g["GroupName"] for g in groups_resp.get("Groups", [])]
 SEVERITIES = ("P0", "P1", "P2", "P3", "P4", "P5")
 
 NOTIFICATION_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL", "bottomclipzz@gmail.com")
@@ -54,6 +88,10 @@ MANDATORY_EVENT_TYPES = {
 }
 
 DEDUP_WINDOW_SQL = "created_at > NOW() - INTERVAL '24 hours'"
+
+_SEVERITY_HEX = {"P0": "B71C1C", "P1": "D32F2F", "P2": "F57C00", "P3": "1976D2", "P4": "9E9E9E", "P5": "9E9E9E"}
+
+MAX_DELIVERY_RETRIES = 3
 
 
 def _get_connection_for_lib(conn):
@@ -91,7 +129,7 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
             notification_id = str(cur.fetchone()[0])
 
             cur.execute("""
-                SELECT email_enabled, webhook_enabled, slack_enabled, sms_enabled
+                SELECT email_enabled, webhook_enabled, slack_enabled, sms_enabled, teams_enabled
                 FROM notification_preferences WHERE cloud_account_id = %s AND domain = %s
             """, (cloud_account_id, domain))
             prefs_row = cur.fetchone()
@@ -99,16 +137,17 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
             webhook_ok = mandatory or prefs_row is None or prefs_row[1]
             slack_ok = mandatory or prefs_row is None or prefs_row[2]
             sms_ok = mandatory or prefs_row is None or prefs_row[3]
+            teams_ok = mandatory or prefs_row is None or prefs_row[4]
 
             cur.execute("""
-                SELECT notify_email, webhook_url, slack_webhook_url, sms_number
+                SELECT notify_email, webhook_url, slack_webhook_url, sms_number, teams_webhook_url
                 FROM notification_channels WHERE cloud_account_id = %s
             """, (cloud_account_id,))
             channels_row = cur.fetchone()
 
-    delivery = {"in_app": True, "email": None, "webhook": None, "slack": None, "sms": None}
+    delivery = {"in_app": True, "email": None, "webhook": None, "slack": None, "sms": None, "teams": None}
     if channels_row:
-        notify_email, webhook_url, slack_webhook_url, sms_number = channels_row
+        notify_email, webhook_url, slack_webhook_url, sms_number, teams_webhook_url = channels_row
         if email_ok and notify_email:
             delivery["email"] = _send_email(notify_email, title, description, severity)
         if webhook_ok and webhook_url:
@@ -120,6 +159,16 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
         if slack_ok and slack_webhook_url:
             delivery["slack"] = _post_webhook(slack_webhook_url, {
                 "text": f"[{severity}] {title}" + (f"\n{description}" if description else ""),
+            })
+        if teams_ok and teams_webhook_url:
+            # Microsoft Teams Incoming Webhook — a different JSON shape
+            # (MessageCard) than Slack's, but the same idea: a URL the
+            # customer creates themselves in their own Teams channel, no
+            # Niagaros-owned Teams app or OAuth needed.
+            delivery["teams"] = _post_webhook(teams_webhook_url, {
+                "@type": "MessageCard", "@context": "http://schema.org/extensions",
+                "summary": title, "themeColor": _SEVERITY_HEX.get(severity, "808080"),
+                "title": f"Niagaros [{severity}] {domain}", "text": title + (f"\n\n{description}" if description else ""),
             })
         if sms_ok and sms_number and severity in ("P0", "P1"):
             # SMS is reserved for P0/P1 even when other channels are more
@@ -154,6 +203,76 @@ def _send_email(to_email, title, description, severity):
     except Exception as e:
         logger.exception("notification email failed")
         return {"sent": False, "reason": str(e)}
+
+
+def run_retry_check(conn):
+    """Acceptance criterion (issue #274): 'Given delivery fails, when
+    retry conditions are met, then the notification is retried.' Finds
+    notifications from the last 2 hours where at least one configured
+    channel failed, and retries just that channel — up to
+    MAX_DELIVERY_RETRIES times. Call this from the same EventBridge
+    schedule as run_escalation_check."""
+    retried = []
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT n.id, n.cloud_account_id, n.domain, n.event_type, n.severity, n.title,
+                       n.description, n.resource_link, n.delivery, n.retry_count,
+                       c.notify_email, c.webhook_url, c.slack_webhook_url, c.sms_number, c.teams_webhook_url
+                FROM notifications n
+                JOIN notification_channels c ON c.cloud_account_id = n.cloud_account_id
+                WHERE n.created_at > NOW() - INTERVAL '2 hours'
+                  AND n.retry_count < %s AND n.delivery IS NOT NULL
+                  AND (
+                    (n.delivery->'email'->>'sent' = 'false') OR
+                    (n.delivery->'webhook'->>'sent' = 'false') OR
+                    (n.delivery->'slack'->>'sent' = 'false') OR
+                    (n.delivery->'sms'->>'sent' = 'false') OR
+                    (n.delivery->'teams'->>'sent' = 'false')
+                  )
+            """, (MAX_DELIVERY_RETRIES,))
+            rows = cur.fetchall()
+
+    for (notif_id, account_id, domain, event_type, severity, title, description, resource_link,
+         delivery, retry_count, notify_email, webhook_url, slack_webhook_url, sms_number,
+         teams_webhook_url) in rows:
+        changed = False
+        # dict.get(key, {}) only falls back to {} when the key is absent —
+        # here every channel key is always PRESENT with value None when
+        # unconfigured, so that default never applies. `or {}` catches that.
+        if (delivery.get("email") or {}).get("sent") is False and notify_email:
+            delivery["email"] = _send_email(notify_email, title, description, severity)
+            changed = True
+        if (delivery.get("webhook") or {}).get("sent") is False and webhook_url:
+            delivery["webhook"] = _post_webhook(webhook_url, {
+                "id": str(notif_id), "domain": domain, "event_type": event_type,
+                "severity": severity, "title": title, "description": description,
+                "resource_link": resource_link,
+            })
+            changed = True
+        if (delivery.get("slack") or {}).get("sent") is False and slack_webhook_url:
+            delivery["slack"] = _post_webhook(slack_webhook_url, {
+                "text": f"[{severity}] {title}" + (f"\n{description}" if description else ""),
+            })
+            changed = True
+        if (delivery.get("teams") or {}).get("sent") is False and teams_webhook_url:
+            delivery["teams"] = _post_webhook(teams_webhook_url, {
+                "@type": "MessageCard", "@context": "http://schema.org/extensions",
+                "summary": title, "themeColor": _SEVERITY_HEX.get(severity, "808080"),
+                "title": f"Niagaros [{severity}] {domain}", "text": title,
+            })
+            changed = True
+        if (delivery.get("sms") or {}).get("sent") is False and sms_number:
+            delivery["sms"] = _send_sms(sms_number, title, severity)
+            changed = True
+        if changed:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE notifications SET delivery = %s, retry_count = retry_count + 1 WHERE id = %s
+                    """, (json.dumps(delivery, default=str), notif_id))
+            retried.append({"notification_id": str(notif_id), "delivery": delivery})
+    return retried
 
 
 def run_escalation_check(conn):

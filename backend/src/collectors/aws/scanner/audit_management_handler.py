@@ -430,7 +430,14 @@ def _update_audit(conn, audit_id, status, start_date, end_date):
                 UPDATE audits SET status = COALESCE(%s, status), start_date = COALESCE(%s, start_date),
                                    end_date = COALESCE(%s, end_date), updated_at = NOW()
                 WHERE id = %s
+                RETURNING cloud_account_id, title
             """, (status, start_date, end_date, audit_id))
+            cloud_account_id, title = cur.fetchone()
+    if status == "completed":
+        create_notification(
+            conn, cloud_account_id, domain="audit", event_type="audit_completed", severity="P3",
+            title=f"Audit completed: {title}", resource_link=f"audit_management.html?audit_id={audit_id}",
+        )
 
 
 def _delete_audit(conn, audit_id):

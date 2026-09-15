@@ -47,6 +47,12 @@
     + ".nn-desc{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.4}"
     + ".nn-meta{font-size:10px;color:#9ca3af;margin-top:4px;display:flex;gap:8px;align-items:center}"
     + ".nn-mandatory{font-size:9px;font-weight:700;text-transform:uppercase;color:#dc2626}"
+    + ".nn-actions{display:flex;gap:6px;margin-top:7px}"
+    + ".nn-ack,.nn-open{font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif;border:1px solid #e5e7eb;background:#fff;color:#374151}"
+    + ".nn-ack{background:#4338ca;color:#fff;border-color:#4338ca}"
+    + ".nn-ack:hover{filter:brightness(1.08)}"
+    + ".nn-open:hover{background:#f9fafb}"
+    + ".nn-ack-state{font-size:10.5px;font-weight:600;color:#16a34a;margin-top:6px}"
     + "#nn-empty{padding:36px 14px;text-align:center;color:#9ca3af;font-size:12px}";
 
   var styleEl = document.createElement("style");
@@ -109,20 +115,49 @@
         + '      <span>' + timeAgo(n.created_at) + '</span>'
         + (n.mandatory ? '<span class="nn-mandatory">Mandatory</span>' : '')
         + '    </div>'
+        + (n.acknowledged
+            ? '    <div class="nn-ack-state">✓ Acknowledged</div>'
+            + '    <div class="nn-actions">'
+            + (n.resource_link ? '<button class="nn-open" type="button">Open</button>' : '')
+            + '    </div>'
+            : '    <div class="nn-actions">'
+            + '<button class="nn-ack" type="button">Acknowledge</button>'
+            + (n.resource_link ? '<button class="nn-open" type="button">Open</button>' : '')
+            + '</div>')
         + '  </div>'
         + '</div>';
     }).join("");
 
     list.querySelectorAll(".nn-item").forEach(function (item) {
+      var id = item.getAttribute("data-id");
+      var link = item.getAttribute("data-link");
+      var accountId = getAccountId();
+
       item.addEventListener("click", function () {
-        var accountId = getAccountId();
-        var id = item.getAttribute("data-id");
-        var link = item.getAttribute("data-link");
         if (accountId) {
           fetch(API, { method: "POST", body: JSON.stringify({ action: "mark_read", cloud_account_id: accountId, id: id }) });
         }
-        if (link) location.href = link;
       });
+
+      var ackBtn = item.querySelector(".nn-ack");
+      if (ackBtn) {
+        ackBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          if (!accountId) return;
+          fetch(API, { method: "POST", body: JSON.stringify({ action: "acknowledge", cloud_account_id: accountId, id: id }) })
+            .then(load);
+        });
+      }
+      var openBtn = item.querySelector(".nn-open");
+      if (openBtn) {
+        openBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          if (accountId) {
+            fetch(API, { method: "POST", body: JSON.stringify({ action: "mark_read", cloud_account_id: accountId, id: id }) });
+          }
+          if (link) location.href = link;
+        });
+      }
     });
   }
 
