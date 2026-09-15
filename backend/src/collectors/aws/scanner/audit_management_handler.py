@@ -68,6 +68,8 @@ from datetime import date, datetime, timezone
 import boto3
 import psycopg2
 
+from collectors.aws.scanner.notification_lib import create_notification
+
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
@@ -496,10 +498,17 @@ def _create_remediation_task(conn, finding_id, title, owner_name, owner_email, d
             cur.execute("UPDATE audit_findings SET status = 'in_remediation' WHERE id = %s AND status = 'open'",
                         (finding_id,))
             cur.execute("""
-                SELECT f.title, a.title FROM audit_findings f JOIN audits a ON f.audit_id = a.id WHERE f.id = %s
+                SELECT f.title, a.title, a.cloud_account_id
+                FROM audit_findings f JOIN audits a ON f.audit_id = a.id WHERE f.id = %s
             """, (finding_id,))
-            finding_title, audit_title = cur.fetchone()
+            finding_title, audit_title, cloud_account_id = cur.fetchone()
     email_result = _notify_task_assigned(owner_email, owner_name, title, finding_title, audit_title, due_date)
+    create_notification(
+        conn, cloud_account_id, domain="workflow", event_type="remediation_task_assigned", severity="P2",
+        title=f"Remediation task assigned: {title}",
+        description=f"Audit: {audit_title} — Finding: {finding_title}" + (f" — due {due_date}" if due_date else ""),
+        resource_link=f"audit_management.html?finding_id={finding_id}", actor=owner_name,
+    )
     return task_id, email_result
 
 

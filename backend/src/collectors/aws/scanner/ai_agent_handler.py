@@ -73,6 +73,8 @@ from datetime import date, datetime, timezone
 import boto3
 import psycopg2
 
+from collectors.aws.scanner.notification_lib import create_notification
+
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
@@ -644,9 +646,14 @@ def handler(event, context):
                     return _resp(400, {"error": "query_id, finding_id en title zijn verplicht"})
                 with conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id FROM audit_findings WHERE id = %s", (finding_id,))
-                        if not cur.fetchone():
+                        cur.execute("""
+                            SELECT af.id, a.cloud_account_id FROM audit_findings af
+                            JOIN audits a ON af.audit_id = a.id WHERE af.id = %s
+                        """, (finding_id,))
+                        row = cur.fetchone()
+                        if not row:
                             return _resp(404, {"error": "Deze bevinding bestaat niet meer in Audit Management."})
+                        finding_account_id = row[1]
                         cur.execute("""
                             INSERT INTO audit_remediation_tasks (audit_finding_id, title, owner_email, due_date)
                             VALUES (%s, %s, %s, %s) RETURNING id
@@ -659,6 +666,12 @@ def handler(event, context):
                                    action_details = %s WHERE id = %s
                         """, (json.dumps({"task_id": task_id, "finding_id": finding_id, "title": title,
                                           "performed_by": caller_email}), query_id))
+                create_notification(
+                    conn, finding_account_id, domain="ai", event_type="ai_action_executed", severity="P2",
+                    title=f"AI Agent created remediation task: {title}",
+                    description=f"Confirmed by {caller_email or 'an Admin'}.",
+                    resource_link=f"audit_management.html?finding_id={finding_id}", actor=caller_email,
+                )
                 return _resp(200, {"task_id": task_id})
 
             return _resp(400, {"error": f"unknown action: {action}"})

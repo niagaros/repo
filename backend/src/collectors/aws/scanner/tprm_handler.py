@@ -39,6 +39,8 @@ from datetime import date, datetime, timezone
 import boto3
 import psycopg2
 
+from collectors.aws.scanner.notification_lib import create_notification
+
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
@@ -1051,6 +1053,13 @@ def _check_and_notify(conn, cloud_account_id):
                 expiring.append({"vendor": v["name"], "certification_type": c["certification_type"],
                                   "expiry_date": c["expiry_date"], "status": c["computed_status"],
                                   "email": v["business_owner_email"]})
+                create_notification(
+                    conn, cloud_account_id, domain="tprm",
+                    event_type="vendor_cert_expired" if c["computed_status"] == "expired" else "vendor_cert_expiring",
+                    severity="P1" if c["computed_status"] == "expired" else "P2",
+                    title=f"Certificate {c['computed_status'].replace('_', ' ')}: {c['certification_type']} ({v['name']})",
+                    description=f"Expires {c['expiry_date']}.", resource_link=f"tprm.html?vendor_id={v['id']}",
+                )
 
         # "Contract renewals" (Continuous Monitoring, issue #261) — real
         # date comparison against the vendor's own recorded contract end date.
@@ -1071,6 +1080,11 @@ def _check_and_notify(conn, cloud_account_id):
 
         if v["risk"]["level"] == "critical":
             critical.append({"vendor": v["name"], "score": v["risk"]["score"], "email": v["business_owner_email"]})
+            create_notification(
+                conn, cloud_account_id, domain="risk", event_type="critical_vendor_risk", severity="P1",
+                title=f"Critical vendor risk: {v['name']}",
+                description=f"Risk score {v['risk']['score']}.", resource_link=f"tprm.html?vendor_id={v['id']}",
+            )
             # Acceptance criterion 4 (issue #261): "...alerts and
             # remediation workflows are triggered." Real automation: open
             # one real, trackable remediation task per vendor that just
