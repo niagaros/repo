@@ -47,6 +47,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timezone
 
+from pypdf import PdfReader
+
 import boto3
 import psycopg2
 from psycopg2.extras import Json
@@ -474,6 +476,23 @@ def _parse_docx(file_bytes):
     return questions
 
 
+def _parse_pdf(file_bytes):
+    """PDF text extraction via pypdf (pure Python, no compiled extension —
+    unlike psycopg2 this needs no manylinux wheel, so it's vendored
+    directly). PDFs have no reliable structure to lean on the way a .docx
+    table does, so the same 'ends in ?' heuristic used for a structureless
+    .docx applies here, applied per extracted line across every page."""
+    reader = PdfReader(io.BytesIO(file_bytes))
+    questions = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        for line in text.splitlines():
+            line = line.strip()
+            if line.endswith("?") and len(line) > 5:
+                questions.append((line, None))
+    return questions
+
+
 def _parse_uploaded_file(filename, file_base64):
     ext = (filename or "").rsplit(".", 1)[-1].lower()
     raw = base64.b64decode(file_base64)
@@ -486,7 +505,7 @@ def _parse_uploaded_file(filename, file_base64):
     if ext == "doc":
         raise ValueError("Legacy .doc files aren't supported — please re-save as .docx or .csv and re-upload.")
     if ext == "pdf":
-        raise ValueError("PDF questionnaires aren't supported yet — please export/retype the questions as .csv, .xlsx, or .docx and re-upload.")
+        return _parse_pdf(raw)
     return _parse_csv(raw.decode("utf-8-sig", errors="replace"))
 
 
