@@ -4,11 +4,12 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Amplify } from "aws-amplify";
 import "./index.css";
 import App from "./App";
-import SettingsIndex  from "./settings/SettingsIndex";
-import PersonalData   from "./settings/PersonalData";
-import Company        from "./settings/Company";
-import Plans          from "./settings/Plans";
-import GitHub         from "./settings/GitHub";
+import SettingsIndex   from "./settings/SettingsIndex";
+import PersonalData    from "./settings/PersonalData";
+import Company         from "./settings/Company";
+import Plans           from "./settings/Plans";
+import GitHub          from "./settings/GitHub";
+import Infrastructure  from "./settings/Infrastructure";
 
 async function bootstrap() {
   try {
@@ -45,6 +46,7 @@ async function bootstrap() {
           <Route path="/settings/personal-data"  element={<PersonalData  />} />
           <Route path="/settings/company"        element={<Company       />} />
           <Route path="/settings/plans"          element={<Plans         />} />
+          <Route path="/settings/infrastructure" element={<Infrastructure />} />
           <Route path="/settings/github"         element={<GitHub        />} />
 
           {/* ── Existing app (login / onboarding / dashboard redirect) ── */}

@@ -104,6 +104,12 @@ export default function SettingsIndex() {
         <SectionLabel>Integrations</SectionLabel>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 12 }}>
           <SettingCard
+            icon="☁️"
+            title="Cloud Infrastructure"
+            desc="Connect AWS, Azure, GCP and more for continuous compliance scanning"
+            href="/settings/infrastructure"
+          />
+          <SettingCard
             icon="🐙"
             title="GitHub"
             desc="Connect your GitHub org for CIS GitHub Benchmark scanning"

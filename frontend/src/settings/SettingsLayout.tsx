@@ -12,10 +12,11 @@ const NiagarosLogo = ({ size = 32 }: { size?: number }) => (
 );
 
 const SUB_NAV = [
-  { label: "Personal Data", href: "/settings/personal-data" },
-  { label: "Company",       href: "/settings/company" },
-  { label: "Rate Plans",    href: "/settings/plans" },
-  { label: "GitHub",        href: "/settings/github" },
+  { label: "Personal Data",       href: "/settings/personal-data" },
+  { label: "Company",             href: "/settings/company" },
+  { label: "Rate Plans",          href: "/settings/plans" },
+  { label: "Cloud Infrastructure", href: "/settings/infrastructure" },
+  { label: "GitHub",              href: "/settings/github" },
 ];
 
 interface Props {
