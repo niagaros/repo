@@ -221,6 +221,103 @@ class Database:
         self.conn.commit()
         logger.info(f"Database: last_scan_at updated for {cloud_account_id}")
 
+    # ── team (issue #265, "Invite Team") ─────────────────────────────
+
+    def get_user_by_email(self, email: str) -> dict | None:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, email, full_name, organization_id, role, status
+                FROM users
+                WHERE email = %s
+            """, (email,))
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]), "email": row[1], "full_name": row[2],
+            "organization_id": str(row[3]), "role": row[4], "status": row[5],
+        }
+
+    def get_organization_members(self, organization_id: str) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, email, full_name, role, status, created_at
+                FROM users
+                WHERE organization_id = %s
+                ORDER BY created_at
+            """, (organization_id,))
+            rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]), "email": r[1], "full_name": r[2],
+                "role": r[3], "status": r[4], "created_at": str(r[5]),
+            }
+            for r in rows
+        ]
+
+    def create_team_invite(self, organization_id: str, email: str, role: str, invited_by: str) -> str:
+        """
+        Raises psycopg2.errors.UniqueViolation (caller's responsibility to
+        catch) if `email` already has a pending/accepted invite for this
+        organization — team_invites(organization_id, email) is UNIQUE.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO team_invites (organization_id, email, role, invited_by)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (organization_id, email, role, invited_by))
+            invite_id = cur.fetchone()[0]
+        self.conn.commit()
+        logger.info(f"Database: created team invite {invite_id} for {email} (role={role})")
+        return str(invite_id)
+
+    def list_pending_invites(self, organization_id: str) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, email, role, created_at
+                FROM team_invites
+                WHERE organization_id = %s AND status = 'pending'
+                ORDER BY created_at
+            """, (organization_id,))
+            rows = cur.fetchall()
+        return [
+            {"id": str(r[0]), "email": r[1], "role": r[2], "created_at": str(r[3])}
+            for r in rows
+        ]
+
+    def revoke_team_invite(self, invite_id: str, organization_id: str) -> bool:
+        """
+        Scoped to organization_id so one org can't revoke another org's
+        invite by guessing/enumerating an invite id.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                UPDATE team_invites
+                SET status = 'revoked'
+                WHERE id = %s AND organization_id = %s AND status = 'pending'
+            """, (invite_id, organization_id))
+            updated = cur.rowcount
+        self.conn.commit()
+        return updated > 0
+
+    def deactivate_user(self, user_id: str, organization_id: str) -> bool:
+        """
+        Soft-remove: flips status rather than deleting the row, so past
+        findings/audit entries tied to this user_id stay intact. Scoped to
+        organization_id for the same reason as revoke_team_invite.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                UPDATE users
+                SET status = 'deactivated'
+                WHERE id = %s AND organization_id = %s
+            """, (user_id, organization_id))
+            updated = cur.rowcount
+        self.conn.commit()
+        logger.warning(f"Database: deactivated user {user_id} in organization {organization_id}")
+        return updated > 0
+
     # ── utils ──────────────────────────────────────────────────────
 
     def close(self):
