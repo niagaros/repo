@@ -10,6 +10,7 @@ import Company         from "./settings/Company";
 import Plans           from "./settings/Plans";
 import GitHub          from "./settings/GitHub";
 import Infrastructure  from "./settings/Infrastructure";
+import OnboardingHome  from "./onboarding/OnboardingHome";
 
 async function bootstrap() {
   try {
@@ -41,6 +42,9 @@ async function bootstrap() {
     <React.StrictMode>
       <BrowserRouter>
         <Routes>
+          {/* ── Onboarding accelerator ─────────────────── */}
+          <Route path="/onboarding"              element={<OnboardingHome />} />
+
           {/* ── Settings module ─────────────────────── */}
           <Route path="/settings"                element={<SettingsIndex />} />
           <Route path="/settings/personal-data"  element={<PersonalData  />} />

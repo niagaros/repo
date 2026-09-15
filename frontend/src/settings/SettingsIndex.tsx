@@ -69,6 +69,17 @@ export default function SettingsIndex() {
       subtitle="Manage your personal and account settings in one place."
       email={email}
     >
+      {/* Onboarding accelerator */}
+      <section style={{ marginBottom: 36 }}>
+        <SectionLabel>Get Started</SectionLabel>
+        <SettingCard
+          icon="🚀"
+          title="Onboarding"
+          desc="Track your setup progress across cloud, team, auditors, workspace and training"
+          href="/onboarding"
+        />
+      </section>
+
       {/* Personal Settings */}
       <section style={{ marginBottom: 36 }}>
         <SectionLabel>Personal Settings</SectionLabel>
