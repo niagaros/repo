@@ -880,6 +880,15 @@ def _delete_questionnaire(conn, questionnaire_id):
             cur.execute("DELETE FROM questionnaires WHERE id = %s", (questionnaire_id,))
 
 
+def _rename_questionnaire(conn, questionnaire_id, name):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("name is required")
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE questionnaires SET name = %s WHERE id = %s", (name, questionnaire_id))
+
+
 # ── secure sharing ───────────────────────────────────────────────────
 
 SHARE_LINK_DEFAULT_DAYS = 7
@@ -1078,6 +1087,12 @@ def handler(event, context):
             if action == "update_item":
                 _update_item(conn, body["item_id"], body.get("answer_text"), body.get("answer_status"), body.get("actor_name"))
                 return _resp(200, {"updated": True})
+            if action == "rename_questionnaire":
+                try:
+                    _rename_questionnaire(conn, body["questionnaire_id"], body.get("name"))
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"renamed": True})
             if action == "add_comment":
                 comment = _add_comment(conn, body["item_id"], body.get("author_name", "Anonymous"), body["comment_text"])
                 return _resp(200, comment)

@@ -269,7 +269,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <div class="back-link" onclick="backToList()">← All questionnaires</div>
       <div class="page-hdr">
         <div>
-          <div class="page-title" id="d-title"></div>
+          <div class="page-title" id="d-title" style="cursor:pointer" onclick="renameQuestionnaire()" title="Click to rename"></div>
           <div class="page-sub" id="d-sub"></div>
         </div>
         <div style="display:flex;gap:8px">
@@ -605,6 +605,16 @@ async function openDetail(id){
   renderDetail();
 }
 
+async function renameQuestionnaire(){
+  const current=activeQuestionnaire.name;
+  const name=prompt('Rename questionnaire:',current);
+  if(!name||!name.trim()||name.trim()===current) return;
+  await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'rename_questionnaire',questionnaire_id:activeQuestionnaire.id,name:name.trim()})});
+  showToast('Renamed');
+  await openDetail(activeQuestionnaire.id);
+  await loadAll();
+}
+
 function evidenceChip(e){
   if(e.type==='control'){
     return `<span class="ev-chip ev-control" title="${esc(e.description||'')}">${esc(e.check_id)} · ${e.status}</span>`;
@@ -704,12 +714,38 @@ async function generateItem(itemId){
   await openDetail(activeQuestionnaire.id);
 }
 async function generateAll(){
+  // A large questionnaire can take longer to fully generate than a single
+  // API request is allowed to run, so the backend processes what it can
+  // and reports how far it got. Loop here so one click always finishes
+  // the whole questionnaire instead of requiring repeated manual clicks.
   const btn=document.getElementById('btn-genall');
-  btn.disabled=true; btn.textContent='Working…';
-  const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'generate_all',questionnaire_id:activeQuestionnaire.id})});
-  const d=await r.json();
+  btn.disabled=true;
+  const totals={generated:0,bedrock_unavailable:0,no_evidence:0};
+  let round=0;
+  while(true){
+    round++;
+    btn.textContent=round===1?'Working…':`Working… (round ${round})`;
+    let d;
+    try{
+      const r=await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'generate_all',questionnaire_id:activeQuestionnaire.id})});
+      d=await r.json();
+    }catch(e){
+      break; // request itself failed/timed out — whatever was saved before this round stays saved
+    }
+    if(typeof d.generated!=='number') break;
+    totals.generated+=d.generated;
+    totals.bedrock_unavailable+=d.bedrock_unavailable||0;
+    totals.no_evidence+=d.no_evidence||0;
+    const madeProgressOrWorthRetrying=(d.generated||0)>0 || (d.bedrock_unavailable||0)>0;
+    if(!madeProgressOrWorthRetrying){
+      // Nothing generated and nothing failed transiently — only genuine
+      // no_evidence items remain, which retrying will never resolve.
+      break;
+    }
+    if(round>=8) break; // safety cap — real API rate limits can outlast this
+  }
   btn.disabled=false; btn.textContent='✨ Generate AI Drafts';
-  showToast(`${d.generated} generated · ${d.bedrock_unavailable} evidence found (AI unreachable) · ${d.no_evidence} without evidence`);
+  showToast(`${totals.generated} generated · ${totals.bedrock_unavailable} evidence found (AI unreachable) · ${totals.no_evidence} without evidence`);
   await openDetail(activeQuestionnaire.id);
 }
 async function saveItem(itemId,status){
