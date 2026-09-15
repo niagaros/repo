@@ -16,17 +16,41 @@ MAPPER_RESOURCE_TYPE = "compliance"
 
 
 def _invoke(client, function_name: str, payload: dict, synchronous: bool) -> tuple:
-    """Invoke a Lambda with retries. Returns (triggered, last_error)."""
+    """
+    Invoke a Lambda with retries. Returns (triggered, last_error).
+
+    For synchronous calls, a successful `client.invoke()` only means the
+    invocation happened — it does NOT mean the scan succeeded. The invoked
+    Lambda can still return statusCode >= 400 in its payload (e.g. when a
+    cross-account IAM role can no longer be assumed, see
+    api/lambda_handler.py's credential-failure handling for issue #269).
+    Without inspecting that payload, a broken/disconnected account would
+    be recorded as "triggered" every run and the orchestrator would never
+    notice ingestion had effectively stopped for it.
+    """
     invocation_type = "RequestResponse" if synchronous else "Event"
     last_error = None
 
     for attempt in range(MAX_RETRIES):
         try:
-            client.invoke(
+            resp = client.invoke(
                 FunctionName   = function_name,
                 InvocationType = invocation_type,
                 Payload        = json.dumps(payload),
             )
+
+            if synchronous:
+                raw = resp["Payload"].read()
+                try:
+                    parsed = json.loads(raw) if raw else {}
+                except (TypeError, ValueError):
+                    parsed = {}
+
+                if resp.get("FunctionError") or parsed.get("statusCode", 200) >= 400:
+                    last_error = parsed.get("body") or resp.get("FunctionError") or "non-200 response"
+                    logger.warning(f"Orchestrator: {function_name} returned an error — {last_error}")
+                    return False, last_error
+
             logger.info(f"Orchestrator: invoked {function_name} ({invocation_type}, attempt {attempt + 1})")
             return True, None
         except Exception as e:

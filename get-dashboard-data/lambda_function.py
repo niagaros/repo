@@ -98,6 +98,7 @@ def lambda_handler(event, context):
         "last_scan_at": "Unknown",
         "account_name": account_id[:8] if account_id else "",
         "aws_account_id": "",
+        "status": "active",
         "total": None,
         "services": [],
         "by_severity": {},
@@ -121,7 +122,7 @@ def lambda_handler(event, context):
             # ── 1. Accounts — only accounts owned by this user ───────
             try:
                 cur.execute("""
-                    SELECT id, account_name, account_id, last_scan_at
+                    SELECT id, account_name, account_id, last_scan_at, status
                     FROM cloud_accounts
                     WHERE owner_email = %s
                     ORDER BY account_name
@@ -132,6 +133,7 @@ def lambda_handler(event, context):
                         "name":           row[1] or str(row[0])[:8],
                         "aws_account_id": row[2] or "",
                         "last_scan_at":   str(row[3]) if row[3] else None,
+                        "status":         row[4] or "active",
                     })
             except Exception as e:
                 data["_debug"]["accounts"] = str(e)
@@ -169,7 +171,7 @@ def lambda_handler(event, context):
             # ── 2. Current account metadata ─────────────────────────
             try:
                 cur.execute("""
-                    SELECT last_scan_at, account_name, account_id
+                    SELECT last_scan_at, account_name, account_id, status
                     FROM cloud_accounts
                     WHERE id = %s
                 """, (account_id,))
@@ -178,6 +180,7 @@ def lambda_handler(event, context):
                     data["last_scan_at"]   = str(row[0]) if row[0] else "Unknown"
                     data["account_name"]   = row[1] if row[1] else account_id[:8]
                     data["aws_account_id"] = row[2] if row[2] else ""
+                    data["status"]         = row[3] or "active"
             except Exception as e:
                 data["_debug"]["meta"] = str(e)
                 conn.rollback()

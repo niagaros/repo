@@ -109,6 +109,46 @@ class Database:
         self.conn.commit()
         logger.info(f"Database: compliance score updated — {score}")
 
+    # ── account connectivity (issue #269, acceptance criterion #4) ──
+    # "Given a cloud credential is revoked or expired, when detection
+    #  occurs, then ingestion is paused and admin is notified."
+
+    def mark_account_disconnected(self, cloud_account_id: str, reason: str):
+        """
+        Flips a cloud_accounts row to status='disconnected' so that
+        get_active_accounts() (WHERE status = 'active') stops picking it
+        up — this is what "pauses ingestion" for the account.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE cloud_accounts SET status = 'disconnected' WHERE id = %s",
+                (cloud_account_id,),
+            )
+        self.conn.commit()
+        logger.warning(
+            f"Database: marked cloud_account_id={cloud_account_id} as disconnected — {reason}"
+        )
+
+    def get_account_contact(self, cloud_account_id: str) -> dict | None:
+        """
+        Returns {"owner_email": ..., "aws_account_id": ...} for notification
+        purposes, or None if the account no longer exists.
+
+        Note: uses cloud_accounts.owner_email directly, matching the column
+        actually queried by get-dashboard-data/lambda_function.py in
+        production — not the users.id join described in aws_rds.md, which
+        appears to be out of date. Worth reconciling the docs separately.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT owner_email, account_id FROM cloud_accounts WHERE id = %s",
+                (cloud_account_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"owner_email": row[0], "aws_account_id": row[1]}
+
     # ── orchestrator ───────────────────────────────────────────────
 
     def get_active_accounts(self) -> list:
