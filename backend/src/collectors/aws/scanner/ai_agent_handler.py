@@ -170,6 +170,22 @@ FRAMEWORK_DB_VALUES = {
     "CISAWS": ["CIS AWS Foundations Benchmark v5.0.0", "AWS Foundational Security Best Practices"],
 }
 
+# Mapped-compliance-framework names (findings.framework values written by the
+# framework mapper Lambdas, which copy one real raw misconfiguration into a
+# framework-specific control code per framework it also applies to). The
+# dashboard's severity cards and Issues list already exclude these so the
+# same real issue isn't counted/listed once per framework that cites it —
+# kept as this exact same list here so the AI Agent's numbers never
+# disagree with what the user is looking at on screen. See get-dashboard-
+# data's lambda_function.py for the original comment/incident this fixed.
+MAPPED_FRAMEWORK_NAMES = (
+    'ISO 27001:2022', 'NIST CSF v2.0', 'GDPR', 'SOC2', 'PCI DSS v4.0', 'NIS2', 'HIPAA',
+    'NIST 800-53 Rev 5', 'BSI-C5', 'CSA CCM 4.0', 'FedRAMP Moderate Rev 4', 'ISO 42001',
+    'ISO 27017', 'AWS FTR', 'MVSP', 'TISAX', 'HITRUST CSF', 'DORA', 'CRI Profile',
+    'EU AI Act', 'NIST AI RMF', 'ISO 27701', 'ISO 27018', 'Microsoft SSPA',
+    'CIS Controls v8.1', '23 NYCRR 500 (NYDFS)', 'NIST Privacy Framework',
+)
+
 # Only real check IDs this scanner can honestly call "internet exposure" —
 # S3 public-access checks. No security-group/VPC/RDS-public checks exist
 # in this scanner, so this list is deliberately narrow, not a general
@@ -370,10 +386,11 @@ def _q_highest_risks(cur, account_id):
         SELECT f.check_id, f.title, f.severity, r.resource_name, f.remediation
         FROM findings f JOIN resources r ON f.resource_id = r.id
         WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+          AND (f.framework IS NULL OR f.framework NOT IN %s)
         ORDER BY CASE UPPER(f.severity) WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2
                  WHEN 'MEDIUM' THEN 3 ELSE 4 END, f.check_id
         LIMIT 10
-    """, (account_id,))
+    """, (account_id, MAPPED_FRAMEWORK_NAMES))
     return [{"check_id": r[0], "title": r[1], "severity": r[2], "resource_name": r[3], "remediation": r[4]}
             for r in cur.fetchall()]
 
@@ -488,11 +505,14 @@ def _q_accounts_compliance(cur, owner_email):
 
 
 def _q_executive_summary(cur, account_id):
+    # Same raw-only scope as the dashboard's headline gauge and severity
+    # cards (excludes framework-mapped copies of the same real finding) so
+    # this summary's numbers never disagree with what's on screen.
     cur.execute("""
         SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS')
         FROM findings f JOIN resources r ON f.resource_id = r.id
-        WHERE r.cloud_account_id = %s
-    """, (account_id,))
+        WHERE r.cloud_account_id = %s AND (f.framework IS NULL OR f.framework NOT IN %s)
+    """, (account_id, MAPPED_FRAMEWORK_NAMES))
     total, passed = cur.fetchone()
     overall_score = round(passed * 100.0 / total, 1) if total else None
 
@@ -500,8 +520,9 @@ def _q_executive_summary(cur, account_id):
         SELECT UPPER(f.severity), COUNT(*)
         FROM findings f JOIN resources r ON f.resource_id = r.id
         WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+          AND (f.framework IS NULL OR f.framework NOT IN %s)
         GROUP BY UPPER(f.severity)
-    """, (account_id,))
+    """, (account_id, MAPPED_FRAMEWORK_NAMES))
     open_findings_by_severity = {row[0]: row[1] for row in cur.fetchall()}
 
     cur.execute("SELECT COUNT(*) FROM tprm_vendors WHERE cloud_account_id = %s", (account_id,))
@@ -527,6 +548,14 @@ def _q_executive_summary(cur, account_id):
     }
 
 
+SEVERITY_SYNONYMS = {
+    "critical": "CRITICAL", "kritiek": "CRITICAL", "kritisch": "CRITICAL",
+    "high": "HIGH", "hoog": "HIGH",
+    "medium": "MEDIUM", "gemiddeld": "MEDIUM", "matig": "MEDIUM",
+    "low": "LOW", "laag": "LOW",
+}
+
+
 def _q_general_data_question(cur, account_id, question):
     """Open-ended fallback — the same token-overlap retrieval already
     proven in questionnaire_handler.py, applied here instead of the
@@ -543,6 +572,38 @@ def _q_general_data_question(cur, account_id, question):
     # overlapping words (fine for a full questionnaire sentence) would
     # never match it. Scale the bar to how much the question gives us.
     min_overlap = 1 if len(q_tokens) <= 2 else 2
+
+    # Dashboards show severity counts prominently ("33 Medium Severity"), so
+    # "which issues are medium severity" is one of the most natural
+    # follow-ups a user can ask — but severity lives in its own column, not
+    # in a finding's title/description prose, so the keyword-overlap search
+    # below can never match it. Answer it with a real, direct filter instead.
+    ql = question.lower()
+    wanted_severities = sorted({sev for word, sev in SEVERITY_SYNONYMS.items() if word in ql})
+    severity_findings = []
+    severity_total = 0
+    if wanted_severities:
+        # Same raw-only scope as the dashboard's severity cards (excludes
+        # framework-mapped copies of the same real finding) so this count
+        # matches the number the user is literally looking at on screen.
+        cur.execute("""
+            SELECT COUNT(*) FROM findings f JOIN resources r ON r.id = f.resource_id
+            WHERE r.cloud_account_id = %s AND f.result = 'FAIL' AND UPPER(f.severity) = ANY(%s)
+              AND (f.framework IS NULL OR f.framework NOT IN %s)
+        """, (account_id, wanted_severities, MAPPED_FRAMEWORK_NAMES))
+        severity_total = cur.fetchone()[0]
+        cur.execute("""
+            SELECT f.check_id, f.title, f.severity, r.resource_name, f.framework
+            FROM findings f JOIN resources r ON r.id = f.resource_id
+            WHERE r.cloud_account_id = %s AND f.result = 'FAIL' AND UPPER(f.severity) = ANY(%s)
+              AND (f.framework IS NULL OR f.framework NOT IN %s)
+            ORDER BY f.check_id
+            LIMIT 25
+        """, (account_id, wanted_severities, MAPPED_FRAMEWORK_NAMES))
+        severity_findings = [
+            {"check_id": r[0], "title": r[1], "severity": r[2], "resource_name": r[3], "framework": r[4]}
+            for r in cur.fetchall()
+        ]
 
     cur.execute("""
         SELECT f.check_id, MAX(f.title) AS title, MAX(f.description) AS description,
@@ -577,8 +638,16 @@ def _q_general_data_question(cur, account_id, question):
             })
     scored_docs.sort(key=lambda x: -x["score"])
 
-    return {"findings": [{k: v for k, v in f.items() if k != "score"} for f in scored_findings[:5]],
-            "documents": [{k: v for k, v in d.items() if k != "score"} for d in scored_docs[:5]]}
+    result = {"findings": [{k: v for k, v in f.items() if k != "score"} for f in scored_findings[:5]],
+              "documents": [{k: v for k, v in d.items() if k != "score"} for d in scored_docs[:5]]}
+    if severity_findings:
+        result["severity_filtered_findings"] = {
+            "severities_asked_about": wanted_severities,
+            "total_matching": severity_total,
+            "findings_shown": severity_findings,
+            "note": f"showing {len(severity_findings)} of {severity_total} matching findings" if severity_total > len(severity_findings) else None,
+        }
+    return result
 
 
 def _run_intent(cur, account_id, intent, framework_code, question=None):
