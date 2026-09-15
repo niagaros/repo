@@ -8,6 +8,28 @@
     return new URLSearchParams(location.search).get("account_id") || null;
   }
 
+  // Real, literal text currently visible on screen — lets the agent answer
+  // about things that only exist in the current view/session (e.g. numbers
+  // just typed into a calculator) and not in the database at all. This is
+  // exactly what the user can already see, so sending it back changes
+  // nothing about who has access to it. Capped and stripped of noise from
+  // this widget's own panel so it doesn't just describe itself.
+  function getPageContext() {
+    try {
+      var root = document.querySelector(".content") || document.body;
+      var clone = root.cloneNode(true);
+      var widget = clone.querySelector("#niagaros-ai-widget, #nn-widget");
+      if (widget) widget.remove();
+      var text = (clone.innerText || "").replace(/\n{3,}/g, "\n\n").trim();
+      return {
+        page_title: document.title || "",
+        page_text: text.length > 4000 ? text.slice(0, 4000) + "…" : text,
+      };
+    } catch (e) {
+      return { page_title: document.title || "", page_text: "" };
+    }
+  }
+
   function esc(s) {
     return (s == null ? "" : String(s)).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -169,18 +191,21 @@
     var token = "";
     try { token = localStorage.getItem("niagaros_token") || ""; } catch (e) {}
 
+    var pageContext = getPageContext();
+
     fetch(AGENT_API, {
       method: "POST",
       headers: token ? { Authorization: "Bearer " + token } : {},
       body: JSON.stringify({
         action: "ask", cloud_account_id: accountId, question: question,
+        page_title: pageContext.page_title, page_text: pageContext.page_text,
         asked_by: (function () { try { return localStorage.getItem("niagaros_display_name") || "Admin"; } catch (e) { return "Admin"; } })(),
       }),
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         typingRow.remove();
-        scroll.appendChild(bubbleEl("bot", esc(d.answer || "Er ging iets mis.")));
+        scroll.appendChild(bubbleEl("bot", esc(d.answer || "Something went wrong.")));
         scroll.scrollTop = scroll.scrollHeight;
       })
       .catch(function () {

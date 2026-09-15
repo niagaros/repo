@@ -297,11 +297,21 @@ def _call_groq(prompt, max_tokens=400):
     return payload["choices"][0]["message"]["content"].strip()
 
 
-def _classify_intent(question):
+def _classify_intent(question, has_page_context=False):
     fw_codes = "\n".join(f"  {code}: {label}" for code, label in sorted(FRAMEWORK_LABELS.items()))
+    page_note = (
+        "\nNote: the user is currently looking at a specific dashboard page, and the real, literal "
+        "text/numbers currently visible on that page will be provided as additional evidence "
+        "alongside your answer to database-backed questions. So a question about something "
+        "'on this page', 'shown here', 'right now', or referring to a value in a calculator/tool "
+        "the user is actively using (e.g. 'what's the total shown above?') IS answerable and must "
+        "be classified as general_data_question, NOT unsupported.\n"
+        if has_page_context else ""
+    )
     prompt = (
         "Classify this security/compliance question into exactly one intent from "
-        f"this fixed list: {', '.join(INTENTS)}.\n\n"
+        f"this fixed list: {', '.join(INTENTS)}.\n"
+        f"{page_note}\n"
         "- highest_risks: asking about top/highest/worst risks or vulnerabilities in general.\n"
         "- account_compliance: asking about overall or per-framework compliance score/posture "
         "for the CURRENT single account.\n"
@@ -603,16 +613,22 @@ UNSUPPORTED_MESSAGE = (
 def _phrase_answer(question, intent, evidence):
     if intent == "unsupported":
         return UNSUPPORTED_MESSAGE
-    empty_evidence = not evidence or (isinstance(evidence, dict) and not any(evidence.values()))
+    non_page_evidence = {k: v for k, v in evidence.items() if k != "visible_page_content"} if isinstance(evidence, dict) else evidence
+    has_page_content = isinstance(evidence, dict) and bool(evidence.get("visible_page_content", {}).get("page_text"))
+    empty_evidence = (not non_page_evidence or (isinstance(non_page_evidence, dict) and not any(non_page_evidence.values()))) and not has_page_content
     prompt = (
-        "Answer this security/compliance question using ONLY the real data below, which comes "
-        "directly from this account's own live compliance scans, stored records, and Niagaros' own "
-        "published security documentation. Do not invent any numbers, names, or facts that are not "
-        "present in the data — this includes not listing example or typical evidence/document types "
-        "for a framework unless they literally appear in the data. If the data is empty, or shows no "
-        "audit/no issues/no records/no matching documentation, say that plainly in one sentence "
-        "instead of describing what such an answer would generally contain. Be concise: 2-5 "
-        "sentences, professional tone, as if written by a security analyst.\n\n"
+        "Answer this security/compliance question using ONLY the real data below. It comes from two "
+        "possible real sources: (1) this account's own live compliance scans, stored records, and "
+        "Niagaros' own published security documentation, and (2) under the key 'visible_page_content', "
+        "the literal text currently rendered on the dashboard page the user is looking at right now — "
+        "use this second source for questions about numbers or state that only exist in the current "
+        "view/session (e.g. a value just typed into a calculator) and are not expected to be in the "
+        "database. Do not invent any numbers, names, or facts that are not present in the data — this "
+        "includes not listing example or typical evidence/document types for a framework unless they "
+        "literally appear in the data. If the data is empty, or shows no audit/no issues/no "
+        "records/no matching documentation and there is no relevant visible_page_content either, say "
+        "that plainly in one sentence instead of describing what such an answer would generally "
+        "contain. Be concise: 2-5 sentences, professional tone, as if written by a security analyst.\n\n"
         "Language: reply in English by default. If the question is clearly written in a different "
         "language, reply in that same language instead.\n\n"
         f"Question: {question}\n\n"
@@ -620,9 +636,9 @@ def _phrase_answer(question, intent, evidence):
         "Answer:"
     )
     if empty_evidence and intent == "general_data_question":
-        return ("I couldn't find anything relevant to that in this account's real scan data or "
-                "Niagaros' published security documentation, so I don't have a grounded answer to "
-                "give you rather than guessing.")
+        return ("I couldn't find anything relevant to that in this account's real scan data, "
+                "Niagaros' published security documentation, or what's currently visible on this "
+                "page, so I don't have a grounded answer to give you rather than guessing.")
     try:
         return _call_groq(prompt, max_tokens=350)
     except Exception as e:
@@ -672,13 +688,15 @@ def handler(event, context):
             if action == "ask":
                 account_id = body.get("cloud_account_id")
                 question = (body.get("question") or "").strip()
+                page_title = (body.get("page_title") or "").strip()[:200]
+                page_text = (body.get("page_text") or "").strip()[:4000]
                 if not _is_uuid(account_id):
                     return _resp(400, {"error": "cloud_account_id is required"})
                 if not question:
                     return _resp(400, {"error": "question is required"})
 
                 try:
-                    intent, framework_code = _classify_intent(question)
+                    intent, framework_code = _classify_intent(question, has_page_context=bool(page_text))
                 except Exception as e:
                     logger.exception("intent classification failed")
                     return _resp(200, {"intent": "unsupported", "answer": UNSUPPORTED_MESSAGE,
@@ -697,6 +715,10 @@ def handler(event, context):
                             evidence = _q_accounts_compliance(cur, caller_email)
                     else:
                         evidence = _run_intent(cur, account_id, intent, framework_code, question)
+
+                if isinstance(evidence, dict) and page_text:
+                    evidence = dict(evidence)
+                    evidence["visible_page_content"] = {"page_title": page_title, "page_text": page_text}
 
                 if needs_login:
                     answer = ("I need you to be signed in to compare across your AWS accounts "
