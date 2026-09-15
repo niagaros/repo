@@ -108,6 +108,15 @@ export default function Team() {
     await load();
   };
 
+  const changeRole = async (id: string, role: Role) => {
+    await fetch(`${getApiBase()}/team/member/${id}`, {
+      method: "PATCH",
+      headers: { ...authHeader(), "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    await load();
+  };
+
   if (authLoading || loadState === "loading") return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#080b12", color: "#64748b", fontSize: 14 }}>
       Loading…
@@ -201,7 +210,17 @@ export default function Team() {
               <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{m.full_name || m.email}</div>
               {m.full_name && <div style={{ color: "#4e627a", fontSize: 11.5 }}>{m.email}</div>}
             </div>
-            <span style={badgeStyle("#93c5fd", "rgba(59,130,246,0.12)")}>{m.role}</span>
+            {m.status === "active" && m.email !== email ? (
+              <select
+                value={m.role}
+                onChange={e => changeRole(m.id, e.target.value as Role)}
+                style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 6, padding: "3px 8px", color: "#93c5fd", fontSize: 11.5 }}
+              >
+                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            ) : (
+              <span style={badgeStyle("#93c5fd", "rgba(59,130,246,0.12)")}>{m.role}</span>
+            )}
             {m.status === "deactivated" ? (
               <span style={badgeStyle("#f87171", "rgba(239,68,68,0.12)")}>deactivated</span>
             ) : (

@@ -122,6 +122,35 @@ class TestDatabaseTeamMethods:
         assert "SET status = 'deactivated'" in sql
         assert params == ("u2", "org1")
 
+    def test_update_user_role_scoped_to_organization(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 1
+
+        assert db.update_user_role("u2", "org1", "security") is True
+        sql, params = cur.execute.call_args[0]
+        assert "SET role = " in sql
+        assert params == ("security", "u2", "org1")
+
+    def test_update_user_role_false_when_no_row_affected(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 0
+
+        assert db.update_user_role("does-not-exist", "org1", "viewer") is False
+
+    def test_log_audit_event_inserts_and_commits(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+
+        db.log_audit_event("org1", "u1", "role_changed", "u2", {"new_role": "security"})
+
+        sql, params = cur.execute.call_args[0]
+        assert "INSERT INTO team_audit_log" in sql
+        assert params[:4] == ("org1", "u1", "role_changed", "u2")
+        assert json.loads(params[4]) == {"new_role": "security"}
+        mock_conn.commit.assert_called_once()
+
 
 # ── api/team_handler.py ──────────────────────────────────────────────────
 
@@ -232,6 +261,81 @@ class TestHandleAcceptInvite:
         body = json.loads(resp["body"])
         assert body == {"accepted": True, "organization_id": "org-new", "role": "security"}
         db.accept_pending_invite.assert_called_once_with(VIEWER["id"], VIEWER["email"])
+
+
+class TestHandleUpdateRole:
+    def _event(self, role="security"):
+        return {"body": json.dumps({"role": role})}
+
+    def test_only_admin_can_change_roles(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_update_role(self._event(), db, ADMIN["id"])
+        assert resp["statusCode"] == 403
+
+    def test_cannot_change_own_role(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_update_role(self._event(), db, ADMIN["id"])
+        assert resp["statusCode"] == 400
+        db.update_user_role.assert_not_called()
+
+    def test_rejects_invalid_role(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_update_role(self._event(role="superuser"), db, VIEWER["id"])
+        assert resp["statusCode"] == 400
+
+    def test_not_found_returns_404(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.update_user_role.return_value = False
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_update_role(self._event(), db, "someone-else")
+        assert resp["statusCode"] == 404
+        db.log_audit_event.assert_not_called()
+
+    def test_admin_cannot_change_role_of_user_in_a_different_organization(self):
+        """
+        The SQL in update_user_role scopes by the CALLER's organization_id,
+        not whatever organization the target user_id actually belongs to —
+        so an admin guessing/enumerating a user_id from another company's
+        team hits 0 affected rows, not someone else's data.
+        """
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN  # organization_id: "org1"
+        db.update_user_role.return_value = False   # target belongs to "org2", not "org1"
+
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_update_role(self._event(), db, "user-in-a-different-org")
+
+        assert resp["statusCode"] == 404
+        db.update_user_role.assert_called_once_with("user-in-a-different-org", "org1", "security")
+        db.log_audit_event.assert_not_called()
+
+    def test_successful_change_updates_and_logs(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.update_user_role.return_value = True
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_update_role(self._event(role="Security"), db, VIEWER["id"])
+
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"]) == {"user_id": VIEWER["id"], "role": "security"}
+        db.update_user_role.assert_called_once_with(VIEWER["id"], "org1", "security")
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org1", actor_user_id=ADMIN["id"],
+            action="role_changed", target_user_id=VIEWER["id"], details={"new_role": "security"},
+        )
 
 
 class TestHandleDeactivateMember:

@@ -46,6 +46,12 @@ class SqliteTeamDb:
                 role TEXT, invited_by TEXT, status TEXT
             )
         """)
+        self.conn.execute("""
+            CREATE TABLE team_audit_log (
+                id TEXT PRIMARY KEY, organization_id TEXT, actor_user_id TEXT,
+                action TEXT, target_user_id TEXT, details TEXT
+            )
+        """)
         self.conn.commit()
 
     def seed(self, org_name: str, admin_email: str) -> tuple[str, str]:
@@ -151,6 +157,28 @@ class SqliteTeamDb:
         self.conn.commit()
         return cur.rowcount > 0
 
+    def update_user_role(self, user_id, organization_id, new_role):
+        cur = self.conn.execute(
+            "UPDATE users SET role = ? WHERE id = ? AND organization_id = ?",
+            (new_role, user_id, organization_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def log_audit_event(self, organization_id, actor_user_id, action, target_user_id=None, details=None):
+        self.conn.execute(
+            "INSERT INTO team_audit_log VALUES (?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), organization_id, actor_user_id, action, target_user_id, json.dumps(details or {})),
+        )
+        self.conn.commit()
+
+    def get_audit_log(self, organization_id):
+        rows = self.conn.execute(
+            "SELECT action, actor_user_id, target_user_id, details FROM team_audit_log WHERE organization_id = ?",
+            (organization_id,),
+        ).fetchall()
+        return [dict(zip(["action", "actor_user_id", "target_user_id", "details"], r)) for r in rows]
+
     def close(self):
         self.conn.close()
 
@@ -216,17 +244,43 @@ def main():
 
     with patch.object(team_handler, "Database", side_effect=fresh_db), \
          patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
-        call("GET", "/team")  # new.colleague should now show up as an Acme BV member
+        resp = call("GET", "/team")  # new.colleague should now show up as an Acme BV member
+        colleague_id = next(
+            m["id"] for m in json.loads(resp["body"])["members"] if m["email"] == "new.colleague@acme.com"
+        )
 
         call("DELETE", f"/team/invite/{invite_id}", path_params={"id": invite_id})
 
-        call("GET", "/team")
+        # Acceptance criterion #2: an admin changes someone's role.
+        call("PATCH", f"/team/member/{colleague_id}", path_params={"id": colleague_id}, body={"role": "compliance"})
+
+        call("GET", "/team")  # new.colleague's role should now read 'compliance'
 
     # Now try the exact same invite request, but authenticated as the
     # non-admin viewer — should be forbidden.
     with patch.object(team_handler, "Database", side_effect=fresh_db), \
          patch.object(team_handler, "_get_authenticated_email", return_value="existing.viewer@acme.com"):
         call("POST", "/team/invite", body={"email": "someone@acme.com", "role": "viewer"})
+
+    # A completely unrelated second company. Its admin should NOT be able
+    # to touch Acme BV's people, even by guessing/reusing a real user_id.
+    other_conn = fresh_db()
+    other_org_id, other_admin_id = other_conn.seed("Contoso Inc", "boss@contoso.com")
+    other_conn.close()
+    print(f"\n[Contoso Inc is a totally separate organization — org={other_org_id[:8]}…]")
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="boss@contoso.com"):
+        call("PATCH", f"/team/member/{colleague_id}",
+             path_params={"id": colleague_id}, body={"role": "admin"})  # colleague_id belongs to Acme BV, not Contoso
+
+    # Acceptance criterion #2's "and logged" half — the role change above
+    # left a real row in team_audit_log.
+    audit_conn = fresh_db()
+    print("\n[team_audit_log contents]")
+    for entry in audit_conn.get_audit_log(org_id):
+        print(f"    {entry}")
+    audit_conn.close()
 
     os.remove(db_path)
     print("\nDone — every response above came from real SQL against a real (SQLite) database,")

@@ -128,6 +128,37 @@ def handle_revoke_invite(event: dict, db: Database, invite_id: str) -> dict:
     return _response(200, {"revoked": invite_id})
 
 
+def handle_update_role(event: dict, db: Database, user_id: str) -> dict:
+    """Issue #265, acceptance criterion #2."""
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can change roles"})
+    if user_id == caller["id"]:
+        return _response(400, {"error": "you cannot change your own role"})
+
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _response(400, {"error": "invalid JSON body"})
+
+    new_role = (body.get("role") or "").strip().lower()
+    if new_role not in VALID_ROLES:
+        return _response(400, {"error": f"role must be one of {sorted(VALID_ROLES)}"})
+
+    updated = db.update_user_role(user_id, caller["organization_id"], new_role)
+    if not updated:
+        return _response(404, {"error": "user not found in your organization"})
+
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="role_changed", target_user_id=user_id, details={"new_role": new_role},
+    )
+    logger.info(f"Role changed: {user_id} -> {new_role} by {caller['email']}")
+    return _response(200, {"user_id": user_id, "role": new_role})
+
+
 def handle_deactivate_member(event: dict, db: Database, user_id: str) -> dict:
     caller = _get_caller(event, db)
     if not caller:
@@ -152,6 +183,7 @@ def lambda_handler(event, context):
         GET    /team                 -> handle_list_team
         POST   /team/invite          -> handle_invite_member
         POST   /team/accept-invite   -> handle_accept_invite
+        PATCH  /team/member/{id}     -> handle_update_role
         DELETE /team/invite/{id}     -> handle_revoke_invite
         DELETE /team/member/{id}     -> handle_deactivate_member
     """
@@ -171,6 +203,8 @@ def lambda_handler(event, context):
             return handle_accept_invite(event, db)
         if method == "DELETE" and path.startswith("/team/invite/"):
             return handle_revoke_invite(event, db, params.get("id", ""))
+        if method == "PATCH" and path.startswith("/team/member/"):
+            return handle_update_role(event, db, params.get("id", ""))
         if method == "DELETE" and path.startswith("/team/member/"):
             return handle_deactivate_member(event, db, params.get("id", ""))
 

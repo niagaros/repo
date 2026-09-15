@@ -343,6 +343,35 @@ class Database:
         logger.info(f"Database: user {user_id} accepted invite {invite_id} into organization {organization_id}")
         return {"organization_id": str(organization_id), "role": role}
 
+    def update_user_role(self, user_id: str, organization_id: str, new_role: str) -> bool:
+        """Issue #265, acceptance criterion #2, the 'updated immediately' half."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET role = %s WHERE id = %s AND organization_id = %s",
+                (new_role, user_id, organization_id),
+            )
+            updated = cur.rowcount
+        self.conn.commit()
+        return updated > 0
+
+    def log_audit_event(
+        self, organization_id: str, actor_user_id: str, action: str,
+        target_user_id: str | None = None, details: dict | None = None,
+    ):
+        """
+        Issue #265, acceptance criterion #2, the 'and logged' half (and the
+        groundwork for criterion #6's broader audit log). Generic on
+        purpose — see the comment in 003_role_changes_audit_log.sql for why
+        `action` is free text rather than one column per event type.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO team_audit_log
+                    (organization_id, actor_user_id, action, target_user_id, details)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (organization_id, actor_user_id, action, target_user_id, json.dumps(details or {})))
+        self.conn.commit()
+
     def deactivate_user(self, user_id: str, organization_id: str) -> bool:
         """
         Soft-remove: flips status rather than deleting the row, so past
