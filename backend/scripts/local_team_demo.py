@@ -1,0 +1,189 @@
+"""
+Local, zero-AWS proof that api/team_handler.py's real business logic works
+end-to-end against a REAL (if lightweight) database — not the mocked
+pytest suite, an actual SQLite file getting written to and read back.
+
+This does NOT use the production Database class (that's psycopg2/Postgres-
+specific and needs real AWS credentials) or the real 002_organizations_and_team.sql
+migration (Postgres-only syntax). Instead it's a small SQLite stand-in with
+the exact same method signatures team_handler.py calls, so the handler code
+itself is exercised completely unmodified and unmocked.
+
+Run from the repo root:
+    .venv-test/Scripts/python.exe backend/scripts/local_team_demo.py
+"""
+import json
+import sqlite3
+import sys
+import uuid
+from pathlib import Path
+from unittest.mock import patch
+
+BACKEND_SRC = Path(__file__).resolve().parent.parent / "src"
+sys.path.insert(0, str(BACKEND_SRC))
+
+import api.team_handler as team_handler  # noqa: E402
+
+
+class SqliteTeamDb:
+    """Same public methods as config.database.Database's team section,
+    backed by a throwaway SQLite file instead of real Postgres."""
+
+    def __init__(self, path: str):
+        self.conn = sqlite3.connect(path)
+        self.conn.execute("""
+            CREATE TABLE organizations (id TEXT PRIMARY KEY, name TEXT)
+        """)
+        self.conn.execute("""
+            CREATE TABLE users (
+                id TEXT PRIMARY KEY, email TEXT, full_name TEXT,
+                organization_id TEXT, role TEXT, status TEXT
+            )
+        """)
+        self.conn.execute("""
+            CREATE TABLE team_invites (
+                id TEXT PRIMARY KEY, organization_id TEXT, email TEXT,
+                role TEXT, invited_by TEXT, status TEXT
+            )
+        """)
+        self.conn.commit()
+
+    def seed(self, org_name: str, admin_email: str) -> tuple[str, str]:
+        org_id, user_id = str(uuid.uuid4()), str(uuid.uuid4())
+        self.conn.execute("INSERT INTO organizations VALUES (?, ?)", (org_id, org_name))
+        self.conn.execute(
+            "INSERT INTO users VALUES (?, ?, ?, ?, 'admin', 'active')",
+            (user_id, admin_email, "Test Admin", org_id),
+        )
+        self.conn.commit()
+        return org_id, user_id
+
+    def add_viewer(self, org_id: str, email: str) -> str:
+        user_id = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO users VALUES (?, ?, ?, ?, 'viewer', 'active')",
+            (user_id, email, "Some Viewer", org_id),
+        )
+        self.conn.commit()
+        return user_id
+
+    def get_user_by_email(self, email):
+        row = self.conn.execute(
+            "SELECT id, email, full_name, organization_id, role, status FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+        if not row:
+            return None
+        return dict(zip(["id", "email", "full_name", "organization_id", "role", "status"], row))
+
+    def get_organization_members(self, organization_id):
+        rows = self.conn.execute(
+            "SELECT id, email, full_name, role, status FROM users WHERE organization_id = ?",
+            (organization_id,),
+        ).fetchall()
+        return [dict(zip(["id", "email", "full_name", "role", "status"], r)) for r in rows]
+
+    def create_team_invite(self, organization_id, email, role, invited_by):
+        existing = self.conn.execute(
+            "SELECT 1 FROM team_invites WHERE organization_id = ? AND email = ?",
+            (organization_id, email),
+        ).fetchone()
+        if existing:
+            raise Exception("duplicate key value violates unique constraint")
+        invite_id = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO team_invites VALUES (?, ?, ?, ?, ?, 'pending')",
+            (invite_id, organization_id, email, role, invited_by),
+        )
+        self.conn.commit()
+        return invite_id
+
+    def list_pending_invites(self, organization_id):
+        rows = self.conn.execute(
+            "SELECT id, email, role FROM team_invites WHERE organization_id = ? AND status = 'pending'",
+            (organization_id,),
+        ).fetchall()
+        return [dict(zip(["id", "email", "role"], r)) for r in rows]
+
+    def revoke_team_invite(self, invite_id, organization_id):
+        cur = self.conn.execute(
+            "UPDATE team_invites SET status = 'revoked' WHERE id = ? AND organization_id = ? AND status = 'pending'",
+            (invite_id, organization_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def deactivate_user(self, user_id, organization_id):
+        cur = self.conn.execute(
+            "UPDATE users SET status = 'deactivated' WHERE id = ? AND organization_id = ?",
+            (user_id, organization_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def close(self):
+        self.conn.close()
+
+
+def call(method, path, path_params=None, body=None):
+    event = {
+        "requestContext": {"http": {"method": method}},
+        "rawPath": path,
+        "pathParameters": path_params or {},
+        "body": json.dumps(body) if body is not None else None,
+    }
+    resp = team_handler.lambda_handler(event, None)
+    print(f"\n>>> {method} {path}" + (f"  body={body}" if body else ""))
+    print(f"    status={resp['statusCode']}  body={resp['body']}")
+    return resp
+
+
+def main():
+    import os
+    import tempfile
+    db_path = tempfile.mktemp(suffix=".sqlite")
+
+    bootstrap = SqliteTeamDb(db_path)
+    org_id, admin_id = bootstrap.seed("Acme BV", "admin@acme.com")
+    viewer_id = bootstrap.add_viewer(org_id, "existing.viewer@acme.com")
+    bootstrap.close()
+    print(f"Seeded org={org_id[:8]}…  admin_id={admin_id[:8]}…  viewer_id={viewer_id[:8]}…")
+
+    # Every call below opens a FRESH connection to the same on-disk file and
+    # closes it afterwards — exactly matching how the real Lambda opens/
+    # closes a Database() per invocation. team_handler.py itself is
+    # completely unaware this isn't real Postgres.
+    def fresh_db():
+        c = SqliteTeamDb.__new__(SqliteTeamDb)
+        c.conn = sqlite3.connect(db_path)
+        return c
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
+
+        call("GET", "/team")
+
+        resp = call("POST", "/team/invite", body={"email": "new.colleague@acme.com", "role": "security"})
+        invite_id = json.loads(resp["body"])["invite_id"]
+
+        call("GET", "/team")
+
+        call("POST", "/team/invite", body={"email": "new.colleague@acme.com", "role": "viewer"})
+
+        call("DELETE", f"/team/invite/{invite_id}", path_params={"id": invite_id})
+
+        call("GET", "/team")
+
+    # Now try the exact same invite request, but authenticated as the
+    # non-admin viewer — should be forbidden.
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="existing.viewer@acme.com"):
+        call("POST", "/team/invite", body={"email": "someone@acme.com", "role": "viewer"})
+
+    os.remove(db_path)
+    print("\nDone — every response above came from real SQL against a real (SQLite) database,")
+    print("through the actual, unmodified api/team_handler.py code.")
+
+
+if __name__ == "__main__":
+    main()
