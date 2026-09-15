@@ -12,6 +12,7 @@ import GitHub          from "./settings/GitHub";
 import Infrastructure  from "./settings/Infrastructure";
 import Team            from "./settings/Team";
 import OnboardingHome  from "./onboarding/OnboardingHome";
+import MfaSetup        from "./mfa/MfaSetup";
 
 async function bootstrap() {
   try {
@@ -45,6 +46,7 @@ async function bootstrap() {
         <Routes>
           {/* ── Onboarding accelerator ─────────────────── */}
           <Route path="/onboarding"              element={<OnboardingHome />} />
+          <Route path="/mfa-setup"               element={<MfaSetup       />} />
 
           {/* ── Settings module ─────────────────────── */}
           <Route path="/settings"                element={<SettingsIndex />} />

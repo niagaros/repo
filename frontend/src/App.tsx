@@ -4,6 +4,7 @@ import { Authenticator, ThemeProvider, Theme, useAuthenticator } from "@aws-ampl
 import "@aws-amplify/ui-react/styles.css";
 import "./App.css";
 import AwsConnectWizard, { S } from "./settings/shared/AwsConnectWizard";
+import { redirectToMfaSetupIfRequired } from "./mfa/enforceMfaPolicy";
 
 function getApiBase(): string {
   return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
@@ -219,6 +220,13 @@ function AppContent() {
       const session = await fetchAuthSession();
       const token = session.tokens?.accessToken?.toString() || "";
       if (token) localStorage.setItem("niagaros_token", token);
+
+      // Issue #265, acceptance criterion #3 — checked here, at the real
+      // post-login entry point, not just on individual settings pages, so
+      // nobody reaches the onboarding wizard or the dashboard redirect
+      // below without it. If this redirects, stop — don't also fetch
+      // dashboard data and flash the wrong screen first.
+      if (token && await redirectToMfaSetupIfRequired(token)) return;
 
       const resp = await fetch(`${getApiBase()}/get-dashboard-data?email=${encodeURIComponent(email)}`, {
         cache: "no-store",

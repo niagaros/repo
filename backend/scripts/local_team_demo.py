@@ -32,7 +32,7 @@ class SqliteTeamDb:
     def __init__(self, path: str):
         self.conn = sqlite3.connect(path)
         self.conn.execute("""
-            CREATE TABLE organizations (id TEXT PRIMARY KEY, name TEXT)
+            CREATE TABLE organizations (id TEXT PRIMARY KEY, name TEXT, mfa_required INTEGER DEFAULT 0)
         """)
         self.conn.execute("""
             CREATE TABLE users (
@@ -56,7 +56,7 @@ class SqliteTeamDb:
 
     def seed(self, org_name: str, admin_email: str) -> tuple[str, str]:
         org_id, user_id = str(uuid.uuid4()), str(uuid.uuid4())
-        self.conn.execute("INSERT INTO organizations VALUES (?, ?)", (org_id, org_name))
+        self.conn.execute("INSERT INTO organizations (id, name) VALUES (?, ?)", (org_id, org_name))
         self.conn.execute(
             "INSERT INTO users VALUES (?, ?, ?, ?, 'admin', 'active')",
             (user_id, admin_email, "Test Admin", org_id),
@@ -81,7 +81,7 @@ class SqliteTeamDb:
         no idea an invite exists for them yet.
         """
         user_id, org_id = str(uuid.uuid4()), str(uuid.uuid4())
-        self.conn.execute("INSERT INTO organizations VALUES (?, ?)", (org_id, f"{email}'s org"))
+        self.conn.execute("INSERT INTO organizations (id, name) VALUES (?, ?)", (org_id, f"{email}'s org"))
         self.conn.execute(
             "INSERT INTO users VALUES (?, ?, ?, ?, 'admin', 'active')",
             (user_id, email, None, org_id),
@@ -97,6 +97,23 @@ class SqliteTeamDb:
         if not row:
             return None
         return dict(zip(["id", "email", "full_name", "organization_id", "role", "status"], row))
+
+    def get_organization(self, organization_id):
+        row = self.conn.execute(
+            "SELECT id, name, mfa_required FROM organizations WHERE id = ?",
+            (organization_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "name": row[1], "mfa_required": bool(row[2])}
+
+    def set_organization_mfa_policy(self, organization_id, required):
+        cur = self.conn.execute(
+            "UPDATE organizations SET mfa_required = ? WHERE id = ?",
+            (1 if required else 0, organization_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def get_organization_members(self, organization_id):
         rows = self.conn.execute(
@@ -273,6 +290,20 @@ def main():
          patch.object(team_handler, "_get_authenticated_email", return_value="boss@contoso.com"):
         call("PATCH", f"/team/member/{colleague_id}",
              path_params={"id": colleague_id}, body={"role": "admin"})  # colleague_id belongs to Acme BV, not Contoso
+
+    # Acceptance criterion #3: an admin turns on the MFA policy for Acme BV.
+    # (Actually enforcing this — blocking a real login without MFA
+    # configured — is a client-side Amplify/Cognito check that can't be
+    # exercised against SQLite; only the policy toggle + its audit trail
+    # are provable here.)
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="existing.viewer@acme.com"):
+        call("PATCH", "/team/mfa-policy", body={"required": True})  # non-admin -> forbidden
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
+        call("PATCH", "/team/mfa-policy", body={"required": True})
+        call("GET", "/team")  # mfa_required should now read true
 
     # Acceptance criterion #2's "and logged" half — the role change above
     # left a real row in team_audit_log.

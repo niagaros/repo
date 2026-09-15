@@ -139,6 +139,30 @@ class TestDatabaseTeamMethods:
 
         assert db.update_user_role("does-not-exist", "org1", "viewer") is False
 
+    def test_get_organization_found(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = ("org1", "Acme", True)
+
+        assert db.get_organization("org1") == {"id": "org1", "name": "Acme", "mfa_required": True}
+
+    def test_get_organization_not_found(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = None
+
+        assert db.get_organization("does-not-exist") is None
+
+    def test_set_organization_mfa_policy(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 1
+
+        assert db.set_organization_mfa_policy("org1", True) is True
+        sql, params = cur.execute.call_args[0]
+        assert "SET mfa_required = " in sql
+        assert params == (True, "org1")
+
     def test_log_audit_event_inserts_and_commits(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
@@ -171,6 +195,7 @@ class TestHandleListTeam:
         db.get_user_by_email.return_value = ADMIN
         db.get_organization_members.return_value = [ADMIN, VIEWER]
         db.list_pending_invites.return_value = [{"email": "pending@x.com", "role": "viewer"}]
+        db.get_organization.return_value = {"id": "org1", "name": "Acme", "mfa_required": True}
 
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = th.handle_list_team({}, db)
@@ -179,7 +204,21 @@ class TestHandleListTeam:
         body = json.loads(resp["body"])
         assert len(body["members"]) == 2
         assert body["pending_invites"][0]["email"] == "pending@x.com"
+        assert body["mfa_required"] is True
         db.get_organization_members.assert_called_once_with("org1")
+
+    def test_mfa_required_defaults_to_false_when_org_lookup_fails(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_organization_members.return_value = []
+        db.list_pending_invites.return_value = []
+        db.get_organization.return_value = None
+
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_list_team({}, db)
+
+        assert json.loads(resp["body"])["mfa_required"] is False
 
 
 class TestHandleInviteMember:
@@ -335,6 +374,38 @@ class TestHandleUpdateRole:
         db.log_audit_event.assert_called_once_with(
             organization_id="org1", actor_user_id=ADMIN["id"],
             action="role_changed", target_user_id=VIEWER["id"], details={"new_role": "security"},
+        )
+
+
+class TestHandleUpdateMfaPolicy:
+    def test_only_admin_can_change_policy(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_update_mfa_policy({"body": json.dumps({"required": True})}, db)
+        assert resp["statusCode"] == 403
+
+    def test_rejects_non_boolean_required(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_update_mfa_policy({"body": json.dumps({"required": "yes"})}, db)
+        assert resp["statusCode"] == 400
+
+    def test_enables_policy_and_logs(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_update_mfa_policy({"body": json.dumps({"required": True})}, db)
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"]) == {"mfa_required": True}
+        db.set_organization_mfa_policy.assert_called_once_with("org1", True)
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org1", actor_user_id="u1",
+            action="mfa_policy_changed", details={"required": True},
         )
 
 

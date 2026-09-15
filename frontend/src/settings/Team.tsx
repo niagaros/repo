@@ -47,9 +47,12 @@ export default function Team() {
   const [inviteRole, setInviteRole]   = useState<Role>("viewer");
   const [submitting, setSubmitting]   = useState(false);
   const [formError, setFormError]     = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaSaving, setMfaSaving]     = useState(false);
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
+  const myRole = members.find(m => m.email === email)?.role;
 
   const load = async () => {
     try {
@@ -58,9 +61,24 @@ export default function Team() {
       const data = await resp.json();
       setMembers(data.members || []);
       setInvites(data.pending_invites || []);
+      setMfaRequired(!!data.mfa_required);
       setLoadState("loaded");
     } catch {
       setLoadState("error");
+    }
+  };
+
+  const toggleMfaPolicy = async () => {
+    setMfaSaving(true);
+    try {
+      await fetch(`${getApiBase()}/team/mfa-policy`, {
+        method: "PATCH",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ required: !mfaRequired }),
+      });
+      await load();
+    } finally {
+      setMfaSaving(false);
     }
   };
 
@@ -180,6 +198,31 @@ export default function Team() {
         </div>
         {formError && <div style={{ color: "#f87171", fontSize: 12, marginTop: 10 }}>{formError}</div>}
       </div>
+
+      {/* MFA policy — issue #265 acceptance criterion #3 */}
+      {myRole === "admin" && (
+        <div style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 14, marginBottom: 3 }}>Require MFA for all team members</div>
+            <div style={{ color: "#4e627a", fontSize: 12.5 }}>
+              When on, anyone without MFA set up is redirected to enrollment before they can use Niagaros.
+            </div>
+          </div>
+          <button
+            onClick={toggleMfaPolicy}
+            disabled={mfaSaving}
+            style={{
+              background: mfaRequired ? "#166534" : "#1a2030",
+              border: `1px solid ${mfaRequired ? "rgba(22,163,74,0.4)" : "#374151"}`,
+              color: mfaRequired ? "#4ade80" : "#9ca3af",
+              borderRadius: 8, padding: "8px 16px", fontSize: 12.5, fontWeight: 600,
+              cursor: mfaSaving ? "default" : "pointer", opacity: mfaSaving ? 0.6 : 1,
+            }}
+          >
+            {mfaRequired ? "On" : "Off"}
+          </button>
+        </div>
+      )}
 
       {/* Pending invites */}
       {invites.length > 0 && (

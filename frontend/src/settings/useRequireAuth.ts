@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchAuthSession, getCurrentUser } from "aws-amplify/auth";
+import { redirectToMfaSetupIfRequired } from "../mfa/enforceMfaPolicy";
 
 function getApiBase(): string {
   return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
@@ -34,8 +35,11 @@ export function useRequireAuth() {
         }
         const user = await getCurrentUser();
         setEmail(user.signInDetails?.loginId || user.username || "");
-        setLoading(false);
         tryAcceptPendingInvite(accessToken);
+
+        if (await redirectToMfaSetupIfRequired(accessToken)) return;
+
+        setLoading(false);
       } catch {
         window.location.href = "/";
       }

@@ -54,7 +54,36 @@ def handle_list_team(event: dict, db: Database) -> dict:
 
     members = db.get_organization_members(caller["organization_id"])
     invites = db.list_pending_invites(caller["organization_id"])
-    return _response(200, {"members": members, "pending_invites": invites})
+    org     = db.get_organization(caller["organization_id"])
+    return _response(200, {
+        "members": members,
+        "pending_invites": invites,
+        "mfa_required": org["mfa_required"] if org else False,
+    })
+
+
+def handle_update_mfa_policy(event: dict, db: Database) -> dict:
+    """Issue #265, acceptance criterion #3 — the policy half."""
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can change the MFA policy"})
+
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _response(400, {"error": "invalid JSON body"})
+
+    if "required" not in body or not isinstance(body["required"], bool):
+        return _response(400, {"error": "body must include a boolean 'required' field"})
+
+    db.set_organization_mfa_policy(caller["organization_id"], body["required"])
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="mfa_policy_changed", details={"required": body["required"]},
+    )
+    return _response(200, {"mfa_required": body["required"]})
 
 
 def handle_invite_member(event: dict, db: Database) -> dict:
@@ -180,10 +209,11 @@ def lambda_handler(event, context):
     hzf92ft6j7 — see api_inventory.md). Not yet registered on API Gateway;
     that's a manual deploy step, same as everything else in this repo.
 
-        GET    /team                 -> handle_list_team
+        GET    /team                 -> handle_list_team (includes mfa_required)
         POST   /team/invite          -> handle_invite_member
         POST   /team/accept-invite   -> handle_accept_invite
         PATCH  /team/member/{id}     -> handle_update_role
+        PATCH  /team/mfa-policy      -> handle_update_mfa_policy
         DELETE /team/invite/{id}     -> handle_revoke_invite
         DELETE /team/member/{id}     -> handle_deactivate_member
     """
@@ -203,6 +233,8 @@ def lambda_handler(event, context):
             return handle_accept_invite(event, db)
         if method == "DELETE" and path.startswith("/team/invite/"):
             return handle_revoke_invite(event, db, params.get("id", ""))
+        if method == "PATCH" and path.rstrip("/") == "/team/mfa-policy":
+            return handle_update_mfa_policy(event, db)
         if method == "PATCH" and path.startswith("/team/member/"):
             return handle_update_role(event, db, params.get("id", ""))
         if method == "DELETE" and path.startswith("/team/member/"):

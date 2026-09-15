@@ -238,6 +238,28 @@ class Database:
             "organization_id": str(row[3]), "role": row[4], "status": row[5],
         }
 
+    def get_organization(self, organization_id: str) -> dict | None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, name, mfa_required FROM organizations WHERE id = %s",
+                (organization_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": str(row[0]), "name": row[1], "mfa_required": row[2]}
+
+    def set_organization_mfa_policy(self, organization_id: str, required: bool) -> bool:
+        """Issue #265, acceptance criterion #3 — the policy half."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE organizations SET mfa_required = %s WHERE id = %s",
+                (required, organization_id),
+            )
+            updated = cur.rowcount
+        self.conn.commit()
+        return updated > 0
+
     def get_organization_members(self, organization_id: str) -> list:
         with self.conn.cursor() as cur:
             cur.execute("""
