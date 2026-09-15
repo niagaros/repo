@@ -41,6 +41,7 @@ import logging
 import os
 import re
 import secrets
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
@@ -327,13 +328,20 @@ def _generate_item(conn, item_id):
     with conn:
         with conn.cursor() as cur:
             if answer:
+                # Acceptance criterion (issue #259): "Given AI confidence is
+                # below a defined threshold, when the response is generated,
+                # then the question is flagged for manual review." Only
+                # 'high' (both a real control AND a real doc match) skips
+                # the extra flag; 'medium' (only one type of evidence) is
+                # real and usable but explicitly below that threshold.
+                status = "draft" if confidence == "high" else "needs_review"
                 cur.execute("""
                     UPDATE questionnaire_items
                     SET answer_text = %s, confidence = %s, evidence = %s,
                         ai_generated = TRUE, edited_after_ai = FALSE,
-                        answer_status = 'draft', updated_at = NOW()
+                        answer_status = %s, updated_at = NOW()
                     WHERE id = %s
-                """, (answer, confidence, Json(evidence), item_id))
+                """, (answer, confidence, Json(evidence), status, item_id))
             else:
                 cur.execute("""
                     UPDATE questionnaire_items
@@ -1027,8 +1035,20 @@ def handler(event, context):
                     """, (body["questionnaire_id"],))
                     item_ids = [str(r[0]) for r in cur.fetchall()]
                 results = {"generated": 0, "no_evidence": 0, "bedrock_unavailable": 0}
+                # A tight loop of back-to-back Groq calls can trip its rate
+                # limit — a real failure mode found by live-testing a real
+                # 40-question questionnaire, not a hypothetical. One retry
+                # after a short pause turns most transient rate-limit hits
+                # into a success instead of a permanent "no answer". Each
+                # item commits independently (see _generate_item), so if
+                # this whole request still runs into the API's own timeout
+                # on a very large questionnaire, whatever already succeeded
+                # stays saved — calling generate_all again picks up the rest.
                 for iid in item_ids:
                     r = _generate_item(conn, iid)
+                    if not r.get("generated") and r.get("reason") == "bedrock_unavailable":
+                        time.sleep(2.0)
+                        r = _generate_item(conn, iid)
                     if r.get("generated"):
                         results["generated"] += 1
                     elif r.get("reason") == "no_evidence":
