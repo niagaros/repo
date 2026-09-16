@@ -247,34 +247,66 @@ def _get_groq_key():
     return _groq_key_cache
 
 
-def _draft_answer(question_text, control_ev, doc_ev):
+def _draft_answer(question_text, control_ev, doc_ev, account_name=None):
     """Returns (answer_text, error). error is a short string if the
-    drafting API isn't usable; answer_text is None in that case."""
+    drafting API isn't usable; answer_text is None in that case.
+
+    control_ev and doc_ev describe two DIFFERENT real entities and must
+    never be blended into one voice: control_ev is the scanned customer
+    account's own findings (the organization actually being assessed —
+    e.g. Domits, when Domits uses this tool to answer its own customers'
+    questionnaires), while doc_ev is Niagaros' own published security
+    documentation (the platform/vendor). A real bug this fixes: a question
+    that happens to name "Niagaros" (or any other company) got answered by
+    the model as if the *account's own* control findings were confessions
+    about that named company's infrastructure — e.g. "Niagaros does not
+    enforce MFA... we are actively working to remediate" when the failing
+    MFA control was actually the scanned customer account's own AWS
+    misconfiguration, nothing to do with Niagaros' backend at all."""
     if not control_ev and not doc_ev:
         return None, None  # no evidence — caller skips drafting, that's expected
 
-    lines = []
-    for e in control_ev:
-        lines.append(
-            f"- Compliance control {e['check_id']} ({e['framework']}): {e['title']}. "
-            f"Current status in this account: {e['status']} "
-            f"({e['passed']} resources passing, {e['failed']} failing)."
+    account_label = account_name or "the account being assessed"
+
+    control_lines = [
+        f"- Compliance control {e['check_id']} ({e['framework']}): {e['title']}. "
+        f"Current status: {e['status']} ({e['passed']} resources passing, {e['failed']} failing)."
+        for e in control_ev
+    ]
+    doc_lines = [f"- {e['section_title']}: {e['excerpt']}" for e in doc_ev]
+
+    evidence_block = ""
+    if control_lines:
+        evidence_block += (
+            f"REAL FINDINGS FROM {account_label.upper()}'S OWN SCANNED AWS ENVIRONMENT — this is "
+            f"{account_label}, the organization actually being assessed, NOT Niagaros the platform:\n"
+            + "\n".join(control_lines) + "\n\n"
         )
-    for e in doc_ev:
-        lines.append(f"- Published security documentation — {e['section_title']}: {e['excerpt']}")
-    evidence_block = "\n".join(lines)
+    if doc_lines:
+        evidence_block += (
+            "NIAGAROS' OWN PUBLISHED SECURITY DOCUMENTATION — the platform/vendor's own practices. "
+            "Some of this is a specific, verified claim about Niagaros' own operations; some is general "
+            "security background/education that is NOT a confirmed fact about any specific "
+            "organization's actual configuration:\n" + "\n".join(doc_lines)
+        )
 
     prompt = (
-        "You are drafting a candidate answer to one question from a customer's "
-        "security/vendor-assessment questionnaire (e.g. CAIQ, SIG). Use ONLY the "
-        "evidence listed below, which comes from this vendor's own live compliance "
-        "scan results and published security documentation. Do not invent facts, "
-        "certifications, dates, or numbers that are not present in the evidence. "
-        "If the evidence only partially answers the question, say what is covered "
-        "and explicitly note what is not. Write 2-5 sentences, professional tone, "
-        "as if written by the vendor's security team.\n\n"
+        "You are drafting a candidate answer to one question from a security/vendor-assessment "
+        f"questionnaire (e.g. CAIQ, SIG), on behalf of {account_label} — the organization whose real "
+        "AWS account was scanned. Use ONLY the evidence below.\n\n"
+        "CRITICAL: the two evidence sections above describe DIFFERENT real things — never blend them "
+        f"into one voice. The findings section is {account_label}'s own environment. The documentation "
+        f"section is Niagaros' own platform practices. If the question names a company or product "
+        f"other than {account_label} (including 'Niagaros' itself, if {account_label} is a different "
+        "organization), do not assume the evidence describes that other name unless it explicitly "
+        "does — say plainly that this can't be confirmed from the real evidence instead of guessing "
+        "or borrowing a name mentioned in the question. Do not state a general security best-practice "
+        "or checklist item as if it were a confirmed fact about a specific organization's actual "
+        "configuration. Do not invent facts, certifications, dates, or numbers not present in the "
+        "evidence. If the evidence only partially answers the question, say what is covered and "
+        "explicitly note what is not. Write 2-5 sentences, professional tone.\n\n"
         f"Question: {question_text}\n\n"
-        f"Evidence:\n{evidence_block}\n\n"
+        f"{evidence_block}\n\n"
         "Draft answer:"
     )
 
@@ -309,15 +341,16 @@ def _draft_answer(question_text, control_ev, doc_ev):
 def _generate_item(conn, item_id):
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT qi.question_text, q.cloud_account_id
+            SELECT qi.question_text, q.cloud_account_id, ca.account_name
             FROM questionnaire_items qi
             JOIN questionnaires q ON q.id = qi.questionnaire_id
+            JOIN cloud_accounts ca ON ca.id = q.cloud_account_id
             WHERE qi.id = %s
         """, (item_id,))
         row = cur.fetchone()
         if not row:
             return {"error": "item not found"}
-        question_text, cloud_account_id = row
+        question_text, cloud_account_id, account_name = row
 
         q_tokens = _tokenize(question_text)
         control_ev = _find_control_evidence(cur, cloud_account_id, q_tokens)
@@ -325,7 +358,7 @@ def _generate_item(conn, item_id):
         confidence = _confidence(control_ev, doc_ev)
         evidence = control_ev + doc_ev
 
-    answer, bedrock_error = _draft_answer(question_text, control_ev, doc_ev)
+    answer, bedrock_error = _draft_answer(question_text, control_ev, doc_ev, account_name)
 
     with conn:
         with conn.cursor() as cur:
