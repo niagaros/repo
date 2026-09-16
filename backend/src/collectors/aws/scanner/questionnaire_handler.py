@@ -221,10 +221,39 @@ def _find_doc_evidence(cur, q_tokens, limit=5):
     return scored[:limit]
 
 
-def _confidence(control_ev, doc_ev):
-    if control_ev and doc_ev:
+# A generic "which controls talk about X" keyword search doesn't work for
+# subprocessor questions — a real vendor record like "Northwind Cloud
+# Storage" shares no tokens with a question like "do you use third-party
+# subprocessors". Real bug this fixes: Domits had 2 real vendors tracked
+# in Third-Party Risk Management, but the questionnaire answered "cannot
+# confirm" to a subprocessor question because it never looked at that
+# table at all. Trigger on the question's own topic words instead, then
+# return the account's real, complete vendor list (there are only ever a
+# handful per account, so sending the whole list is reasonable).
+VENDOR_QUESTION_WORDS = (
+    "vendor", "subprocessor", "sub-processor", "third-party", "third party",
+    "supplier", "outsourc", "fourth-party",
+)
+
+
+def _find_vendor_evidence(cur, cloud_account_id, question_lower):
+    if not any(w in question_lower for w in VENDOR_QUESTION_WORDS):
+        return []
+    cur.execute("""
+        SELECT name, category, criticality, status
+        FROM tprm_vendors
+        WHERE cloud_account_id = %s
+        ORDER BY (criticality = 'critical') DESC, name
+    """, (cloud_account_id,))
+    return [{"type": "vendor", "name": r[0], "category": r[1], "criticality": r[2], "status": r[3]}
+            for r in cur.fetchall()]
+
+
+def _confidence(control_ev, doc_ev, vendor_ev=None):
+    sources_present = sum([bool(control_ev), bool(doc_ev), bool(vendor_ev)])
+    if sources_present >= 2:
         return "high"
-    if control_ev or doc_ev:
+    if sources_present == 1:
         return "medium"
     return "low"
 
@@ -247,23 +276,26 @@ def _get_groq_key():
     return _groq_key_cache
 
 
-def _draft_answer(question_text, control_ev, doc_ev, account_name=None):
+def _draft_answer(question_text, control_ev, doc_ev, account_name=None, vendor_ev=None):
     """Returns (answer_text, error). error is a short string if the
     drafting API isn't usable; answer_text is None in that case.
 
-    control_ev and doc_ev describe two DIFFERENT real entities and must
-    never be blended into one voice: control_ev is the scanned customer
-    account's own findings (the organization actually being assessed —
-    e.g. Domits, when Domits uses this tool to answer its own customers'
-    questionnaires), while doc_ev is Niagaros' own published security
-    documentation (the platform/vendor). A real bug this fixes: a question
-    that happens to name "Niagaros" (or any other company) got answered by
-    the model as if the *account's own* control findings were confessions
-    about that named company's infrastructure — e.g. "Niagaros does not
-    enforce MFA... we are actively working to remediate" when the failing
-    MFA control was actually the scanned customer account's own AWS
-    misconfiguration, nothing to do with Niagaros' backend at all."""
-    if not control_ev and not doc_ev:
+    control_ev, doc_ev and vendor_ev describe THREE different real things
+    and must never be blended into one voice: control_ev is the scanned
+    customer account's own findings (the organization actually being
+    assessed — e.g. Domits, when Domits uses this tool to answer its own
+    customers' questionnaires), doc_ev is Niagaros' own published security
+    documentation (the platform/vendor), and vendor_ev is the account's own
+    real, tracked third-party vendor list from Third-Party Risk Management.
+    A real bug this fixes: a question that happens to name "Niagaros" (or
+    any other company) got answered by the model as if the *account's own*
+    control findings were confessions about that named company's
+    infrastructure — e.g. "Niagaros does not enforce MFA... we are
+    actively working to remediate" when the failing MFA control was
+    actually the scanned customer account's own AWS misconfiguration,
+    nothing to do with Niagaros' backend at all."""
+    vendor_ev = vendor_ev or []
+    if not control_ev and not doc_ev and not vendor_ev:
         return None, None  # no evidence — caller skips drafting, that's expected
 
     account_label = account_name or "the account being assessed"
@@ -274,6 +306,10 @@ def _draft_answer(question_text, control_ev, doc_ev, account_name=None):
         for e in control_ev
     ]
     doc_lines = [f"- {e['section_title']}: {e['excerpt']}" for e in doc_ev]
+    vendor_lines = [
+        f"- {e['name']} ({e['category'] or 'uncategorized'}, criticality: {e['criticality']}, status: {e['status']})"
+        for e in vendor_ev
+    ]
 
     evidence_block = ""
     if control_lines:
@@ -287,16 +323,23 @@ def _draft_answer(question_text, control_ev, doc_ev, account_name=None):
             "NIAGAROS' OWN PUBLISHED SECURITY DOCUMENTATION — the platform/vendor's own practices. "
             "Some of this is a specific, verified claim about Niagaros' own operations; some is general "
             "security background/education that is NOT a confirmed fact about any specific "
-            "organization's actual configuration:\n" + "\n".join(doc_lines)
+            "organization's actual configuration:\n" + "\n".join(doc_lines) + "\n\n"
+        )
+    if vendor_lines:
+        evidence_block += (
+            f"{account_label.upper()}'S OWN REAL, TRACKED THIRD-PARTY VENDOR LIST (from Third-Party "
+            f"Risk Management) — this is the complete real list of {account_label}'s own tracked "
+            "subprocessors/vendors, not Niagaros':\n" + "\n".join(vendor_lines)
         )
 
     prompt = (
         "You are drafting a candidate answer to one question from a security/vendor-assessment "
         f"questionnaire (e.g. CAIQ, SIG), on behalf of {account_label} — the organization whose real "
         "AWS account was scanned. Use ONLY the evidence below.\n\n"
-        "CRITICAL: the two evidence sections above describe DIFFERENT real things — never blend them "
+        "CRITICAL: the evidence sections above describe DIFFERENT real things — never blend them "
         f"into one voice. The findings section is {account_label}'s own environment. The documentation "
-        f"section is Niagaros' own platform practices. If the question names a company or product "
+        f"section is Niagaros' own platform practices. The vendor list, if present, is {account_label}'s "
+        f"own tracked subprocessors. If the question names a company or product "
         f"other than {account_label} (including 'Niagaros' itself, if {account_label} is a different "
         "organization), do not assume the evidence describes that other name unless it explicitly "
         "does — say plainly that this can't be confirmed from the real evidence instead of guessing "
@@ -355,10 +398,11 @@ def _generate_item(conn, item_id):
         q_tokens = _tokenize(question_text)
         control_ev = _find_control_evidence(cur, cloud_account_id, q_tokens)
         doc_ev = _find_doc_evidence(cur, q_tokens)
-        confidence = _confidence(control_ev, doc_ev)
-        evidence = control_ev + doc_ev
+        vendor_ev = _find_vendor_evidence(cur, cloud_account_id, question_text.lower())
+        confidence = _confidence(control_ev, doc_ev, vendor_ev)
+        evidence = control_ev + doc_ev + vendor_ev
 
-    answer, bedrock_error = _draft_answer(question_text, control_ev, doc_ev, account_name)
+    answer, bedrock_error = _draft_answer(question_text, control_ev, doc_ev, account_name, vendor_ev)
 
     with conn:
         with conn.cursor() as cur:
@@ -387,7 +431,7 @@ def _generate_item(conn, item_id):
 
     if answer:
         return {"generated": True, "answer": answer, "confidence": confidence, "evidence": evidence}
-    if not control_ev and not doc_ev:
+    if not control_ev and not doc_ev and not vendor_ev:
         return {"generated": False, "reason": "no_evidence", "confidence": confidence, "evidence": evidence}
     return {"generated": False, "reason": "bedrock_unavailable", "detail": bedrock_error,
             "confidence": confidence, "evidence": evidence}
