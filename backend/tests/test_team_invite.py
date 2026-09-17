@@ -221,12 +221,21 @@ class TestDatabaseTeamMethods:
         assert json.loads(params[4]) == {"new_role": "security"}
         mock_conn.commit.assert_called_once()
 
+    def test_list_organization_cloud_accounts_maps_rows(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchall.return_value = [("acct-1", "Prod AWS", "123456789012")]
+
+        accounts = db.list_organization_cloud_accounts("org1")
+
+        assert accounts == [{"id": "acct-1", "account_name": "Prod AWS", "account_id": "123456789012"}]
+
     def test_create_shared_resource_returns_id_and_commits(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
         cur.fetchone.return_value = ("resource-1",)
 
-        resource_id = db.create_shared_resource("org1", "Q1 Compliance Dashboard", "u1")
+        resource_id = db.create_shared_resource("org1", "Prod AWS", "u1", "acct-1")
 
         assert resource_id == "resource-1"
         mock_conn.commit.assert_called_once()
@@ -234,13 +243,14 @@ class TestDatabaseTeamMethods:
     def test_list_shared_resources_maps_rows(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
-        cur.fetchall.return_value = [("r1", "Q1 Dashboard", "dashboard", "2026-01-01")]
+        cur.fetchall.return_value = [("r1", "Prod AWS", "dashboard", "2026-01-01", "acct-1")]
 
         resources = db.list_shared_resources("org1")
 
         assert resources == [{
-            "id": "r1", "resource_name": "Q1 Dashboard",
+            "id": "r1", "resource_name": "Prod AWS",
             "resource_type": "dashboard", "created_at": "2026-01-01",
+            "cloud_account_id": "acct-1",
         }]
 
     def test_delete_shared_resource_scoped_to_organization(self):
@@ -340,9 +350,32 @@ class TestGetCallerRejectsDeactivated:
         assert resp["statusCode"] == 200
 
 
+ORG_ACCOUNT = {"id": "acct-1", "account_name": "Prod AWS", "account_id": "123456789012"}
+
+
+class TestHandleListOrganizationCloudAccounts:
+    def test_only_admin_can_view(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_list_organization_cloud_accounts({}, db)
+        assert resp["statusCode"] == 403
+
+    def test_admin_gets_the_orgs_accounts(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.list_organization_cloud_accounts.return_value = [ORG_ACCOUNT]
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_list_organization_cloud_accounts({}, db)
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"])["accounts"] == [ORG_ACCOUNT]
+
+
 class TestHandleShareResource:
-    def _event(self, resource_name="Q1 Compliance Dashboard"):
-        return {"body": json.dumps({"resource_name": resource_name})}
+    def _event(self, cloud_account_id="acct-1"):
+        return {"body": json.dumps({"cloud_account_id": cloud_account_id})}
 
     def test_only_admin_can_share(self):
         import api.team_handler as th
@@ -352,26 +385,41 @@ class TestHandleShareResource:
             resp = th.handle_share_resource(self._event(), db)
         assert resp["statusCode"] == 403
 
-    def test_rejects_empty_name(self):
+    def test_rejects_missing_cloud_account_id(self):
         import api.team_handler as th
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
-            resp = th.handle_share_resource(self._event(resource_name="  "), db)
+            resp = th.handle_share_resource(self._event(cloud_account_id="  "), db)
         assert resp["statusCode"] == 400
+
+    def test_rejects_account_not_in_organization(self):
+        """Prevents sharing — or even confirming the existence of — a
+        cloud account belonging to a different organization by guessing
+        its id."""
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.list_organization_cloud_accounts.return_value = [ORG_ACCOUNT]
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_share_resource(self._event(cloud_account_id="someone-elses-account"), db)
+        assert resp["statusCode"] == 404
+        db.create_shared_resource.assert_not_called()
 
     def test_successful_share_logs_event(self):
         import api.team_handler as th
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
+        db.list_organization_cloud_accounts.return_value = [ORG_ACCOUNT]
         db.create_shared_resource.return_value = "resource-1"
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = th.handle_share_resource(self._event(), db)
         assert resp["statusCode"] == 201
-        db.create_shared_resource.assert_called_once_with("org1", "Q1 Compliance Dashboard", "u1")
+        assert json.loads(resp["body"])["cloud_account_id"] == "acct-1"
+        db.create_shared_resource.assert_called_once_with("org1", "Prod AWS", "u1", "acct-1")
         db.log_audit_event.assert_called_once_with(
             organization_id="org1", actor_user_id="u1",
-            action="resource_shared", details={"resource_name": "Q1 Compliance Dashboard"},
+            action="resource_shared", details={"resource_name": "Prod AWS"},
         )
 
 

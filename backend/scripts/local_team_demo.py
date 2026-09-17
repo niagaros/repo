@@ -53,19 +53,25 @@ class SqliteTeamDb:
             )
         """)
         self.conn.execute("""
-            CREATE TABLE cloud_accounts (id TEXT PRIMARY KEY, owner_email TEXT, account_name TEXT)
+            CREATE TABLE cloud_accounts (
+                id TEXT PRIMARY KEY, owner_email TEXT, account_name TEXT,
+                account_id TEXT, status TEXT DEFAULT 'active'
+            )
         """)
         self.conn.execute("""
             CREATE TABLE shared_resources (
                 id TEXT PRIMARY KEY, organization_id TEXT, resource_type TEXT,
-                resource_name TEXT, created_by TEXT
+                resource_name TEXT, created_by TEXT, cloud_account_id TEXT
             )
         """)
         self.conn.commit()
 
     def add_cloud_account(self, owner_email: str, account_name: str) -> str:
         account_id = str(uuid.uuid4())
-        self.conn.execute("INSERT INTO cloud_accounts VALUES (?, ?, ?)", (account_id, owner_email, account_name))
+        self.conn.execute(
+            "INSERT INTO cloud_accounts VALUES (?, ?, ?, ?, 'active')",
+            (account_id, owner_email, account_name, "111122223333"),
+        )
         self.conn.commit()
         return account_id
 
@@ -248,21 +254,33 @@ class SqliteTeamDb:
             for r in rows
         ]
 
-    def create_shared_resource(self, organization_id, resource_name, created_by):
+    def list_organization_cloud_accounts(self, organization_id):
+        rows = self.conn.execute("""
+            SELECT ca.id, ca.account_name, ca.account_id
+            FROM cloud_accounts ca
+            JOIN users u ON u.email = ca.owner_email
+            WHERE u.organization_id = ? AND ca.status = 'active'
+        """, (organization_id,)).fetchall()
+        return [{"id": r[0], "account_name": r[1], "account_id": r[2]} for r in rows]
+
+    def create_shared_resource(self, organization_id, resource_name, created_by, cloud_account_id):
         resource_id = str(uuid.uuid4())
         self.conn.execute(
-            "INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?)",
-            (resource_id, organization_id, resource_name, created_by),
+            "INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?, ?)",
+            (resource_id, organization_id, resource_name, created_by, cloud_account_id),
         )
         self.conn.commit()
         return resource_id
 
     def list_shared_resources(self, organization_id):
         rows = self.conn.execute(
-            "SELECT id, resource_name, resource_type FROM shared_resources WHERE organization_id = ?",
+            "SELECT id, resource_name, resource_type, cloud_account_id FROM shared_resources WHERE organization_id = ?",
             (organization_id,),
         ).fetchall()
-        return [{"id": r[0], "resource_name": r[1], "resource_type": r[2]} for r in rows]
+        return [
+            {"id": r[0], "resource_name": r[1], "resource_type": r[2], "cloud_account_id": r[3]}
+            for r in rows
+        ]
 
     def delete_shared_resource(self, resource_id, organization_id):
         cur = self.conn.execute(
@@ -382,9 +400,15 @@ def main():
         call("GET", "/team")  # mfa_required should now read true
 
     # Acceptance criterion #5: admin shares a dashboard with the team.
+    # Sharing links to a real connected cloud account's real dashboard —
+    # not an arbitrary free-text label — so it's set up here first.
+    dashboard_setup_conn = fresh_db()
+    acme_cloud_account_id = dashboard_setup_conn.add_cloud_account("admin@acme.com", "Acme prod-aws")
+    dashboard_setup_conn.close()
+
     with patch.object(team_handler, "Database", side_effect=fresh_db), \
          patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
-        resp = call("POST", "/team/shared-resources", body={"resource_name": "Q1 Compliance Dashboard"})
+        resp = call("POST", "/team/shared-resources", body={"cloud_account_id": acme_cloud_account_id})
         shared_resource_id = json.loads(resp["body"])["resource_id"]
 
     with patch.object(team_handler, "Database", side_effect=fresh_db), \

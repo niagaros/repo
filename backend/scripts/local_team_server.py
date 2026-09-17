@@ -185,21 +185,33 @@ class SqliteTeamDb:
             for r in rows
         ]
 
-    def create_shared_resource(self, organization_id, resource_name, created_by):
+    def list_organization_cloud_accounts(self, organization_id):
+        rows = self.conn.execute("""
+            SELECT ca.id, ca.account_name, ca.account_id
+            FROM cloud_accounts ca
+            JOIN users u ON u.email = ca.owner_email
+            WHERE u.organization_id = ? AND ca.status = 'active'
+        """, (organization_id,)).fetchall()
+        return [{"id": r[0], "account_name": r[1], "account_id": r[2]} for r in rows]
+
+    def create_shared_resource(self, organization_id, resource_name, created_by, cloud_account_id):
         resource_id = str(uuid.uuid4())
         self.conn.execute(
-            "INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?)",
-            (resource_id, organization_id, resource_name, created_by),
+            "INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?, ?)",
+            (resource_id, organization_id, resource_name, created_by, cloud_account_id),
         )
         self.conn.commit()
         return resource_id
 
     def list_shared_resources(self, organization_id):
         rows = self.conn.execute(
-            "SELECT id, resource_name, resource_type FROM shared_resources WHERE organization_id = ?",
+            "SELECT id, resource_name, resource_type, cloud_account_id FROM shared_resources WHERE organization_id = ?",
             (organization_id,),
         ).fetchall()
-        return [{"id": r[0], "resource_name": r[1], "resource_type": r[2]} for r in rows]
+        return [
+            {"id": r[0], "resource_name": r[1], "resource_type": r[2], "cloud_account_id": r[3]}
+            for r in rows
+        ]
 
     def delete_shared_resource(self, resource_id, organization_id):
         cur = self.conn.execute(
@@ -226,22 +238,26 @@ def seed_database():
         id TEXT PRIMARY KEY, organization_id TEXT, actor_user_id TEXT,
         action TEXT, target_user_id TEXT, details TEXT
     )""")
-    conn.execute("CREATE TABLE cloud_accounts (id TEXT PRIMARY KEY, owner_email TEXT, account_name TEXT)")
+    conn.execute("""CREATE TABLE cloud_accounts (
+        id TEXT PRIMARY KEY, owner_email TEXT, account_name TEXT,
+        account_id TEXT, status TEXT DEFAULT 'active'
+    )""")
     conn.execute("""CREATE TABLE shared_resources (
         id TEXT PRIMARY KEY, organization_id TEXT, resource_type TEXT,
-        resource_name TEXT, created_by TEXT
+        resource_name TEXT, created_by TEXT, cloud_account_id TEXT
     )""")
 
     org_id, admin_id, colleague_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    cloud_account_id = str(uuid.uuid4())
     conn.execute("INSERT INTO organizations (id, name) VALUES (?, ?)", (org_id, "Jouw testbedrijf"))
     conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, 'admin', 'active')",
                  (admin_id, ADMIN_EMAIL, "Jij (admin)", org_id))
     conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, 'viewer', 'active')",
                  (colleague_id, "test.collega@example.com", "Test Collega", org_id))
-    conn.execute("INSERT INTO cloud_accounts VALUES (?, ?, ?)",
-                 (str(uuid.uuid4()), "test.collega@example.com", "test-aws-account"))
-    conn.execute("INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?)",
-                 (str(uuid.uuid4()), org_id, "Q1 Compliance Dashboard", admin_id))
+    conn.execute("INSERT INTO cloud_accounts VALUES (?, ?, ?, ?, 'active')",
+                 (cloud_account_id, "test.collega@example.com", "test-aws-account", "123456789012"))
+    conn.execute("INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?, ?)",
+                 (str(uuid.uuid4()), org_id, "test-aws-account", admin_id, cloud_account_id))
 
     # A couple of pre-seeded audit log entries so /settings/team shows
     # something in the "Audit log" section immediately, without you

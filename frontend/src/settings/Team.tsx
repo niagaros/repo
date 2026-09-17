@@ -51,6 +51,13 @@ interface SharedResource {
   id: string;
   resource_name: string;
   resource_type: string;
+  cloud_account_id: string | null;
+}
+
+interface CloudAccount {
+  id: string;
+  account_name: string | null;
+  account_id: string;
 }
 
 type LoadState = "loading" | "loaded" | "error";
@@ -68,7 +75,8 @@ export default function Team() {
   const [mfaSaving, setMfaSaving]     = useState(false);
   const [auditLog, setAuditLog]       = useState<AuditEntry[] | null>(null);
   const [sharedResources, setSharedResources] = useState<SharedResource[]>([]);
-  const [newResourceName, setNewResourceName] = useState("");
+  const [orgCloudAccounts, setOrgCloudAccounts] = useState<CloudAccount[] | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState("");
   const [sharing, setSharing]         = useState(false);
 
   const token = () => localStorage.getItem("niagaros_token") || "";
@@ -104,16 +112,29 @@ export default function Team() {
     }
   };
 
+  // Admin-only, populated once so the "share a dashboard" dropdown has
+  // real, connected accounts to pick from — never called for non-admins.
+  const loadOrgCloudAccounts = async () => {
+    try {
+      const resp = await fetch(`${getApiBase()}/team/cloud-accounts`, { headers: authHeader(), cache: "no-store" });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      setOrgCloudAccounts(data.accounts || []);
+    } catch {
+      // Leave it empty — the dropdown just has nothing to offer.
+    }
+  };
+
   const shareResource = async () => {
-    if (!newResourceName.trim()) return;
+    if (!selectedAccountId) return;
     setSharing(true);
     try {
       await fetch(`${getApiBase()}/team/shared-resources`, {
         method: "POST",
         headers: { ...authHeader(), "Content-Type": "application/json" },
-        body: JSON.stringify({ resource_name: newResourceName.trim() }),
+        body: JSON.stringify({ cloud_account_id: selectedAccountId }),
       });
-      setNewResourceName("");
+      setSelectedAccountId("");
       await loadSharedResources();
     } finally {
       setSharing(false);
@@ -162,6 +183,13 @@ export default function Team() {
       }
     })();
   }, [myRole, auditLog]);
+
+  // Same admin-only, "load once we know the role" pattern as the audit
+  // log above — populates the share dropdown, not fetched for everyone.
+  useEffect(() => {
+    if (myRole !== "admin" || orgCloudAccounts !== null) return;
+    loadOrgCloudAccounts();
+  }, [myRole, orgCloudAccounts]);
 
   const submitInvite = async () => {
     setFormError("");
@@ -368,17 +396,22 @@ export default function Team() {
 
         {myRole === "admin" && (
           <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-            <input
-              type="text"
-              value={newResourceName}
-              onChange={e => setNewResourceName(e.target.value)}
-              placeholder="e.g. Q1 Compliance Dashboard"
+            <select
+              value={selectedAccountId}
+              onChange={e => setSelectedAccountId(e.target.value)}
               style={{ flex: 1, background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", fontSize: 13 }}
-            />
+            >
+              <option value="">
+                {orgCloudAccounts && orgCloudAccounts.length === 0 ? "No connected cloud accounts yet" : "Select a connected cloud account…"}
+              </option>
+              {(orgCloudAccounts || []).map(a => (
+                <option key={a.id} value={a.id}>{a.account_name || a.account_id}</option>
+              ))}
+            </select>
             <button
               onClick={shareResource}
-              disabled={sharing}
-              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: sharing ? "default" : "pointer", opacity: sharing ? 0.6 : 1 }}
+              disabled={sharing || !selectedAccountId}
+              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: sharing ? "default" : "pointer", opacity: sharing || !selectedAccountId ? 0.6 : 1 }}
             >
               Share
             </button>
@@ -390,7 +423,16 @@ export default function Team() {
         ) : (
           sharedResources.map(r => (
             <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderTop: "1px solid #1a2030" }}>
-              <span style={{ flex: 1, color: "#e2e8f0", fontSize: 13 }}>📊 {r.resource_name}</span>
+              {r.cloud_account_id ? (
+                <a
+                  href={`/niagaros-dashboard.html?account_id=${r.cloud_account_id}`}
+                  style={{ flex: 1, color: "#e2e8f0", fontSize: 13, textDecoration: "none" }}
+                >
+                  📊 {r.resource_name}
+                </a>
+              ) : (
+                <span style={{ flex: 1, color: "#e2e8f0", fontSize: 13 }}>📊 {r.resource_name}</span>
+              )}
               {myRole === "admin" && (
                 <button
                   onClick={() => unshareResource(r.id)}

@@ -256,8 +256,34 @@ def handle_deactivate_member(event: dict, db: Database, user_id: str) -> dict:
     })
 
 
+def handle_list_organization_cloud_accounts(event: dict, db: Database) -> dict:
+    """
+    Backs the "pick an account to share" dropdown in Team settings.
+    Admin-only, same as sharing itself — a non-admin has no use for this
+    list since they can't act on it.
+    """
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can view connected cloud accounts"})
+
+    accounts = db.list_organization_cloud_accounts(caller["organization_id"])
+    return _response(200, {"accounts": accounts})
+
+
 def handle_share_resource(event: dict, db: Database) -> dict:
-    """Issue #265, acceptance criterion #5 — admin shares a dashboard."""
+    """
+    Issue #265, acceptance criterion #5 — admin shares a dashboard.
+
+    Shares a real dashboard for one of the organization's own connected
+    cloud accounts (niagaros-dashboard.html?account_id=<cloud_account_id>)
+    rather than an arbitrary free-text label with nothing behind it.
+    cloud_account_id is checked against this organization's own accounts
+    (via list_organization_cloud_accounts) so one org can't share — or
+    even probe the existence of — another org's cloud account by
+    guessing its id.
+    """
     caller = _get_caller(event, db)
     if not caller:
         return _response(401, {"error": "unauthorized"})
@@ -269,16 +295,22 @@ def handle_share_resource(event: dict, db: Database) -> dict:
     except json.JSONDecodeError:
         return _response(400, {"error": "invalid JSON body"})
 
-    resource_name = (body.get("resource_name") or "").strip()
-    if not resource_name:
-        return _response(400, {"error": "resource_name is required"})
+    cloud_account_id = (body.get("cloud_account_id") or "").strip()
+    if not cloud_account_id:
+        return _response(400, {"error": "cloud_account_id is required"})
 
-    resource_id = db.create_shared_resource(caller["organization_id"], resource_name, caller["id"])
+    accounts = db.list_organization_cloud_accounts(caller["organization_id"])
+    account = next((a for a in accounts if a["id"] == cloud_account_id), None)
+    if not account:
+        return _response(404, {"error": "cloud account not found in your organization"})
+
+    resource_name = account["account_name"] or account["account_id"]
+    resource_id = db.create_shared_resource(caller["organization_id"], resource_name, caller["id"], cloud_account_id)
     db.log_audit_event(
         organization_id=caller["organization_id"], actor_user_id=caller["id"],
         action="resource_shared", details={"resource_name": resource_name},
     )
-    return _response(201, {"resource_id": resource_id, "resource_name": resource_name})
+    return _response(201, {"resource_id": resource_id, "resource_name": resource_name, "cloud_account_id": cloud_account_id})
 
 
 def handle_list_shared_resources(event: dict, db: Database) -> dict:
@@ -341,6 +373,7 @@ def lambda_handler(event, context):
 
         GET    /team                       -> handle_list_team (includes mfa_required)
         GET    /team/audit-log             -> handle_view_audit_log
+        GET    /team/cloud-accounts        -> handle_list_organization_cloud_accounts
         GET    /team/shared-resources      -> handle_list_shared_resources
         POST   /team/shared-resources      -> handle_share_resource
         DELETE /team/shared-resources/{id} -> handle_unshare_resource
@@ -363,6 +396,8 @@ def lambda_handler(event, context):
             return handle_list_team(event, db)
         if method == "GET" and path.rstrip("/") == "/team/audit-log":
             return handle_view_audit_log(event, db)
+        if method == "GET" and path.rstrip("/") == "/team/cloud-accounts":
+            return handle_list_organization_cloud_accounts(event, db)
         if method == "GET" and path.rstrip("/") == "/team/shared-resources":
             return handle_list_shared_resources(event, db)
         if method == "POST" and path.rstrip("/") == "/team/shared-resources":

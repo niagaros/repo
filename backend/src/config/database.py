@@ -449,13 +449,35 @@ class Database:
         logger.warning(f"Database: deactivated user {user_id} in organization {organization_id}")
         return updated > 0
 
-    def create_shared_resource(self, organization_id: str, resource_name: str, created_by: str) -> str:
+    def list_organization_cloud_accounts(self, organization_id: str) -> list:
+        """
+        cloud_accounts has no organization_id of its own (see the note on
+        get_account_contact) — it's linked by owner_email to a user, so
+        organization scoping has to go through users. Only 'active'
+        accounts are offered for sharing; a disconnected account has no
+        working dashboard to share.
+        """
         with self.conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO shared_resources (organization_id, resource_name, created_by)
-                VALUES (%s, %s, %s)
+                SELECT ca.id, ca.account_name, ca.account_id
+                FROM cloud_accounts ca
+                JOIN users u ON u.email = ca.owner_email
+                WHERE u.organization_id = %s AND ca.status = 'active'
+                ORDER BY ca.created_at
+            """, (organization_id,))
+            rows = cur.fetchall()
+        return [
+            {"id": str(r[0]), "account_name": r[1], "account_id": r[2]}
+            for r in rows
+        ]
+
+    def create_shared_resource(self, organization_id: str, resource_name: str, created_by: str, cloud_account_id: str) -> str:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO shared_resources (organization_id, resource_name, created_by, cloud_account_id)
+                VALUES (%s, %s, %s, %s)
                 RETURNING id
-            """, (organization_id, resource_name, created_by))
+            """, (organization_id, resource_name, created_by, cloud_account_id))
             resource_id = cur.fetchone()[0]
         self.conn.commit()
         return str(resource_id)
@@ -467,17 +489,24 @@ class Database:
         organization can see every shared resource, computed fresh on
         every call. There is nothing to update when membership changes;
         the next read is simply correct.
+
+        cloud_account_id is returned so the frontend can link straight to
+        the real dashboard (niagaros-dashboard.html?account_id=...)
+        instead of the share being just a name with nothing behind it.
         """
         with self.conn.cursor() as cur:
             cur.execute("""
-                SELECT id, resource_name, resource_type, created_at
+                SELECT id, resource_name, resource_type, created_at, cloud_account_id
                 FROM shared_resources
                 WHERE organization_id = %s
                 ORDER BY created_at DESC
             """, (organization_id,))
             rows = cur.fetchall()
         return [
-            {"id": str(r[0]), "resource_name": r[1], "resource_type": r[2], "created_at": str(r[3])}
+            {
+                "id": str(r[0]), "resource_name": r[1], "resource_type": r[2],
+                "created_at": str(r[3]), "cloud_account_id": str(r[4]) if r[4] else None,
+            }
             for r in rows
         ]
 
