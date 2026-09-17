@@ -55,6 +55,12 @@ class SqliteTeamDb:
         self.conn.execute("""
             CREATE TABLE cloud_accounts (id TEXT PRIMARY KEY, owner_email TEXT, account_name TEXT)
         """)
+        self.conn.execute("""
+            CREATE TABLE shared_resources (
+                id TEXT PRIMARY KEY, organization_id TEXT, resource_type TEXT,
+                resource_name TEXT, created_by TEXT
+            )
+        """)
         self.conn.commit()
 
     def add_cloud_account(self, owner_email: str, account_name: str) -> str:
@@ -160,11 +166,12 @@ class SqliteTeamDb:
 
     def revoke_team_invite(self, invite_id, organization_id):
         cur = self.conn.execute(
-            "UPDATE team_invites SET status = 'revoked' WHERE id = ? AND organization_id = ? AND status = 'pending'",
+            "UPDATE team_invites SET status = 'revoked' WHERE id = ? AND organization_id = ? AND status = 'pending' RETURNING email",
             (invite_id, organization_id),
         )
+        row = cur.fetchone()
         self.conn.commit()
-        return cur.rowcount > 0
+        return row[0] if row else None
 
     def accept_pending_invite(self, user_id, email):
         row = self.conn.execute(
@@ -222,12 +229,48 @@ class SqliteTeamDb:
         )
         self.conn.commit()
 
-    def get_audit_log(self, organization_id):
+    def get_audit_log(self, organization_id, limit=100):
+        rows = self.conn.execute("""
+            SELECT al.action, al.details, al.rowid, actor.email, target.email
+            FROM team_audit_log al
+            LEFT JOIN users actor  ON actor.id  = al.actor_user_id
+            LEFT JOIN users target ON target.id = al.target_user_id
+            WHERE al.organization_id = ?
+            ORDER BY al.rowid DESC
+            LIMIT ?
+        """, (organization_id, limit)).fetchall()
+        return [
+            {
+                "action": r[0], "details": json.loads(r[1]) if isinstance(r[1], str) else r[1],
+                "created_at": f"entry #{r[2]}",  # no real timestamp column in this stand-in
+                "actor_email": r[3], "target_email": r[4],
+            }
+            for r in rows
+        ]
+
+    def create_shared_resource(self, organization_id, resource_name, created_by):
+        resource_id = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?)",
+            (resource_id, organization_id, resource_name, created_by),
+        )
+        self.conn.commit()
+        return resource_id
+
+    def list_shared_resources(self, organization_id):
         rows = self.conn.execute(
-            "SELECT action, actor_user_id, target_user_id, details FROM team_audit_log WHERE organization_id = ?",
+            "SELECT id, resource_name, resource_type FROM shared_resources WHERE organization_id = ?",
             (organization_id,),
         ).fetchall()
-        return [dict(zip(["action", "actor_user_id", "target_user_id", "details"], r)) for r in rows]
+        return [{"id": r[0], "resource_name": r[1], "resource_type": r[2]} for r in rows]
+
+    def delete_shared_resource(self, resource_id, organization_id):
+        cur = self.conn.execute(
+            "DELETE FROM shared_resources WHERE id = ? AND organization_id = ?",
+            (resource_id, organization_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def close(self):
         self.conn.close()
@@ -338,6 +381,31 @@ def main():
         call("PATCH", "/team/mfa-policy", body={"required": True})
         call("GET", "/team")  # mfa_required should now read true
 
+    # Acceptance criterion #5: admin shares a dashboard with the team.
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
+        resp = call("POST", "/team/shared-resources", body={"resource_name": "Q1 Compliance Dashboard"})
+        shared_resource_id = json.loads(resp["body"])["resource_id"]
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="existing.viewer@acme.com"):
+        call("GET", "/team/shared-resources")  # existing.viewer can see it — still an active member
+
+    # Now existing.viewer is offboarded — no one ever "unshared" anything
+    # from them specifically. This is the actual proof of AC5: access was
+    # never a stored grant, only ever computed from current membership.
+    viewer_conn = fresh_db()
+    viewer = viewer_conn.get_user_by_email("existing.viewer@acme.com")
+    viewer_conn.close()
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
+        call("DELETE", f"/team/member/{viewer['id']}", path_params={"id": viewer["id"]})
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="existing.viewer@acme.com"):
+        call("GET", "/team/shared-resources")  # same token as before -> now 401, automatically
+
     # Acceptance criterion #4: new.colleague owns an AWS account and then
     # leaves the organization.
     setup_conn = fresh_db()
@@ -364,13 +432,20 @@ def main():
     print(f"    accounts still owned by new.colleague: {len(still_owned)} (should be 0)")
     print(f"    accounts now owned by admin@acme.com: {[a[1] for a in now_owned_by_admin]}")
 
-    # Acceptance criterion #2's "and logged" half — the role change above
-    # left a real row in team_audit_log.
-    audit_conn = fresh_db()
-    print("\n[team_audit_log contents]")
-    for entry in audit_conn.get_audit_log(org_id):
-        print(f"    {entry}")
-    audit_conn.close()
+    # Acceptance criterion #6: view the audit log through the real
+    # endpoint (GET /team/audit-log), not just a direct DB query — proves
+    # the whole trail (invites, role change, MFA policy, offboarding) is
+    # visible with actor/target emails and not just to admins.
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="existing.viewer@acme.com"):
+        call("GET", "/team/audit-log")  # non-admin -> forbidden
+
+    with patch.object(team_handler, "Database", side_effect=fresh_db), \
+         patch.object(team_handler, "_get_authenticated_email", return_value="admin@acme.com"):
+        resp = call("GET", "/team/audit-log")
+        print("\n[audit log entries, oldest last]")
+        for entry in json.loads(resp["body"])["entries"]:
+            print(f"    {entry}")
 
     os.remove(db_path)
     print("\nDone — every response above came from real SQL against a real (SQLite) database,")

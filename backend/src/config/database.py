@@ -449,6 +449,48 @@ class Database:
         logger.warning(f"Database: deactivated user {user_id} in organization {organization_id}")
         return updated > 0
 
+    def create_shared_resource(self, organization_id: str, resource_name: str, created_by: str) -> str:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO shared_resources (organization_id, resource_name, created_by)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (organization_id, resource_name, created_by))
+            resource_id = cur.fetchone()[0]
+        self.conn.commit()
+        return str(resource_id)
+
+    def list_shared_resources(self, organization_id: str) -> list:
+        """
+        Issue #265, acceptance criterion #5. Deliberately no join against
+        who currently has "access" — every ACTIVE member of the
+        organization can see every shared resource, computed fresh on
+        every call. There is nothing to update when membership changes;
+        the next read is simply correct.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, resource_name, resource_type, created_at
+                FROM shared_resources
+                WHERE organization_id = %s
+                ORDER BY created_at DESC
+            """, (organization_id,))
+            rows = cur.fetchall()
+        return [
+            {"id": str(r[0]), "resource_name": r[1], "resource_type": r[2], "created_at": str(r[3])}
+            for r in rows
+        ]
+
+    def delete_shared_resource(self, resource_id: str, organization_id: str) -> bool:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM shared_resources WHERE id = %s AND organization_id = %s",
+                (resource_id, organization_id),
+            )
+            deleted = cur.rowcount
+        self.conn.commit()
+        return deleted > 0
+
     def get_audit_log(self, organization_id: str, limit: int = 100) -> list:
         """
         Issue #265, acceptance criterion #6: "all user, role, and

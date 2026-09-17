@@ -221,6 +221,44 @@ class TestDatabaseTeamMethods:
         assert json.loads(params[4]) == {"new_role": "security"}
         mock_conn.commit.assert_called_once()
 
+    def test_create_shared_resource_returns_id_and_commits(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = ("resource-1",)
+
+        resource_id = db.create_shared_resource("org1", "Q1 Compliance Dashboard", "u1")
+
+        assert resource_id == "resource-1"
+        mock_conn.commit.assert_called_once()
+
+    def test_list_shared_resources_maps_rows(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchall.return_value = [("r1", "Q1 Dashboard", "dashboard", "2026-01-01")]
+
+        resources = db.list_shared_resources("org1")
+
+        assert resources == [{
+            "id": "r1", "resource_name": "Q1 Dashboard",
+            "resource_type": "dashboard", "created_at": "2026-01-01",
+        }]
+
+    def test_delete_shared_resource_scoped_to_organization(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 1
+
+        assert db.delete_shared_resource("r1", "org1") is True
+        sql, params = cur.execute.call_args[0]
+        assert params == ("r1", "org1")
+
+    def test_delete_shared_resource_false_when_not_found(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 0
+
+        assert db.delete_shared_resource("does-not-exist", "org1") is False
+
 
 # ── api/team_handler.py ──────────────────────────────────────────────────
 
@@ -265,6 +303,132 @@ class TestHandleListTeam:
             resp = th.handle_list_team({}, db)
 
         assert json.loads(resp["body"])["mfa_required"] is False
+
+
+class TestGetCallerRejectsDeactivated:
+    """
+    Issue #265, acceptance criterion #5's real mechanism: this is what
+    makes 'access is updated automatically based on current membership'
+    true everywhere, not just for shared resources — a deactivated
+    member's existing, still-valid Cognito token stops granting *any*
+    API access the moment their row flips to 'deactivated', with no
+    separate cleanup step needed.
+    """
+
+    def test_deactivated_user_is_treated_as_unauthenticated(self):
+        import api.team_handler as th
+        deactivated_admin = {**ADMIN, "status": "deactivated"}
+        db = MagicMock()
+        db.get_user_by_email.return_value = deactivated_admin
+
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_list_team({}, db)
+
+        assert resp["statusCode"] == 401
+
+    def test_active_user_is_accepted(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_organization_members.return_value = []
+        db.list_pending_invites.return_value = []
+        db.get_organization.return_value = None
+
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_list_team({}, db)
+
+        assert resp["statusCode"] == 200
+
+
+class TestHandleShareResource:
+    def _event(self, resource_name="Q1 Compliance Dashboard"):
+        return {"body": json.dumps({"resource_name": resource_name})}
+
+    def test_only_admin_can_share(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_share_resource(self._event(), db)
+        assert resp["statusCode"] == 403
+
+    def test_rejects_empty_name(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_share_resource(self._event(resource_name="  "), db)
+        assert resp["statusCode"] == 400
+
+    def test_successful_share_logs_event(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.create_shared_resource.return_value = "resource-1"
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_share_resource(self._event(), db)
+        assert resp["statusCode"] == 201
+        db.create_shared_resource.assert_called_once_with("org1", "Q1 Compliance Dashboard", "u1")
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org1", actor_user_id="u1",
+            action="resource_shared", details={"resource_name": "Q1 Compliance Dashboard"},
+        )
+
+
+class TestHandleListSharedResources:
+    def test_any_active_member_can_view_not_just_admins(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER  # not an admin
+        db.list_shared_resources.return_value = [{"id": "r1", "resource_name": "Q1 Dashboard"}]
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_list_shared_resources({}, db)
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"])["resources"] == [{"id": "r1", "resource_name": "Q1 Dashboard"}]
+
+    def test_deactivated_member_sees_nothing_not_even_an_error_response_with_data(self):
+        """The literal proof of AC5: no unshare action was ever taken —
+        this member simply stopped being an active part of the org."""
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = {**VIEWER, "status": "deactivated"}
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_list_shared_resources({}, db)
+        assert resp["statusCode"] == 401
+        db.list_shared_resources.assert_not_called()
+
+
+class TestHandleUnshareResource:
+    def test_only_admin_can_unshare(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_unshare_resource({}, db, "r1")
+        assert resp["statusCode"] == 403
+
+    def test_not_found_returns_404(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.delete_shared_resource.return_value = False
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_unshare_resource({}, db, "r1")
+        assert resp["statusCode"] == 404
+        db.log_audit_event.assert_not_called()
+
+    def test_successful_unshare_logs_event(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.delete_shared_resource.return_value = True
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_unshare_resource({}, db, "r1")
+        assert resp["statusCode"] == 200
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org1", actor_user_id="u1",
+            action="resource_unshared", details={"resource_id": "r1"},
+        )
 
 
 class TestHandleInviteMember:

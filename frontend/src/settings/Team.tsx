@@ -47,6 +47,12 @@ interface AuditEntry {
 // Turns e.g. "role_changed" into "role changed" for display.
 const describeAction = (action: string) => action.replace(/_/g, " ");
 
+interface SharedResource {
+  id: string;
+  resource_name: string;
+  resource_type: string;
+}
+
 type LoadState = "loading" | "loaded" | "error";
 
 export default function Team() {
@@ -61,6 +67,9 @@ export default function Team() {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaSaving, setMfaSaving]     = useState(false);
   const [auditLog, setAuditLog]       = useState<AuditEntry[] | null>(null);
+  const [sharedResources, setSharedResources] = useState<SharedResource[]>([]);
+  const [newResourceName, setNewResourceName] = useState("");
+  const [sharing, setSharing]         = useState(false);
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
@@ -80,6 +89,42 @@ export default function Team() {
     }
   };
 
+  // Issue #265, acceptance criterion #5. Any active member sees this (not
+  // just admins) — loaded alongside the main team data. If this fetch
+  // fails (e.g. the caller was just deactivated elsewhere), we simply
+  // show an empty list rather than erroring the whole page.
+  const loadSharedResources = async () => {
+    try {
+      const resp = await fetch(`${getApiBase()}/team/shared-resources`, { headers: authHeader(), cache: "no-store" });
+      if (!resp.ok) { setSharedResources([]); return; }
+      const data = await resp.json();
+      setSharedResources(data.resources || []);
+    } catch {
+      setSharedResources([]);
+    }
+  };
+
+  const shareResource = async () => {
+    if (!newResourceName.trim()) return;
+    setSharing(true);
+    try {
+      await fetch(`${getApiBase()}/team/shared-resources`, {
+        method: "POST",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ resource_name: newResourceName.trim() }),
+      });
+      setNewResourceName("");
+      await loadSharedResources();
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const unshareResource = async (id: string) => {
+    await fetch(`${getApiBase()}/team/shared-resources/${id}`, { method: "DELETE", headers: authHeader() });
+    await loadSharedResources();
+  };
+
   const toggleMfaPolicy = async () => {
     setMfaSaving(true);
     try {
@@ -97,6 +142,7 @@ export default function Team() {
   useEffect(() => {
     if (authLoading || !email) return;
     load();
+    loadSharedResources();
   }, [authLoading, email]);
 
   // Issue #265, acceptance criterion #6. Admin-only, same as the backend
@@ -194,40 +240,42 @@ export default function Team() {
         </div>
       )}
 
-      {/* Invite form */}
-      <div style={cardStyle}>
-        <div style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Invite a team member</div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5 }}>Email</label>
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={e => setInviteEmail(e.target.value)}
-              placeholder="colleague@company.com"
-              style={{ width: "100%", background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13 }}
-            />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5 }}>Role</label>
-            <select
-              value={inviteRole}
-              onChange={e => setInviteRole(e.target.value as Role)}
-              style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13 }}
+      {/* Invite form — admin-only, same as the backend enforces */}
+      {myRole === "admin" && (
+        <div style={cardStyle}>
+          <div style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Invite a team member</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5 }}>Email</label>
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                placeholder="colleague@company.com"
+                style={{ width: "100%", background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13 }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5 }}>Role</label>
+              <select
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value as Role)}
+                style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13 }}
+              >
+                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <button
+              onClick={submitInvite}
+              disabled={submitting}
+              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1 }}
             >
-              {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
+              {submitting ? "Sending…" : "Send invite"}
+            </button>
           </div>
-          <button
-            onClick={submitInvite}
-            disabled={submitting}
-            style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1 }}
-          >
-            {submitting ? "Sending…" : "Send invite"}
-          </button>
+          {formError && <div style={{ color: "#f87171", fontSize: 12, marginTop: 10 }}>{formError}</div>}
         </div>
-        {formError && <div style={{ color: "#f87171", fontSize: 12, marginTop: 10 }}>{formError}</div>}
-      </div>
+      )}
 
       {/* MFA policy — issue #265 acceptance criterion #3 */}
       {myRole === "admin" && (
@@ -309,6 +357,51 @@ export default function Team() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Shared resources — issue #265 acceptance criterion #5 */}
+      <div style={cardStyle}>
+        <div style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Shared dashboards</div>
+        <div style={{ color: "#4e627a", fontSize: 12, marginBottom: 14 }}>
+          Visible to every active member of your team — access updates automatically as membership changes.
+        </div>
+
+        {myRole === "admin" && (
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <input
+              type="text"
+              value={newResourceName}
+              onChange={e => setNewResourceName(e.target.value)}
+              placeholder="e.g. Q1 Compliance Dashboard"
+              style={{ flex: 1, background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", fontSize: 13 }}
+            />
+            <button
+              onClick={shareResource}
+              disabled={sharing}
+              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: sharing ? "default" : "pointer", opacity: sharing ? 0.6 : 1 }}
+            >
+              Share
+            </button>
+          </div>
+        )}
+
+        {sharedResources.length === 0 ? (
+          <div style={{ color: "#4e627a", fontSize: 12.5 }}>Nothing shared with the team yet.</div>
+        ) : (
+          sharedResources.map(r => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderTop: "1px solid #1a2030" }}>
+              <span style={{ flex: 1, color: "#e2e8f0", fontSize: 13 }}>📊 {r.resource_name}</span>
+              {myRole === "admin" && (
+                <button
+                  onClick={() => unshareResource(r.id)}
+                  style={{ background: "none", border: "1px solid #374151", color: "#9ca3af", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}
+                >
+                  Unshare
+                </button>
+              )}
+            </div>
+          ))
+        )}
       </div>
 
       {/* Audit log — issue #265 acceptance criterion #6 */}

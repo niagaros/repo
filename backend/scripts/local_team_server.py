@@ -107,11 +107,12 @@ class SqliteTeamDb:
 
     def revoke_team_invite(self, invite_id, organization_id):
         cur = self.conn.execute(
-            "UPDATE team_invites SET status = 'revoked' WHERE id = ? AND organization_id = ? AND status = 'pending'",
+            "UPDATE team_invites SET status = 'revoked' WHERE id = ? AND organization_id = ? AND status = 'pending' RETURNING email",
             (invite_id, organization_id),
         )
+        row = cur.fetchone()
         self.conn.commit()
-        return cur.rowcount > 0
+        return row[0] if row else None
 
     def accept_pending_invite(self, user_id, email):
         row = self.conn.execute(
@@ -165,6 +166,49 @@ class SqliteTeamDb:
         )
         self.conn.commit()
 
+    def get_audit_log(self, organization_id, limit=100):
+        rows = self.conn.execute("""
+            SELECT al.action, al.details, al.rowid, actor.email, target.email
+            FROM team_audit_log al
+            LEFT JOIN users actor  ON actor.id  = al.actor_user_id
+            LEFT JOIN users target ON target.id = al.target_user_id
+            WHERE al.organization_id = ?
+            ORDER BY al.rowid DESC
+            LIMIT ?
+        """, (organization_id, limit)).fetchall()
+        return [
+            {
+                "action": r[0], "details": json.loads(r[1]) if isinstance(r[1], str) else r[1],
+                "created_at": f"entry #{r[2]}",
+                "actor_email": r[3], "target_email": r[4],
+            }
+            for r in rows
+        ]
+
+    def create_shared_resource(self, organization_id, resource_name, created_by):
+        resource_id = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?)",
+            (resource_id, organization_id, resource_name, created_by),
+        )
+        self.conn.commit()
+        return resource_id
+
+    def list_shared_resources(self, organization_id):
+        rows = self.conn.execute(
+            "SELECT id, resource_name, resource_type FROM shared_resources WHERE organization_id = ?",
+            (organization_id,),
+        ).fetchall()
+        return [{"id": r[0], "resource_name": r[1], "resource_type": r[2]} for r in rows]
+
+    def delete_shared_resource(self, resource_id, organization_id):
+        cur = self.conn.execute(
+            "DELETE FROM shared_resources WHERE id = ? AND organization_id = ?",
+            (resource_id, organization_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
     def close(self):
         self.conn.close()
 
@@ -183,6 +227,10 @@ def seed_database():
         action TEXT, target_user_id TEXT, details TEXT
     )""")
     conn.execute("CREATE TABLE cloud_accounts (id TEXT PRIMARY KEY, owner_email TEXT, account_name TEXT)")
+    conn.execute("""CREATE TABLE shared_resources (
+        id TEXT PRIMARY KEY, organization_id TEXT, resource_type TEXT,
+        resource_name TEXT, created_by TEXT
+    )""")
 
     org_id, admin_id, colleague_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     conn.execute("INSERT INTO organizations (id, name) VALUES (?, ?)", (org_id, "Jouw testbedrijf"))
@@ -192,6 +240,17 @@ def seed_database():
                  (colleague_id, "test.collega@example.com", "Test Collega", org_id))
     conn.execute("INSERT INTO cloud_accounts VALUES (?, ?, ?)",
                  (str(uuid.uuid4()), "test.collega@example.com", "test-aws-account"))
+    conn.execute("INSERT INTO shared_resources VALUES (?, ?, 'dashboard', ?, ?)",
+                 (str(uuid.uuid4()), org_id, "Q1 Compliance Dashboard", admin_id))
+
+    # A couple of pre-seeded audit log entries so /settings/team shows
+    # something in the "Audit log" section immediately, without you
+    # having to click anything first.
+    conn.execute("INSERT INTO team_audit_log VALUES (?, ?, ?, 'invite_created', NULL, ?)",
+                 (str(uuid.uuid4()), org_id, admin_id, json.dumps({"email": "test.collega@example.com", "role": "viewer"})))
+    conn.execute("INSERT INTO team_audit_log VALUES (?, ?, ?, 'role_changed', ?, ?)",
+                 (str(uuid.uuid4()), org_id, admin_id, colleague_id, json.dumps({"new_role": "viewer"})))
+
     conn.commit()
     conn.close()
     print(f"Testdata klaar: jij ({ADMIN_EMAIL}) bent admin, 'Test Collega' staat klaar om te deactiveren.")
@@ -201,6 +260,12 @@ def fresh_db():
     db = SqliteTeamDb.__new__(SqliteTeamDb)
     db.conn = sqlite3.connect(DB_PATH)
     return db
+
+
+# Mutable "who is calling right now" — lets you flip between admin and
+# Test Collega from the SAME real browser login, without needing a second
+# real Cognito account. See /_test/act-as below.
+current_actor = {"email": ADMIN_EMAIL}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -219,10 +284,26 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode() if length else None
 
         path = self.path.split("?")[0]
+
+        # Test-only meta-route: switch who subsequent requests act as.
+        # Not part of the real API — never touches team_handler.py.
+        if path.rstrip("/") == "/_test/act-as":
+            new_email = json.loads(body or "{}").get("email", ADMIN_EMAIL)
+            current_actor["email"] = new_email
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"acting_as": new_email}).encode())
+            print(f"[now acting as {new_email}]")
+            return
+
         path_params = {}
         if path.startswith("/team/member/"):
             path_params["id"] = path.rsplit("/", 1)[-1]
         elif path.startswith("/team/invite/"):
+            path_params["id"] = path.rsplit("/", 1)[-1]
+        elif path.startswith("/team/shared-resources/"):
             path_params["id"] = path.rsplit("/", 1)[-1]
 
         event = {
@@ -233,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
         }
 
         with patch.object(team_handler, "Database", side_effect=fresh_db), \
-             patch.object(team_handler, "_get_authenticated_email", return_value=ADMIN_EMAIL), \
+             patch.object(team_handler, "_get_authenticated_email", side_effect=lambda *_: current_actor["email"]), \
              patch.object(team_handler, "terminate_all_sessions", return_value=True):
             resp = team_handler.lambda_handler(event, None)
 

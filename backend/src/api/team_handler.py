@@ -42,10 +42,24 @@ def _get_authenticated_email(event: dict) -> str | None:
 
 
 def _get_caller(event: dict, db: Database) -> dict | None:
+    """
+    Issue #265, acceptance criterion #5's actual mechanism: rejecting a
+    deactivated user here (not just on shared-resource endpoints, but on
+    every single endpoint that resolves a caller through this function)
+    is what makes "access is updated automatically based on current
+    membership" true — the moment someone is offboarded, every one of
+    their existing tokens stops working everywhere, not just for shared
+    resources. Previously this only checked *whether* a user row existed,
+    not whether it was still active — a deactivated admin could still act
+    as one for as long as their Cognito session lasted.
+    """
     email = _get_authenticated_email(event)
     if not email:
         return None
-    return db.get_user_by_email(email)
+    user = db.get_user_by_email(email)
+    if not user or user["status"] != "active":
+        return None
+    return user
 
 
 def handle_list_team(event: dict, db: Database) -> dict:
@@ -242,6 +256,64 @@ def handle_deactivate_member(event: dict, db: Database, user_id: str) -> dict:
     })
 
 
+def handle_share_resource(event: dict, db: Database) -> dict:
+    """Issue #265, acceptance criterion #5 — admin shares a dashboard."""
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can share resources"})
+
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _response(400, {"error": "invalid JSON body"})
+
+    resource_name = (body.get("resource_name") or "").strip()
+    if not resource_name:
+        return _response(400, {"error": "resource_name is required"})
+
+    resource_id = db.create_shared_resource(caller["organization_id"], resource_name, caller["id"])
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="resource_shared", details={"resource_name": resource_name},
+    )
+    return _response(201, {"resource_id": resource_id, "resource_name": resource_name})
+
+
+def handle_list_shared_resources(event: dict, db: Database) -> dict:
+    """
+    Any ACTIVE member sees this — not admin-only, unlike most of this
+    file. Sharing something with "the team" should mean the team can
+    actually see it. _get_caller already rejects deactivated callers, so
+    reaching this line at all proves current, active membership.
+    """
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+
+    resources = db.list_shared_resources(caller["organization_id"])
+    return _response(200, {"resources": resources})
+
+
+def handle_unshare_resource(event: dict, db: Database, resource_id: str) -> dict:
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can unshare resources"})
+
+    deleted = db.delete_shared_resource(resource_id, caller["organization_id"])
+    if not deleted:
+        return _response(404, {"error": "resource not found in your organization"})
+
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="resource_unshared", details={"resource_id": resource_id},
+    )
+    return _response(200, {"unshared": resource_id})
+
+
 def handle_view_audit_log(event: dict, db: Database) -> dict:
     """
     Issue #265, acceptance criterion #6: "Given an auditor reviews
@@ -267,14 +339,17 @@ def lambda_handler(event, context):
     hzf92ft6j7 — see api_inventory.md). Not yet registered on API Gateway;
     that's a manual deploy step, same as everything else in this repo.
 
-        GET    /team                 -> handle_list_team (includes mfa_required)
-        GET    /team/audit-log       -> handle_view_audit_log
-        POST   /team/invite          -> handle_invite_member
-        POST   /team/accept-invite   -> handle_accept_invite
-        PATCH  /team/member/{id}     -> handle_update_role
-        PATCH  /team/mfa-policy      -> handle_update_mfa_policy
-        DELETE /team/invite/{id}     -> handle_revoke_invite
-        DELETE /team/member/{id}     -> handle_deactivate_member
+        GET    /team                       -> handle_list_team (includes mfa_required)
+        GET    /team/audit-log             -> handle_view_audit_log
+        GET    /team/shared-resources      -> handle_list_shared_resources
+        POST   /team/shared-resources      -> handle_share_resource
+        DELETE /team/shared-resources/{id} -> handle_unshare_resource
+        POST   /team/invite                -> handle_invite_member
+        POST   /team/accept-invite         -> handle_accept_invite
+        PATCH  /team/member/{id}           -> handle_update_role
+        PATCH  /team/mfa-policy            -> handle_update_mfa_policy
+        DELETE /team/invite/{id}           -> handle_revoke_invite
+        DELETE /team/member/{id}           -> handle_deactivate_member
     """
     method = event.get("requestContext", {}).get("http", {}).get("method", "")
     path   = event.get("rawPath", "")
@@ -288,6 +363,12 @@ def lambda_handler(event, context):
             return handle_list_team(event, db)
         if method == "GET" and path.rstrip("/") == "/team/audit-log":
             return handle_view_audit_log(event, db)
+        if method == "GET" and path.rstrip("/") == "/team/shared-resources":
+            return handle_list_shared_resources(event, db)
+        if method == "POST" and path.rstrip("/") == "/team/shared-resources":
+            return handle_share_resource(event, db)
+        if method == "DELETE" and path.startswith("/team/shared-resources/"):
+            return handle_unshare_resource(event, db, params.get("id", ""))
         if method == "POST" and path.rstrip("/") == "/team/invite":
             return handle_invite_member(event, db)
         if method == "POST" and path.rstrip("/") == "/team/accept-invite":
