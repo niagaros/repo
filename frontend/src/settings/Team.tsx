@@ -36,6 +36,17 @@ interface Invite {
   created_at: string;
 }
 
+interface AuditEntry {
+  action: string;
+  details: Record<string, unknown>;
+  created_at: string;
+  actor_email: string | null;
+  target_email: string | null;
+}
+
+// Turns e.g. "role_changed" into "role changed" for display.
+const describeAction = (action: string) => action.replace(/_/g, " ");
+
 type LoadState = "loading" | "loaded" | "error";
 
 export default function Team() {
@@ -49,6 +60,7 @@ export default function Team() {
   const [formError, setFormError]     = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaSaving, setMfaSaving]     = useState(false);
+  const [auditLog, setAuditLog]       = useState<AuditEntry[] | null>(null);
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
@@ -86,6 +98,24 @@ export default function Team() {
     if (authLoading || !email) return;
     load();
   }, [authLoading, email]);
+
+  // Issue #265, acceptance criterion #6. Admin-only, same as the backend
+  // enforces — loaded once we know the caller is an admin, not on every
+  // page visit for everyone (least-privilege: no point fetching data a
+  // non-admin can't see anyway).
+  useEffect(() => {
+    if (myRole !== "admin" || auditLog !== null) return;
+    (async () => {
+      try {
+        const resp = await fetch(`${getApiBase()}/team/audit-log`, { headers: authHeader(), cache: "no-store" });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        setAuditLog(data.entries || []);
+      } catch {
+        // Silently leave auditLog null — the section just won't render.
+      }
+    })();
+  }, [myRole, auditLog]);
 
   const submitInvite = async () => {
     setFormError("");
@@ -280,6 +310,24 @@ export default function Team() {
           </div>
         ))}
       </div>
+
+      {/* Audit log — issue #265 acceptance criterion #6 */}
+      {myRole === "admin" && auditLog && auditLog.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Audit log</div>
+          <div style={{ color: "#4e627a", fontSize: 12, marginBottom: 14 }}>
+            Every role, permission and membership change in this organization.
+          </div>
+          {auditLog.map((entry, i) => (
+            <div key={i} style={{ padding: "8px 0", borderTop: "1px solid #1a2030", fontSize: 12.5 }}>
+              <span style={{ color: "#e2e8f0" }}>{entry.actor_email || "system"}</span>
+              <span style={{ color: "#4e627a" }}> {describeAction(entry.action)}</span>
+              {entry.target_email && <span style={{ color: "#e2e8f0" }}> → {entry.target_email}</span>}
+              <span style={{ color: "#374151" }}> · {entry.created_at}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </SettingsLayout>
   );
 }

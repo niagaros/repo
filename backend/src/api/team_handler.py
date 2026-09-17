@@ -120,6 +120,10 @@ def handle_invite_member(event: dict, db: Database) -> dict:
             return _response(409, {"error": f"{email} is already invited or a member"})
         raise
 
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="invite_created", details={"email": email, "role": role},
+    )
     logger.info(f"Team invite created: {invite_id} for {email} by {caller['email']}")
     return _response(201, {"invite_id": invite_id, "email": email, "role": role})
 
@@ -142,6 +146,14 @@ def handle_accept_invite(event: dict, db: Database) -> dict:
     result = db.accept_pending_invite(caller["id"], email)
     if result is None:
         return _response(200, {"accepted": False})
+
+    # Self-service action — actor and target are the same person, there's
+    # no admin "doing" this to log as a separate actor.
+    db.log_audit_event(
+        organization_id=result["organization_id"], actor_user_id=caller["id"],
+        action="invite_accepted", target_user_id=caller["id"],
+        details={"role": result["role"]},
+    )
     return _response(200, {"accepted": True, **result})
 
 
@@ -152,9 +164,14 @@ def handle_revoke_invite(event: dict, db: Database, invite_id: str) -> dict:
     if caller["role"] != "admin":
         return _response(403, {"error": "only admins can revoke invites"})
 
-    revoked = db.revoke_team_invite(invite_id, caller["organization_id"])
-    if not revoked:
+    revoked_email = db.revoke_team_invite(invite_id, caller["organization_id"])
+    if not revoked_email:
         return _response(404, {"error": "invite not found or already resolved"})
+
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="invite_revoked", details={"email": revoked_email},
+    )
     return _response(200, {"revoked": invite_id})
 
 
@@ -225,6 +242,25 @@ def handle_deactivate_member(event: dict, db: Database, user_id: str) -> dict:
     })
 
 
+def handle_view_audit_log(event: dict, db: Database) -> dict:
+    """
+    Issue #265, acceptance criterion #6: "Given an auditor reviews
+    administrative activity, when viewing audit logs, then all user,
+    role, and permission changes are available with timestamps and actor
+    information." Admin-only — this is the same data an auditor would be
+    shown, but issue #266 (Invite Auditors) is what will actually grant
+    auditors their own restricted access; that role doesn't exist yet.
+    """
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can view the audit log"})
+
+    entries = db.get_audit_log(caller["organization_id"])
+    return _response(200, {"entries": entries})
+
+
 def lambda_handler(event, context):
     """
     Proposed routes (payload format v2.0, matching the other Lambdas behind
@@ -232,6 +268,7 @@ def lambda_handler(event, context):
     that's a manual deploy step, same as everything else in this repo.
 
         GET    /team                 -> handle_list_team (includes mfa_required)
+        GET    /team/audit-log       -> handle_view_audit_log
         POST   /team/invite          -> handle_invite_member
         POST   /team/accept-invite   -> handle_accept_invite
         PATCH  /team/member/{id}     -> handle_update_role
@@ -249,6 +286,8 @@ def lambda_handler(event, context):
 
         if method == "GET" and path.rstrip("/") == "/team":
             return handle_list_team(event, db)
+        if method == "GET" and path.rstrip("/") == "/team/audit-log":
+            return handle_view_audit_log(event, db)
         if method == "POST" and path.rstrip("/") == "/team/invite":
             return handle_invite_member(event, db)
         if method == "POST" and path.rstrip("/") == "/team/accept-invite":

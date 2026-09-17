@@ -308,20 +308,25 @@ class Database:
             for r in rows
         ]
 
-    def revoke_team_invite(self, invite_id: str, organization_id: str) -> bool:
+    def revoke_team_invite(self, invite_id: str, organization_id: str) -> str | None:
         """
         Scoped to organization_id so one org can't revoke another org's
         invite by guessing/enumerating an invite id.
+
+        Returns the invited email on success (needed by the caller to log
+        an invite_revoked audit event — issue #265 AC6) or None if there
+        was no matching pending invite.
         """
         with self.conn.cursor() as cur:
             cur.execute("""
                 UPDATE team_invites
                 SET status = 'revoked'
                 WHERE id = %s AND organization_id = %s AND status = 'pending'
+                RETURNING email
             """, (invite_id, organization_id))
-            updated = cur.rowcount
+            row = cur.fetchone()
         self.conn.commit()
-        return updated > 0
+        return row[0] if row else None
 
     def accept_pending_invite(self, user_id: str, email: str) -> dict | None:
         """
@@ -443,6 +448,38 @@ class Database:
         self.conn.commit()
         logger.warning(f"Database: deactivated user {user_id} in organization {organization_id}")
         return updated > 0
+
+    def get_audit_log(self, organization_id: str, limit: int = 100) -> list:
+        """
+        Issue #265, acceptance criterion #6: "all user, role, and
+        permission changes are available with timestamps and actor
+        information." Resolves actor_user_id/target_user_id to email
+        addresses via a LEFT JOIN (not an inner join — an actor who has
+        since been deactivated, or a target who was never a real user
+        yet, like an invite_created event, must not make the whole row
+        disappear).
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    al.action, al.details, al.created_at,
+                    actor.email  AS actor_email,
+                    target.email AS target_email
+                FROM team_audit_log al
+                LEFT JOIN users actor  ON actor.id  = al.actor_user_id
+                LEFT JOIN users target ON target.id = al.target_user_id
+                WHERE al.organization_id = %s
+                ORDER BY al.created_at DESC
+                LIMIT %s
+            """, (organization_id, limit))
+            rows = cur.fetchall()
+        return [
+            {
+                "action": r[0], "details": r[1], "created_at": str(r[2]),
+                "actor_email": r[3], "target_email": r[4],
+            }
+            for r in rows
+        ]
 
     # ── utils ──────────────────────────────────────────────────────
 

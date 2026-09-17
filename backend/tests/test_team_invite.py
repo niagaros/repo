@@ -75,19 +75,34 @@ class TestDatabaseTeamMethods:
         assert invite_id == "invite-1"
         mock_conn.commit.assert_called_once()
 
-    def test_revoke_team_invite_true_when_row_affected(self):
+    def test_revoke_team_invite_returns_email_when_row_affected(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
-        cur.rowcount = 1
+        cur.fetchone.return_value = ("revoked@x.com",)
 
-        assert db.revoke_team_invite("invite-1", "org1") is True
+        assert db.revoke_team_invite("invite-1", "org1") == "revoked@x.com"
 
-    def test_revoke_team_invite_false_when_no_row_affected(self):
+    def test_revoke_team_invite_none_when_no_row_affected(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
-        cur.rowcount = 0
+        cur.fetchone.return_value = None
 
-        assert db.revoke_team_invite("does-not-exist", "org1") is False
+        assert db.revoke_team_invite("does-not-exist", "org1") is None
+
+    def test_get_audit_log_maps_rows_with_resolved_emails(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchall.return_value = [
+            ("role_changed", {"new_role": "security"}, "2026-01-01T00:00:00", "admin@x.com", "viewer@x.com"),
+        ]
+
+        entries = db.get_audit_log("org1")
+
+        assert entries == [{
+            "action": "role_changed", "details": {"new_role": "security"},
+            "created_at": "2026-01-01T00:00:00",
+            "actor_email": "admin@x.com", "target_email": "viewer@x.com",
+        }]
 
     def test_accept_pending_invite_moves_user_and_marks_accepted(self):
         db, mock_conn = self._make_db()
@@ -301,6 +316,43 @@ class TestHandleInviteMember:
         db.create_team_invite.assert_called_once_with(
             organization_id="org1", email="new@x.com", role="viewer", invited_by="u1",
         )
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org1", actor_user_id="u1",
+            action="invite_created", details={"email": "new@x.com", "role": "viewer"},
+        )
+
+
+class TestHandleRevokeInvite:
+    def test_only_admin_can_revoke(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_revoke_invite({}, db, "invite-1")
+        assert resp["statusCode"] == 403
+
+    def test_not_found_returns_404_and_does_not_log(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.revoke_team_invite.return_value = None
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_revoke_invite({}, db, "invite-1")
+        assert resp["statusCode"] == 404
+        db.log_audit_event.assert_not_called()
+
+    def test_successful_revoke_logs_the_invited_email(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.revoke_team_invite.return_value = "revoked@x.com"
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_revoke_invite({}, db, "invite-1")
+        assert resp["statusCode"] == 200
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org1", actor_user_id="u1",
+            action="invite_revoked", details={"email": "revoked@x.com"},
+        )
 
 
 class TestHandleAcceptInvite:
@@ -331,6 +383,43 @@ class TestHandleAcceptInvite:
         body = json.loads(resp["body"])
         assert body == {"accepted": True, "organization_id": "org-new", "role": "security"}
         db.accept_pending_invite.assert_called_once_with(VIEWER["id"], VIEWER["email"])
+        db.log_audit_event.assert_called_once_with(
+            organization_id="org-new", actor_user_id=VIEWER["id"],
+            action="invite_accepted", target_user_id=VIEWER["id"], details={"role": "security"},
+        )
+
+    def test_noop_does_not_log(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        db.accept_pending_invite.return_value = None
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            th.handle_accept_invite({}, db)
+        db.log_audit_event.assert_not_called()
+
+
+class TestHandleViewAuditLog:
+    def test_only_admin_can_view(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = th.handle_view_audit_log({}, db)
+        assert resp["statusCode"] == 403
+
+    def test_admin_gets_the_orgs_entries(self):
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_audit_log.return_value = [
+            {"action": "role_changed", "actor_email": "admin@x.com", "target_email": "viewer@x.com",
+             "details": {"new_role": "security"}, "created_at": "2026-01-01T00:00:00"},
+        ]
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.handle_view_audit_log({}, db)
+        assert resp["statusCode"] == 200
+        assert len(json.loads(resp["body"])["entries"]) == 1
+        db.get_audit_log.assert_called_once_with("org1")
 
 
 class TestHandleUpdateRole:
@@ -533,4 +622,16 @@ class TestLambdaHandlerRouting:
         with patch.object(th, "Database") as MockDatabase:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = th.lambda_handler(self._event("GET", "/team"), None)
+        assert resp["statusCode"] == 501
+
+    def test_audit_log_route_dispatches_correctly(self):
+        """Not a 404 confirms it hit handle_view_audit_log, not the
+        catch-all — the 501 comes from the same unimplemented auth check
+        as every other route, not from a routing mistake."""
+        import importlib
+        import api.team_handler as th
+        importlib.reload(th)
+        with patch.object(th, "Database") as MockDatabase:
+            MockDatabase.return_value.get_user_by_email.return_value = ADMIN
+            resp = th.lambda_handler(self._event("GET", "/team/audit-log"), None)
         assert resp["statusCode"] == 501
