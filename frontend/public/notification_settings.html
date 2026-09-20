@@ -39,6 +39,16 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .card-note{font-size:11.5px;color:#9ca3af;margin-bottom:16px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block;margin-top:12px}
+.f-row{display:flex;align-items:center;justify-content:space-between}
+.f-row .f-lbl{margin-bottom:5px}
+.btn-test{background:#f9fafb;color:#374151;border:1px solid #e5e7eb;padding:2px 10px;border-radius:6px;font-size:10.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-test:hover{background:#f0f0f0}
+.btn-test:disabled{opacity:.5;cursor:default}
+.f-result{font-size:11px;margin-top:4px;min-height:14px}
+.f-result.ok{color:#16a34a}
+.f-result.fail{color:#dc2626}
+.f-hint{font-size:10.5px;color:#9ca3af;margin-top:4px}
+.f-error{font-size:11px;color:#dc2626;margin-top:4px;min-height:14px}
 .f-in{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:'Inter',sans-serif}
 .btn-primary{background:#1d4ed8;color:#fff;border:none;padding:9px 16px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:16px}
 .btn-primary:hover{filter:brightness(.92)}
@@ -102,27 +112,46 @@ td.domain{font-weight:600;text-transform:capitalize}
 
       <div class="card">
         <div class="card-title">Delivery Channels</div>
-        <div class="card-note">Leave a field empty to skip that channel. Mandatory/critical events always go out regardless of the toggles below.</div>
+        <div class="card-note">Leave a field empty to skip that channel. Mandatory/critical events always go out regardless of the toggles below. Use "Test" to confirm a channel actually works before relying on it.</div>
         <div class="grid2">
           <div>
-            <label class="f-lbl">Email address</label>
+            <div class="f-row"><label class="f-lbl">Email address</label><button class="btn-test" onclick="testChannel('email','ch-email')">Test</button></div>
             <input class="f-in" id="ch-email" placeholder="alerts@yourcompany.com">
-            <label class="f-lbl">SMS number (E.164, e.g. +31612345678)</label>
+            <div class="f-error" id="err-email"></div>
+            <div class="f-result" id="res-email"></div>
+
+            <div class="f-row"><label class="f-lbl">SMS number (E.164, e.g. +31612345678)</label><button class="btn-test" onclick="testChannel('sms','ch-sms')">Test</button></div>
             <input class="f-in" id="ch-sms" placeholder="+31612345678">
+            <div class="f-error" id="err-sms"></div>
+            <div class="f-result" id="res-sms"></div>
+            <div class="f-hint">⚠ While AWS SNS is in sandbox mode, SMS only reaches numbers explicitly verified in AWS — use "Test" to check this specific number.</div>
+
             <label class="f-lbl">Escalation email (for unacknowledged critical alerts)</label>
             <input class="f-in" id="ch-esc-email" placeholder="oncall@yourcompany.com">
+            <div class="f-error" id="err-esc-email"></div>
             <label class="f-lbl">Escalate after (minutes)</label>
             <input class="f-in" id="ch-esc-minutes" type="number" min="1" value="15">
           </div>
           <div>
-            <label class="f-lbl">Slack incoming webhook URL</label>
+            <div class="f-row"><label class="f-lbl">Slack incoming webhook URL</label><button class="btn-test" onclick="testChannel('slack','ch-slack')">Test</button></div>
             <input class="f-in" id="ch-slack" placeholder="https://hooks.slack.com/services/...">
-            <label class="f-lbl">Microsoft Teams incoming webhook URL</label>
+            <div class="f-error" id="err-slack"></div>
+            <div class="f-result" id="res-slack"></div>
+
+            <div class="f-row"><label class="f-lbl">Microsoft Teams incoming webhook URL</label><button class="btn-test" onclick="testChannel('teams','ch-teams')">Test</button></div>
             <input class="f-in" id="ch-teams" placeholder="https://outlook.office.com/webhook/...">
-            <label class="f-lbl">Discord incoming webhook URL</label>
+            <div class="f-error" id="err-teams"></div>
+            <div class="f-result" id="res-teams"></div>
+
+            <div class="f-row"><label class="f-lbl">Discord incoming webhook URL</label><button class="btn-test" onclick="testChannel('discord','ch-discord')">Test</button></div>
             <input class="f-in" id="ch-discord" placeholder="https://discord.com/api/webhooks/...">
-            <label class="f-lbl">Generic webhook URL (raw JSON payload)</label>
+            <div class="f-error" id="err-discord"></div>
+            <div class="f-result" id="res-discord"></div>
+
+            <div class="f-row"><label class="f-lbl">Generic webhook URL (raw JSON payload)</label><button class="btn-test" onclick="testChannel('webhook','ch-webhook')">Test</button></div>
             <input class="f-in" id="ch-webhook" placeholder="https://your-system.example.com/hook">
+            <div class="f-error" id="err-webhook"></div>
+            <div class="f-result" id="res-webhook"></div>
           </div>
         </div>
         <button class="btn-primary" onclick="saveChannels()">Save Channels</button>
@@ -244,13 +273,17 @@ function renderRecipients(recipients){
       <td style="text-transform:capitalize">${esc(r.channel)}</td>
       <td style="font-size:11.5px;color:#6b7280">${esc(r.target)}</td>
       <td>${r.domain ? esc(r.domain) : 'All categories'}</td>
-      <td><button class="btn-ghost" onclick="removeRecipient('${r.id}')">Remove</button></td>
+      <td><button class="btn-ghost" onclick="removeRecipient('${r.id}', '${esc(r.label || r.target)}')">Remove</button></td>
     </tr>`).join('');
 }
 
 async function addRecipient(){
   const target = document.getElementById('rc-target').value.trim();
+  const channel = document.getElementById('rc-channel').value;
   if(!target){ showToast('Target is required'); return; }
+  if(channel === 'email' && !EMAIL_RE.test(target)){ showToast('Not a valid email address'); return; }
+  if(channel === 'sms' && !PHONE_RE.test(target)){ showToast('Use E.164 format, e.g. +31612345678'); return; }
+  if(['slack','teams','discord','webhook'].includes(channel) && !URL_RE.test(target)){ showToast('Must start with http(s)://'); return; }
   const body = {
     action: 'add_recipient', cloud_account_id: currentAccountId,
     label: document.getElementById('rc-label').value.trim() || null,
@@ -264,7 +297,8 @@ async function addRecipient(){
   loadAll();
 }
 
-async function removeRecipient(id){
+async function removeRecipient(id, label){
+  if(!confirm(`Remove ${label || 'this recipient'}? They will stop receiving alerts immediately.`)) return;
   await fetch(NOTIF_API, {method:'POST', body: JSON.stringify({action:'remove_recipient', cloud_account_id: currentAccountId, id})});
   showToast('Recipient removed');
   loadAll();
@@ -281,20 +315,59 @@ function fillChannels(ch){
   document.getElementById('ch-esc-minutes').value = ch.escalation_minutes || 15;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+[1-9]\d{6,14}$/;
+const URL_RE = /^https?:\/\/.+/i;
+
+function validateField(id, value, re, msg){
+  const err = document.getElementById(id);
+  if(value && !re.test(value)){ if(err) err.textContent = msg; return false; }
+  if(err) err.textContent = '';
+  return true;
+}
+
 async function saveChannels(){
+  const email = document.getElementById('ch-email').value.trim();
+  const sms = document.getElementById('ch-sms').value.trim();
+  const escEmail = document.getElementById('ch-esc-email').value.trim();
+  const slack = document.getElementById('ch-slack').value.trim();
+  const teams = document.getElementById('ch-teams').value.trim();
+  const discord = document.getElementById('ch-discord').value.trim();
+  const webhook = document.getElementById('ch-webhook').value.trim();
+
+  let ok = true;
+  ok = validateField('err-email', email, EMAIL_RE, 'Not a valid email address') && ok;
+  ok = validateField('err-sms', sms, PHONE_RE, 'Use E.164 format, e.g. +31612345678') && ok;
+  ok = validateField('err-esc-email', escEmail, EMAIL_RE, 'Not a valid email address') && ok;
+  ok = validateField('err-slack', slack, URL_RE, 'Must start with http(s)://') && ok;
+  ok = validateField('err-teams', teams, URL_RE, 'Must start with http(s)://') && ok;
+  ok = validateField('err-discord', discord, URL_RE, 'Must start with http(s)://') && ok;
+  ok = validateField('err-webhook', webhook, URL_RE, 'Must start with http(s)://') && ok;
+  if(!ok){ showToast('Fix the highlighted fields first'); return; }
+
   const body = {
     action: 'update_channels', cloud_account_id: currentAccountId,
-    notify_email: document.getElementById('ch-email').value.trim(),
-    sms_number: document.getElementById('ch-sms').value.trim(),
-    slack_webhook_url: document.getElementById('ch-slack').value.trim(),
-    teams_webhook_url: document.getElementById('ch-teams').value.trim(),
-    discord_webhook_url: document.getElementById('ch-discord').value.trim(),
-    webhook_url: document.getElementById('ch-webhook').value.trim(),
-    escalation_email: document.getElementById('ch-esc-email').value.trim(),
+    notify_email: email, sms_number: sms, slack_webhook_url: slack, teams_webhook_url: teams,
+    discord_webhook_url: discord, webhook_url: webhook, escalation_email: escEmail,
     escalation_minutes: document.getElementById('ch-esc-minutes').value || 15,
   };
   await fetch(NOTIF_API, {method:'POST', body: JSON.stringify(body)});
   showToast('Channels saved');
+}
+
+async function testChannel(channel, inputId){
+  const target = document.getElementById(inputId).value.trim();
+  const resultEl = document.getElementById('res-' + channel);
+  if(!target){ resultEl.textContent = 'Enter a value first'; resultEl.className = 'f-result fail'; return; }
+  resultEl.textContent = 'Sending…'; resultEl.className = 'f-result';
+  try{
+    const r = await fetch(NOTIF_API, {method:'POST', body: JSON.stringify({action:'test_channel', cloud_account_id: currentAccountId, channel, target})});
+    const d = await r.json();
+    if(d.sent){ resultEl.textContent = '✓ Test sent — check the channel'; resultEl.className = 'f-result ok'; }
+    else { resultEl.textContent = '✗ ' + (d.reason || 'Failed'); resultEl.className = 'f-result fail'; }
+  }catch(e){
+    resultEl.textContent = '✗ Could not reach the test service'; resultEl.className = 'f-result fail';
+  }
 }
 
 function renderPrefsTable(prefs){

@@ -232,7 +232,7 @@ def deliver_now(conn, notification_id, cloud_account_id, domain, event_type, sev
         extra_recipients = cur.fetchall()
     additional = []
     for recipient_id, label, channel, target in extra_recipients:
-        result = _dispatch_to_channel(channel, target, title, description, severity, domain,
+        result = dispatch_to_channel(channel, target, title, description, severity, domain,
                                        notification_id, event_type, resource_link)
         additional.append({"recipient_id": str(recipient_id), "label": label, "channel": channel, **result})
     if additional:
@@ -268,7 +268,7 @@ def deliver_queued_notification(conn, notification_id):
                         description, resource_link, mandatory)
 
 
-def _dispatch_to_channel(channel, target, title, description, severity, domain, notification_id, event_type, resource_link):
+def dispatch_to_channel(channel, target, title, description, severity, domain, notification_id, event_type, resource_link):
     """Send one notification to one arbitrary (channel, target) pair —
     used for additional named recipients, where the channel type isn't
     known ahead of time the way it is for the account's own fixed

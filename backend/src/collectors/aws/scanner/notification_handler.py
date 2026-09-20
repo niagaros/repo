@@ -21,7 +21,7 @@ import psycopg2
 
 from collectors.aws.scanner.notification_lib import (
     run_escalation_check, run_retry_check, is_admin_caller, RESTRICTED_DOMAINS_FOR_NON_ADMIN,
-    deliver_queued_notification,
+    deliver_queued_notification, dispatch_to_channel,
 )
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -468,6 +468,26 @@ def handler(event, context):
                         cur.execute("DELETE FROM notification_recipients WHERE id = %s AND cloud_account_id = %s",
                                     (body["id"], account_id))
                 return _resp(200, {"ok": True})
+
+            if action == "test_channel":
+                # A real, synchronous connectivity check — not a real event,
+                # so it deliberately does NOT touch the notifications table
+                # (no fake row polluting the real history/analytics). Lets
+                # someone confirm a channel actually works the moment they
+                # configure it, instead of waiting for a real alert to
+                # silently fail.
+                channel = body.get("channel")
+                target = (body.get("target") or "").strip()
+                if channel not in ("email", "sms", "webhook", "slack", "teams", "discord"):
+                    return _resp(400, {"error": "channel must be one of email, sms, webhook, slack, teams, discord"})
+                if not target:
+                    return _resp(400, {"error": "target is required"})
+                result = dispatch_to_channel(
+                    channel, target, "Niagaros test notification",
+                    "This confirms the channel is configured correctly.", "P3", "platform",
+                    "test", "channel_test", None,
+                )
+                return _resp(200, result)
 
             return _resp(400, {"error": f"unknown action: {action}"})
 
