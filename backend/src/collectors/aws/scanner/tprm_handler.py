@@ -1119,6 +1119,31 @@ def _check_and_notify(conn, cloud_account_id):
     if not expiring and not critical and not contracts_ending and not overdue_tasks:
         return {"expiring_count": 0, "critical_count": 0, "email": {"sent": False, "reason": "nothing_to_report"}}
 
+    # Acceptance criterion (issue #274 AC9): "related events are grouped
+    # into a single notification through correlation." Real, rule-based
+    # correlation — not a fabricated "AI correlation engine" — grouping
+    # everything this SAME monitoring run found for this account into one
+    # digest notification, in addition to (not instead of) the individual
+    # per-vendor ones, which stay for their deep links. Only worth a
+    # digest when there's actually more than one real thing to group.
+    total_findings = len(expiring) + len(critical) + len(contracts_ending) + len(overdue_tasks)
+    if total_findings > 1:
+        parts = []
+        if critical:
+            parts.append(f"{len(critical)} vendor(s) now critical risk")
+        if expiring:
+            parts.append(f"{len(expiring)} certification(s) expiring/expired")
+        if contracts_ending:
+            parts.append(f"{len(contracts_ending)} contract(s) ending soon")
+        if overdue_tasks:
+            parts.append(f"{len(overdue_tasks)} overdue remediation task(s)")
+        create_notification(
+            conn, cloud_account_id, domain="tprm", event_type="tprm_correlated_digest",
+            severity="P1" if critical else "P2",
+            title=f"TPRM monitoring: {total_findings} related findings from today's run",
+            description="; ".join(parts) + ".", resource_link="tprm.html",
+        )
+
     if not TPRM_SENDER_EMAIL or not TPRM_RECIPIENT_EMAILS:
         return {"expiring_count": len(expiring), "critical_count": len(critical),
                 "email": {"sent": False, "reason": "not_configured"}}
