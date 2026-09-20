@@ -234,10 +234,49 @@ def handler(event, context):
                                 "JOIN notifications n ON n.id = e.notification_id WHERE n.cloud_account_id = %s",
                                 (account_id,))
                     escalated_count = cur.fetchone()[0]
+                    # Acceptance criterion (issue #274 AC18): "integration
+                    # failure visibility to administrators." The delivery
+                    # rate above is a single blended number — it can't tell
+                    # an admin WHICH channel is actually broken. Per-channel
+                    # health, from the same real delivery data already
+                    # recorded, over the last 7 days.
+                    integration_health = {}
+                    # jsonb_typeof(...) = 'object' (not `IS NOT NULL`) is
+                    # required here: a JSON null stored for an unconfigured
+                    # channel is a real jsonb VALUE in Postgres, not SQL
+                    # NULL, so `delivery->'webhook' IS NOT NULL` is true
+                    # even when webhook was never attempted at all — the
+                    # same "present but null" trap as the earlier
+                    # `.get(key, {})` bug in run_retry_check, one layer down
+                    # at the SQL level this time.
+                    for channel in ("email", "webhook", "slack", "sms", "teams", "discord"):
+                        cur.execute(f"""
+                            SELECT
+                                COUNT(*) FILTER (WHERE jsonb_typeof(delivery->'{channel}') = 'object') AS attempts,
+                                COUNT(*) FILTER (WHERE (delivery->'{channel}'->>'sent')::boolean = FALSE) AS failures,
+                                (SELECT delivery->'{channel}'->>'reason' FROM notifications
+                                 WHERE cloud_account_id = %s AND (delivery->'{channel}'->>'sent')::boolean = FALSE
+                                 ORDER BY created_at DESC LIMIT 1) AS last_failure_reason,
+                                (SELECT created_at FROM notifications
+                                 WHERE cloud_account_id = %s AND (delivery->'{channel}'->>'sent')::boolean = FALSE
+                                 ORDER BY created_at DESC LIMIT 1) AS last_failure_at
+                            FROM notifications
+                            WHERE cloud_account_id = %s AND created_at > NOW() - INTERVAL '7 days'
+                        """, (account_id, account_id, account_id))
+                        c_attempts, c_failures, c_reason, c_at = cur.fetchone()
+                        if c_attempts:
+                            integration_health[channel] = {
+                                "attempts": c_attempts, "failures": c_failures,
+                                "failure_rate_pct": round(c_failures * 100.0 / c_attempts, 1),
+                                "last_failure_reason": c_reason,
+                                "last_failure_at": c_at.isoformat() if c_at else None,
+                            }
+
                 return _resp(200, {
                     "total_notifications": total,
                     "acknowledged": acknowledged,
                     "acknowledgement_rate_pct": round(acknowledged * 100.0 / total, 1) if total else None,
+                    "integration_health": integration_health,
                     "mandatory_count": mandatory_count,
                     "avg_time_to_acknowledge_minutes": round(avg_ack_minutes, 1) if avg_ack_minutes else None,
                     "delivery_rate_pct": round(delivered * 100.0 / attempted, 1) if attempted else None,
