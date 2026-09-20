@@ -21,6 +21,7 @@ import psycopg2
 
 from collectors.aws.scanner.notification_lib import (
     run_escalation_check, run_retry_check, is_admin_caller, RESTRICTED_DOMAINS_FOR_NON_ADMIN,
+    deliver_queued_notification,
 )
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -157,6 +158,21 @@ def _list_notifications(cur, account_id, domain_filter, severity_filter, unread_
 
 
 def handler(event, context):
+    # Invoked by the real SQS queue (issue #274 AC20: asynchronous
+    # high-volume processing) — one message per real notification that
+    # create_notification() enqueued instead of delivering inline. This
+    # runs in its own Lambda invocation, so a burst of notifications never
+    # blocks whatever user-facing request created them.
+    if event and event.get("Records"):
+        conn = _get_connection()
+        try:
+            for record in event["Records"]:
+                body = json.loads(record["body"])
+                deliver_queued_notification(conn, body["notification_id"])
+            return {"statusCode": 200}
+        finally:
+            conn.close()
+
     # Invoked directly by an EventBridge Schedule (not through API Gateway,
     # so no httpMethod key) — real escalation check, see 021_notifications.sql.
     if event and event.get("run_escalations"):

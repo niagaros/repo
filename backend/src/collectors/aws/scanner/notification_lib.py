@@ -98,6 +98,26 @@ def _get_connection_for_lib(conn):
     return conn
 
 
+NOTIFICATION_QUEUE_URL = os.environ.get("NOTIFICATION_QUEUE_URL")
+
+
+def _enqueue_delivery(notification_id):
+    """Acceptance criterion (issue #274 AC20): 'asynchronous high-volume
+    processing without blocking core workflows.' Real bug this fixes: a
+    user clicking 'create remediation task' waited on up to 5 sequential
+    external HTTP calls (email, webhook, Slack, Teams, Discord — each with
+    its own timeout) inside that same API request, before ever getting a
+    response. Delivery is now handed off to a real SQS queue and a
+    separate Lambda invocation (notification-handler's own SQS trigger,
+    see deliver_queued_notification) performs it — the caller's request
+    returns as soon as the in-app row exists."""
+    if not NOTIFICATION_QUEUE_URL:
+        return False
+    sqs = boto3.client("sqs", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+    sqs.send_message(QueueUrl=NOTIFICATION_QUEUE_URL, MessageBody=json.dumps({"notification_id": notification_id}))
+    return True
+
+
 def create_notification(conn, cloud_account_id, domain, event_type, severity, title,
                          description=None, resource_link=None, actor=None):
     if domain not in DOMAINS:
@@ -128,6 +148,24 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
                   resource_link, actor, mandatory))
             notification_id = str(cur.fetchone()[0])
 
+    # The in-app row exists — hand delivery off to the queue and return
+    # immediately instead of blocking this request on external HTTP calls.
+    if _enqueue_delivery(notification_id):
+        return {"id": notification_id, "deduplicated": False, "mandatory": mandatory, "delivery": "queued"}
+
+    # No queue configured (e.g. local/manual invocation without the env
+    # var) — fall back to the original synchronous delivery so nothing
+    # silently stops working.
+    return deliver_now(conn, notification_id, cloud_account_id, domain, event_type, severity, title,
+                        description, resource_link, mandatory)
+
+
+def deliver_now(conn, notification_id, cloud_account_id, domain, event_type, severity, title,
+                 description, resource_link, mandatory):
+    """The real delivery step, run either synchronously (fallback) or from
+    the SQS consumer (deliver_queued_notification) — same logic either way."""
+    with conn:
+        with conn.cursor() as cur:
             cur.execute("""
                 SELECT email_enabled, webhook_enabled, slack_enabled, sms_enabled, teams_enabled, discord_enabled
                 FROM notification_preferences WHERE cloud_account_id = %s AND domain = %s
@@ -188,6 +226,25 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
                         (json.dumps(delivery, default=str), notification_id))
 
     return {"id": notification_id, "deduplicated": False, "mandatory": mandatory, "delivery": delivery}
+
+
+def deliver_queued_notification(conn, notification_id):
+    """Called from notification-handler's SQS trigger (one real
+    notification per queue message). Looks up the row this Lambda
+    invocation didn't itself create, then runs the same real delivery
+    logic as the synchronous fallback."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT cloud_account_id, domain, event_type, severity, title, description,
+                   resource_link, mandatory
+            FROM notifications WHERE id = %s
+        """, (notification_id,))
+        row = cur.fetchone()
+    if not row:
+        return {"error": "notification not found", "id": notification_id}
+    cloud_account_id, domain, event_type, severity, title, description, resource_link, mandatory = row
+    return deliver_now(conn, notification_id, str(cloud_account_id), domain, event_type, severity, title,
+                        description, resource_link, mandatory)
 
 
 def _send_email(to_email, title, description, severity):
