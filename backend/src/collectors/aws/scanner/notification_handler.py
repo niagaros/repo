@@ -106,10 +106,31 @@ CREATE TABLE IF NOT EXISTS notification_escalations (
     escalated_to      VARCHAR(255)
 );
 
+-- Real gap this closes: notification_channels above has exactly one slot
+-- per channel per account (one email, one phone number, one Slack
+-- webhook) — but the issue's own epic explicitly calls for "audience
+-- targeting": different employees care about different categories (a
+-- finance person for billing, a security engineer for security P0s).
+-- This table is ADDITIVE, not a replacement — every notification still
+-- goes to the account's primary channels as before, and ALSO goes to any
+-- matching rows here. domain = NULL means "every category", otherwise
+-- it's scoped to exactly one.
+CREATE TABLE IF NOT EXISTS notification_recipients (
+    id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    cloud_account_id  UUID         NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    label             VARCHAR(120),
+    channel           VARCHAR(20)  NOT NULL,
+    target            VARCHAR(500) NOT NULL,
+    domain            VARCHAR(30),
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS notification_recipients_account_idx ON notification_recipients(cloud_account_id);
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON notifications TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_preferences TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_channels TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_escalations TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON notification_recipients TO cspm_lambda;
 """
 
 
@@ -226,7 +247,16 @@ def handler(event, context):
                             "escalation_minutes": ch[5] if ch else 15,
                             "teams_webhook_url": ch[6] if ch else None,
                             "discord_webhook_url": ch[7] if ch else None}
-                return _resp(200, {"preferences": preferences, "channels": channels})
+
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT id, label, channel, target, domain, created_at
+                        FROM notification_recipients WHERE cloud_account_id = %s ORDER BY created_at
+                    """, (account_id,))
+                    recipients = [{"id": str(r[0]), "label": r[1], "channel": r[2], "target": r[3],
+                                    "domain": r[4], "created_at": r[5].isoformat()} for r in cur.fetchall()]
+
+                return _resp(200, {"preferences": preferences, "channels": channels, "recipients": recipients})
 
             if qs.get("analytics"):
                 with conn.cursor() as cur:
@@ -409,6 +439,34 @@ def handler(event, context):
                                 UPDATE notification_channels SET {set_clauses}, updated_at = NOW()
                                 WHERE cloud_account_id = %s
                             """, list(provided.values()) + [account_id])
+                return _resp(200, {"ok": True})
+
+            if action == "add_recipient":
+                channel = body.get("channel")
+                target = (body.get("target") or "").strip()
+                domain = body.get("domain") or None
+                if channel not in ("email", "sms", "webhook", "slack", "teams", "discord"):
+                    return _resp(400, {"error": "channel must be one of email, sms, webhook, slack, teams, discord"})
+                if not target:
+                    return _resp(400, {"error": "target is required"})
+                if domain is not None and domain not in DOMAINS:
+                    return _resp(400, {"error": f"domain must be one of {DOMAINS} or omitted for all"})
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO notification_recipients (cloud_account_id, label, channel, target, domain)
+                            VALUES (%s, %s, %s, %s, %s) RETURNING id
+                        """, (account_id, body.get("label"), channel, target, domain))
+                        recipient_id = str(cur.fetchone()[0])
+                return _resp(200, {"id": recipient_id})
+
+            if action == "remove_recipient":
+                if not _is_uuid(body.get("id")):
+                    return _resp(400, {"error": "id is required"})
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM notification_recipients WHERE id = %s AND cloud_account_id = %s",
+                                    (body["id"], account_id))
                 return _resp(200, {"ok": True})
 
             return _resp(400, {"error": f"unknown action: {action}"})

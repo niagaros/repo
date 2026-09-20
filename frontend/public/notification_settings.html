@@ -140,6 +140,38 @@ td.domain{font-weight:600;text-transform:capitalize}
       </div>
 
       <div class="card">
+        <div class="card-title">Additional Recipients</div>
+        <div class="card-note">For teams: give specific people their own alerts, optionally scoped to just one category — e.g. Finance only gets billing, a security engineer's phone gets everything. These are on top of the channels above, not instead of them.</div>
+        <table id="recipients-table" style="margin-bottom:14px">
+          <thead><tr><th>Who</th><th>Channel</th><th>Target</th><th>Category</th><th></th></tr></thead>
+          <tbody id="recipients-body"></tbody>
+        </table>
+        <div id="recipients-empty" class="empty" hidden>No additional recipients yet.</div>
+        <div class="grid2" style="margin-top:8px">
+          <div>
+            <label class="f-lbl">Name / role</label>
+            <input class="f-in" id="rc-label" placeholder="e.g. Jan — Security Lead">
+            <label class="f-lbl">Channel</label>
+            <select class="f-in" id="rc-channel">
+              <option value="email">Email</option>
+              <option value="sms">SMS</option>
+              <option value="slack">Slack webhook</option>
+              <option value="teams">Teams webhook</option>
+              <option value="discord">Discord webhook</option>
+              <option value="webhook">Generic webhook</option>
+            </select>
+          </div>
+          <div>
+            <label class="f-lbl">Target (email, phone, or webhook URL)</label>
+            <input class="f-in" id="rc-target" placeholder="jan@domits.com">
+            <label class="f-lbl">Category (leave blank for all)</label>
+            <select class="f-in" id="rc-domain"><option value="">All categories</option></select>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="addRecipient()">+ Add Recipient</button>
+      </div>
+
+      <div class="card">
         <div class="card-title">Delivery Analytics <button class="btn-ghost" style="float:right" onclick="loadAnalytics()">↻ Refresh</button></div>
         <div class="card-note">Real numbers from this account's own notification history.</div>
         <div class="sum-row" id="analytics-summary"></div>
@@ -193,10 +225,49 @@ async function loadAll(){
   const d = await r.json();
   fillChannels(d.channels || {});
   renderPrefsTable(d.preferences || {});
+  renderRecipients(d.recipients || []);
+
+  const domainSel = document.getElementById('rc-domain');
+  domainSel.innerHTML = '<option value="">All categories</option>' +
+    DOMAINS.map(dm => `<option value="${dm}">${dm[0].toUpperCase()+dm.slice(1)}</option>`).join('');
 
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-content').hidden=false;
   loadAnalytics();
+}
+
+function renderRecipients(recipients){
+  document.getElementById('recipients-empty').hidden = recipients.length > 0;
+  document.getElementById('recipients-body').innerHTML = recipients.map(r => `
+    <tr>
+      <td>${esc(r.label || '—')}</td>
+      <td style="text-transform:capitalize">${esc(r.channel)}</td>
+      <td style="font-size:11.5px;color:#6b7280">${esc(r.target)}</td>
+      <td>${r.domain ? esc(r.domain) : 'All categories'}</td>
+      <td><button class="btn-ghost" onclick="removeRecipient('${r.id}')">Remove</button></td>
+    </tr>`).join('');
+}
+
+async function addRecipient(){
+  const target = document.getElementById('rc-target').value.trim();
+  if(!target){ showToast('Target is required'); return; }
+  const body = {
+    action: 'add_recipient', cloud_account_id: currentAccountId,
+    label: document.getElementById('rc-label').value.trim() || null,
+    channel: document.getElementById('rc-channel').value,
+    target, domain: document.getElementById('rc-domain').value || null,
+  };
+  await fetch(NOTIF_API, {method:'POST', body: JSON.stringify(body)});
+  document.getElementById('rc-label').value = '';
+  document.getElementById('rc-target').value = '';
+  showToast('Recipient added');
+  loadAll();
+}
+
+async function removeRecipient(id){
+  await fetch(NOTIF_API, {method:'POST', body: JSON.stringify({action:'remove_recipient', cloud_account_id: currentAccountId, id})});
+  showToast('Recipient removed');
+  loadAll();
 }
 
 function fillChannels(ch){

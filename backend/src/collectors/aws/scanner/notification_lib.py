@@ -217,6 +217,27 @@ def deliver_now(conn, notification_id, cloud_account_id, domain, event_type, sev
         if discord_ok and discord_webhook_url:
             delivery["discord"] = _post_discord(discord_webhook_url, title, description, severity, domain)
 
+    # Real "audience targeting" (from the issue's own epic description):
+    # notification_channels above is one slot per channel per account —
+    # this covers any ADDITIONAL people who care about this specific
+    # category (or every category, if they didn't scope it), on top of
+    # the primary channels, not instead of them. Ignores per-domain
+    # preference toggles deliberately — a named recipient someone added
+    # on purpose should get it regardless of the account-wide toggle.
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, label, channel, target FROM notification_recipients
+            WHERE cloud_account_id = %s AND (domain IS NULL OR domain = %s)
+        """, (cloud_account_id, domain))
+        extra_recipients = cur.fetchall()
+    additional = []
+    for recipient_id, label, channel, target in extra_recipients:
+        result = _dispatch_to_channel(channel, target, title, description, severity, domain,
+                                       notification_id, event_type, resource_link)
+        additional.append({"recipient_id": str(recipient_id), "label": label, "channel": channel, **result})
+    if additional:
+        delivery["additional_recipients"] = additional
+
     # Acceptance criterion (issue #274): "Given a notification is
     # delivered, when the provider confirms delivery, then delivery
     # status is recorded." Persist the real outcome, not just return it.
@@ -245,6 +266,33 @@ def deliver_queued_notification(conn, notification_id):
     cloud_account_id, domain, event_type, severity, title, description, resource_link, mandatory = row
     return deliver_now(conn, notification_id, str(cloud_account_id), domain, event_type, severity, title,
                         description, resource_link, mandatory)
+
+
+def _dispatch_to_channel(channel, target, title, description, severity, domain, notification_id, event_type, resource_link):
+    """Send one notification to one arbitrary (channel, target) pair —
+    used for additional named recipients, where the channel type isn't
+    known ahead of time the way it is for the account's own fixed
+    columns in notification_channels."""
+    if channel == "email":
+        return _send_email(target, title, description, severity)
+    if channel == "sms":
+        return _send_sms(target, title, severity)
+    if channel == "webhook":
+        return _post_webhook(target, {
+            "id": notification_id, "domain": domain, "event_type": event_type,
+            "severity": severity, "title": title, "description": description, "resource_link": resource_link,
+        })
+    if channel == "slack":
+        return _post_webhook(target, {"text": f"[{severity}] {title}" + (f"\n{description}" if description else "")})
+    if channel == "teams":
+        return _post_webhook(target, {
+            "@type": "MessageCard", "@context": "http://schema.org/extensions",
+            "summary": title, "themeColor": _SEVERITY_HEX.get(severity, "808080"),
+            "title": f"Niagaros [{severity}] {domain}", "text": title + (f"\n\n{description}" if description else ""),
+        })
+    if channel == "discord":
+        return _post_discord(target, title, description, severity, domain)
+    return {"sent": False, "reason": f"unknown channel: {channel}"}
 
 
 def _send_email(to_email, title, description, severity):
