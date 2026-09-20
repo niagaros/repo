@@ -138,17 +138,21 @@ td.domain{font-weight:600;text-transform:capitalize}
       </div>
 
       <div class="tabs">
-        <div class="tab on" data-tab="channels" onclick="showTab('channels')">Account Channels</div>
+        <div class="tab on" data-tab="channels" onclick="showTab('channels')">Default / Fallback</div>
         <div class="tab" data-tab="people" onclick="showTab('people')">People<span class="tab-count" id="people-count">0</span></div>
         <div class="tab" data-tab="categories" onclick="showTab('categories')">Categories</div>
         <div class="tab" data-tab="analytics" onclick="showTab('analytics')">Analytics &amp; Health</div>
       </div>
 
-      <!-- ── TAB: Account Channels ─────────────────────────── -->
+      <!-- ── TAB: Default / Fallback Channels ─────────────────────────── -->
       <div class="pane on" id="pane-channels">
+        <div class="card" style="background:#f8fafc;border-color:#dbeafe">
+          <div class="card-title" style="font-size:12.5px">How these three tabs work together</div>
+          <div class="card-note" style="margin-bottom:0"><b>Default / Fallback</b> — where everything goes if no specific person is set up for it (your safety net). <b>Categories</b> — fine-tunes which channel this fallback uses per category. <b>People</b> — extra, named individuals layered on top of the fallback, for the specific categories they choose.</div>
+        </div>
         <div class="card">
           <div class="card-title">Default Delivery Channels</div>
-          <div class="card-note">Where every alert for this account goes by default. Leave a field empty to skip that channel. Mandatory/critical events always go out regardless of the category toggles. Use "Test" to confirm a channel works.</div>
+          <div class="card-note">Where every alert for this account goes if no one on the People tab is scoped to catch it. Leave a field empty to skip that channel. Mandatory/critical events always go out regardless of the category toggles. Use "Test" to confirm a channel works.</div>
           <div class="grid2">
             <div>
               <div class="f-row"><label class="f-lbl">Email address</label><button class="btn-test" onclick="testChannel('email','ch-email')">Test</button></div>
@@ -198,7 +202,7 @@ td.domain{font-weight:600;text-transform:capitalize}
       <div class="pane" id="pane-people">
         <div class="card">
           <div class="card-title">People &amp; Roles <button class="btn-primary" style="float:right;margin-top:0" onclick="openAddPerson()">+ Add Person</button></div>
-          <div class="card-note">Give specific people their own alerts — pick their channel(s) and which categories they care about. These come on top of the account channels above, not instead of them.</div>
+          <div class="card-note">Give specific people their own alerts — pick their channel(s) and which categories they care about. These come <b>on top of</b> the Default / Fallback channels, not instead of them — the fallback still fires for everything not covered here.</div>
           <table id="recipients-table" style="margin-top:6px">
             <thead><tr><th>Who</th><th>Channels</th><th>Categories</th><th></th></tr></thead>
             <tbody id="recipients-body"></tbody>
@@ -211,7 +215,7 @@ td.domain{font-weight:600;text-transform:capitalize}
       <div class="pane" id="pane-categories">
         <div class="card">
           <div class="card-title">Per-category preferences</div>
-          <div class="card-note">Uncheck a box to stop that channel for that category on the account's default channels (mandatory events still go through). Saved per row.</div>
+          <div class="card-note">Fine-tunes the Default / Fallback channels above — uncheck a box to stop that channel for that specific category (mandatory events still go through regardless). Doesn't affect People — each person's own channel/category choice always applies. Saved per row.</div>
           <div style="overflow-x:auto">
           <table id="prefs-table">
             <thead><tr><th>Category</th><th class="ctr">Email</th><th class="ctr">Webhook</th><th class="ctr">Slack</th><th class="ctr">SMS</th><th class="ctr">Teams</th><th class="ctr">Discord</th><th></th></tr></thead>
@@ -368,10 +372,14 @@ function renderRecipients(recipients){
       <td style="font-weight:600">${esc(r.label)}</td>
       <td><div class="chip-row">${chips}</div></td>
       <td><div class="chip-row">${domainChips}</div></td>
-      <td><button class="btn-ghost" onclick="removeRecipient('${r.id}', '${esc(r.label)}')">Remove</button></td>
+      <td><button class="btn-ghost" data-remove-id="${r.id}" data-remove-label="${esc(r.label)}">Remove</button></td>
     </tr>`;
   }).join('');
 }
+document.getElementById('recipients-body').addEventListener('click', e => {
+  const btn = e.target.closest('[data-remove-id]');
+  if(btn) removeRecipient(btn.dataset.removeId, btn.dataset.removeLabel);
+});
 
 // ── Add Person wizard ──────────────────────────────────────
 let apStep = 1;
