@@ -129,7 +129,7 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
             notification_id = str(cur.fetchone()[0])
 
             cur.execute("""
-                SELECT email_enabled, webhook_enabled, slack_enabled, sms_enabled, teams_enabled
+                SELECT email_enabled, webhook_enabled, slack_enabled, sms_enabled, teams_enabled, discord_enabled
                 FROM notification_preferences WHERE cloud_account_id = %s AND domain = %s
             """, (cloud_account_id, domain))
             prefs_row = cur.fetchone()
@@ -138,16 +138,17 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
             slack_ok = mandatory or prefs_row is None or prefs_row[2]
             sms_ok = mandatory or prefs_row is None or prefs_row[3]
             teams_ok = mandatory or prefs_row is None or prefs_row[4]
+            discord_ok = mandatory or prefs_row is None or prefs_row[5]
 
             cur.execute("""
-                SELECT notify_email, webhook_url, slack_webhook_url, sms_number, teams_webhook_url
+                SELECT notify_email, webhook_url, slack_webhook_url, sms_number, teams_webhook_url, discord_webhook_url
                 FROM notification_channels WHERE cloud_account_id = %s
             """, (cloud_account_id,))
             channels_row = cur.fetchone()
 
-    delivery = {"in_app": True, "email": None, "webhook": None, "slack": None, "sms": None, "teams": None}
+    delivery = {"in_app": True, "email": None, "webhook": None, "slack": None, "sms": None, "teams": None, "discord": None}
     if channels_row:
-        notify_email, webhook_url, slack_webhook_url, sms_number, teams_webhook_url = channels_row
+        notify_email, webhook_url, slack_webhook_url, sms_number, teams_webhook_url, discord_webhook_url = channels_row
         if email_ok and notify_email:
             delivery["email"] = _send_email(notify_email, title, description, severity)
         if webhook_ok and webhook_url:
@@ -175,6 +176,8 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
             # permissive — a real, sane default (nobody wants a text for a
             # P4), not a fabricated restriction.
             delivery["sms"] = _send_sms(sms_number, title, severity)
+        if discord_ok and discord_webhook_url:
+            delivery["discord"] = _post_discord(discord_webhook_url, title, description, severity, domain)
 
     # Acceptance criterion (issue #274): "Given a notification is
     # delivered, when the provider confirms delivery, then delivery
@@ -218,7 +221,8 @@ def run_retry_check(conn):
             cur.execute("""
                 SELECT n.id, n.cloud_account_id, n.domain, n.event_type, n.severity, n.title,
                        n.description, n.resource_link, n.delivery, n.retry_count,
-                       c.notify_email, c.webhook_url, c.slack_webhook_url, c.sms_number, c.teams_webhook_url
+                       c.notify_email, c.webhook_url, c.slack_webhook_url, c.sms_number, c.teams_webhook_url,
+                       c.discord_webhook_url
                 FROM notifications n
                 JOIN notification_channels c ON c.cloud_account_id = n.cloud_account_id
                 WHERE n.created_at > NOW() - INTERVAL '2 hours'
@@ -228,14 +232,15 @@ def run_retry_check(conn):
                     (n.delivery->'webhook'->>'sent' = 'false') OR
                     (n.delivery->'slack'->>'sent' = 'false') OR
                     (n.delivery->'sms'->>'sent' = 'false') OR
-                    (n.delivery->'teams'->>'sent' = 'false')
+                    (n.delivery->'teams'->>'sent' = 'false') OR
+                    (n.delivery->'discord'->>'sent' = 'false')
                   )
             """, (MAX_DELIVERY_RETRIES,))
             rows = cur.fetchall()
 
     for (notif_id, account_id, domain, event_type, severity, title, description, resource_link,
          delivery, retry_count, notify_email, webhook_url, slack_webhook_url, sms_number,
-         teams_webhook_url) in rows:
+         teams_webhook_url, discord_webhook_url) in rows:
         changed = False
         # dict.get(key, {}) only falls back to {} when the key is absent —
         # here every channel key is always PRESENT with value None when
@@ -264,6 +269,9 @@ def run_retry_check(conn):
             changed = True
         if (delivery.get("sms") or {}).get("sent") is False and sms_number:
             delivery["sms"] = _send_sms(sms_number, title, severity)
+            changed = True
+        if (delivery.get("discord") or {}).get("sent") is False and discord_webhook_url:
+            delivery["discord"] = _post_discord(discord_webhook_url, title, description, severity, domain)
             changed = True
         if changed:
             with conn:
@@ -338,3 +346,18 @@ def _post_webhook(url, payload):
     except Exception as e:
         logger.exception("notification webhook failed")
         return {"sent": False, "reason": str(e)}
+
+
+def _post_discord(url, title, description, severity, domain):
+    # A real Discord incoming webhook — same idea as Slack/Teams: the
+    # customer (or Niagaros' own team) creates this URL themselves in
+    # their own Discord server's channel settings, no bot/OAuth app
+    # needed. Uses Discord's embed format for a severity-colored card
+    # instead of a plain text line.
+    embed = {
+        "title": f"[{severity}] {title}",
+        "description": description or None,
+        "color": int(_SEVERITY_HEX.get(severity, "808080"), 16),
+        "footer": {"text": f"Niagaros · {domain}"},
+    }
+    return _post_webhook(url, {"embeds": [embed]})

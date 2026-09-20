@@ -1154,17 +1154,28 @@ def _check_and_notify(conn, cloud_account_id):
         if e["email"] and e["email"] not in recipients:
             recipients.append(e["email"])
 
+    # Real bug (issue #274 AC13: "multi-channel resilience despite
+    # individual failures"): sesv2.send_email rejects the ENTIRE call if
+    # ANY address in one combined ToAddresses list is unverified — so one
+    # vendor's placeholder/bad contact email silently blocked the alert
+    # from ever reaching Niagaros' own configured team recipients too.
+    # Send to each recipient independently so one bad address can't take
+    # the others down with it.
     ses = boto3.client("sesv2", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
-    try:
-        ses.send_email(
-            FromEmailAddress=TPRM_SENDER_EMAIL,
-            Destination={"ToAddresses": recipients},
-            Content={"Simple": {"Subject": {"Data": f"TPRM alert: {len(expiring)} expiring cert(s), {len(critical)} critical vendor(s)", "Charset": "UTF-8"},
-                                 "Body": {"Text": {"Data": body_text, "Charset": "UTF-8"}}}},
-        )
-        email_result = {"sent": True}
-    except Exception as e:
-        email_result = {"sent": False, "reason": str(e)}
+    subject = f"TPRM alert: {len(expiring)} expiring cert(s), {len(critical)} critical vendor(s)"
+    per_recipient = {}
+    for recipient in recipients:
+        try:
+            ses.send_email(
+                FromEmailAddress=TPRM_SENDER_EMAIL,
+                Destination={"ToAddresses": [recipient]},
+                Content={"Simple": {"Subject": {"Data": subject, "Charset": "UTF-8"},
+                                     "Body": {"Text": {"Data": body_text, "Charset": "UTF-8"}}}},
+            )
+            per_recipient[recipient] = {"sent": True}
+        except Exception as e:
+            per_recipient[recipient] = {"sent": False, "reason": str(e)}
+    email_result = {"sent": any(r["sent"] for r in per_recipient.values()), "per_recipient": per_recipient}
 
     return {"expiring_count": len(expiring), "critical_count": len(critical), "email": email_result}
 
