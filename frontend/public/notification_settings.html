@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Notification Settings</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:flex;font-size:14px}
+.sb{width:220px;background:#0d0f14;display:flex;flex-direction:column;height:100vh;flex-shrink:0;overflow:hidden}
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e;flex-shrink:0}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff}
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e2a1e;color:#fff}
+.ni-item.on .ni{color:#22c55e}
+.ni{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 22px;gap:10px;flex-shrink:0}
+.acct-wrap{position:relative;margin-left:auto}
+.acct-chip{display:flex;align-items:center;gap:5px;background:#f9fafb;border:1px solid #e5e7eb;padding:5px 11px;border-radius:6px;font-size:12px;color:#374151;cursor:pointer}
+.acct-dd{position:absolute;top:calc(100% + 6px);right:0;min-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12);z-index:999;overflow:hidden;display:none}
+.acct-dd.open{display:block}
+.acct-item{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:12.5px;cursor:pointer}
+.acct-item:hover{background:#f9fafb}
+.acct-dd-hdr{padding:9px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;border-bottom:1px solid #f3f4f6}
+.avatar{width:34px;height:34px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+.content{flex:1;overflow-y:auto;padding:24px 28px}
+[hidden]{display:none!important}
+.page-hdr{margin-bottom:22px}
+.page-title{font-size:19px;font-weight:800}
+.page-sub{font-size:12.5px;font-weight:500;color:#6b7280;margin-top:3px;max-width:640px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 22px;margin-bottom:20px}
+.card-title{font-size:14px;font-weight:700;margin-bottom:4px}
+.card-note{font-size:11.5px;color:#9ca3af;margin-bottom:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block;margin-top:12px}
+.f-in{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:'Inter',sans-serif}
+.btn-primary{background:#1d4ed8;color:#fff;border:none;padding:9px 16px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:16px}
+.btn-primary:hover{filter:brightness(.92)}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0}
+th.ctr,td.ctr{text-align:center}
+td{padding:9px 6px;border-bottom:1px solid #f6f6f6}
+td.domain{font-weight:600;text-transform:capitalize}
+.sum-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sum-card{background:#f9fafb;border:1px solid #eef0f2;border-radius:10px;padding:14px 16px}
+.sum-n{font-size:20px;font-weight:800}
+.sum-l{font-size:10.5px;color:#9ca3af;margin-top:2px}
+.pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px}
+.pill.operational{background:#f0fdf4;color:#16a34a}
+.pill.degraded{background:#fffbeb;color:#d97706}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;opacity:0;pointer-events:none;transition:all .25s;z-index:999}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.spin-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:#9ca3af}
+.spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{color:#9ca3af;font-size:12.5px;text-align:center;padding:30px 0}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-logo"><div class="sb-logo-icon">🛡</div><div class="sb-logo-text">Niagaros</div></div>
+  <nav class="sb-nav">
+    <div class="ni-item" onclick="dashTo()"><span class="ni">⌘</span><span>Dashboard</span></div>
+    <div class="ni-item" onclick="location.href='questionnaire_automation.html'+qs()"><span class="ni">🧾</span><span>Questionnaires</span></div>
+    <div class="ni-item" onclick="location.href='trust_center.html'+qs()"><span class="ni">🔒</span><span>Trust Center</span></div>
+    <div class="ni-item" onclick="location.href='tprm.html'+qs()"><span class="ni">🤝</span><span>Third-Party Risk</span></div>
+    <div class="ni-item" onclick="location.href='audit_management.html'+qs()"><span class="ni">📋</span><span>Audit Management</span></div>
+    <div class="ni-item" onclick="location.href='calculators.html'+qs()"><span class="ni">🧮</span><span>Calculators</span></div>
+    <div class="ni-item on"><span class="ni">🔔</span><span>Notification Settings</span></div>
+  </nav>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div style="font-size:15px;font-weight:700">Notification Settings</div>
+    <div class="acct-wrap">
+      <div class="acct-chip" id="chip-account" onclick="toggleAcctDd()">🏢 Loading… ▾</div>
+      <div class="acct-dd" id="acct-dd">
+        <div class="acct-dd-hdr">Switch Account</div>
+        <div id="acct-list"></div>
+      </div>
+    </div>
+    <div class="avatar">DN</div>
+  </header>
+
+  <div class="content">
+    <div id="v-load" class="spin-wrap"><div class="spinner"></div><span>Loading…</span></div>
+
+    <div id="v-content" hidden>
+      <div class="page-hdr">
+        <div class="page-title">Notification Settings</div>
+        <div class="page-sub">Where Niagaros sends real alerts for this account, which events are delivered on which channel, and how those deliveries are actually performing.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Delivery Channels</div>
+        <div class="card-note">Leave a field empty to skip that channel. Mandatory/critical events always go out regardless of the toggles below.</div>
+        <div class="grid2">
+          <div>
+            <label class="f-lbl">Email address</label>
+            <input class="f-in" id="ch-email" placeholder="alerts@yourcompany.com">
+            <label class="f-lbl">SMS number (E.164, e.g. +31612345678)</label>
+            <input class="f-in" id="ch-sms" placeholder="+31612345678">
+            <label class="f-lbl">Escalation email (for unacknowledged critical alerts)</label>
+            <input class="f-in" id="ch-esc-email" placeholder="oncall@yourcompany.com">
+            <label class="f-lbl">Escalate after (minutes)</label>
+            <input class="f-in" id="ch-esc-minutes" type="number" min="1" value="15">
+          </div>
+          <div>
+            <label class="f-lbl">Slack incoming webhook URL</label>
+            <input class="f-in" id="ch-slack" placeholder="https://hooks.slack.com/services/...">
+            <label class="f-lbl">Microsoft Teams incoming webhook URL</label>
+            <input class="f-in" id="ch-teams" placeholder="https://outlook.office.com/webhook/...">
+            <label class="f-lbl">Discord incoming webhook URL</label>
+            <input class="f-in" id="ch-discord" placeholder="https://discord.com/api/webhooks/...">
+            <label class="f-lbl">Generic webhook URL (raw JSON payload)</label>
+            <input class="f-in" id="ch-webhook" placeholder="https://your-system.example.com/hook">
+          </div>
+        </div>
+        <button class="btn-primary" onclick="saveChannels()">Save Channels</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Per-category preferences</div>
+        <div class="card-note">Uncheck a box to stop that channel for that category (mandatory events still go through). Saved per row.</div>
+        <div style="overflow-x:auto">
+        <table id="prefs-table">
+          <thead><tr><th>Category</th><th class="ctr">Email</th><th class="ctr">Webhook</th><th class="ctr">Slack</th><th class="ctr">SMS</th><th class="ctr">Teams</th><th class="ctr">Discord</th><th></th></tr></thead>
+          <tbody id="prefs-body"></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Delivery Analytics <button class="btn-ghost" style="float:right" onclick="loadAnalytics()">↻ Refresh</button></div>
+        <div class="card-note">Real numbers from this account's own notification history.</div>
+        <div class="sum-row" id="analytics-summary"></div>
+        <div style="margin-top:18px">
+          <div class="card-title" style="font-size:12.5px">Integration Health (last 7 days)</div>
+          <table id="health-table" style="margin-top:8px">
+            <thead><tr><th>Channel</th><th class="ctr">Attempts</th><th class="ctr">Failures</th><th class="ctr">Status</th><th>Last failure</th></tr></thead>
+            <tbody id="health-body"></tbody>
+          </table>
+          <div id="health-empty" class="empty" hidden>No delivery attempts recorded yet — configure a channel above.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
+const NOTIF_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/notifications';
+const DOMAINS = ["security","compliance","risk","audit","tprm","ai","workflow","account","billing","platform"];
+let currentAccountId = new URLSearchParams(location.search).get('account_id') || null;
+let allAccounts = [];
+
+function qs(){ return currentAccountId ? '?account_id='+encodeURIComponent(currentAccountId) : ''; }
+function dashTo(){ location.href = 'niagaros-dashboard.html' + qs(); }
+function toggleAcctDd(){ document.getElementById('acct-dd').classList.toggle('open'); }
+document.addEventListener('click', e => { const w=document.querySelector('.acct-wrap'); if(w && !w.contains(e.target)) document.getElementById('acct-dd').classList.remove('open'); });
+function switchAccount(id){ if(id===currentAccountId) return; currentAccountId=id; document.getElementById('acct-dd').classList.remove('open'); loadAll(); }
+function renderAcctList(){ document.getElementById('acct-list').innerHTML = allAccounts.map(a=>`<div class="acct-item" onclick="switchAccount('${a.id}')">🏢 ${esc(a.name)}</div>`).join(''); }
+function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
+
+async function loadAll(){
+  document.getElementById('v-load').style.display='flex';
+  document.getElementById('v-content').hidden=true;
+  const token = localStorage.getItem('niagaros_token') || '';
+  const durl = currentAccountId ? DASH_API+'?account_id='+encodeURIComponent(currentAccountId) : DASH_API;
+  const dr = await fetch(durl, {headers: token?{Authorization:'Bearer '+token}:{}});
+  if(dr.status===401){ location.href='/'; return; }
+  const dd = await dr.json();
+  if(dd.accounts && dd.accounts.length){ allAccounts=dd.accounts; if(!currentAccountId) currentAccountId=dd.accounts[0].id; renderAcctList(); }
+  if(dd.account_name) document.getElementById('chip-account').textContent = '🏢 '+dd.account_name+' ▾';
+  if(!currentAccountId){
+    document.getElementById('v-load').innerHTML = '<div class="empty">No account found. Please open this page from the dashboard.</div>';
+    return;
+  }
+
+  const r = await fetch(NOTIF_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&preferences=1');
+  const d = await r.json();
+  fillChannels(d.channels || {});
+  renderPrefsTable(d.preferences || {});
+
+  document.getElementById('v-load').style.display='none';
+  document.getElementById('v-content').hidden=false;
+  loadAnalytics();
+}
+
+function fillChannels(ch){
+  document.getElementById('ch-email').value = ch.notify_email || '';
+  document.getElementById('ch-sms').value = ch.sms_number || '';
+  document.getElementById('ch-slack').value = ch.slack_webhook_url || '';
+  document.getElementById('ch-teams').value = ch.teams_webhook_url || '';
+  document.getElementById('ch-discord').value = ch.discord_webhook_url || '';
+  document.getElementById('ch-webhook').value = ch.webhook_url || '';
+  document.getElementById('ch-esc-email').value = ch.escalation_email || '';
+  document.getElementById('ch-esc-minutes').value = ch.escalation_minutes || 15;
+}
+
+async function saveChannels(){
+  const body = {
+    action: 'update_channels', cloud_account_id: currentAccountId,
+    notify_email: document.getElementById('ch-email').value.trim(),
+    sms_number: document.getElementById('ch-sms').value.trim(),
+    slack_webhook_url: document.getElementById('ch-slack').value.trim(),
+    teams_webhook_url: document.getElementById('ch-teams').value.trim(),
+    discord_webhook_url: document.getElementById('ch-discord').value.trim(),
+    webhook_url: document.getElementById('ch-webhook').value.trim(),
+    escalation_email: document.getElementById('ch-esc-email').value.trim(),
+    escalation_minutes: document.getElementById('ch-esc-minutes').value || 15,
+  };
+  await fetch(NOTIF_API, {method:'POST', body: JSON.stringify(body)});
+  showToast('Channels saved');
+}
+
+function renderPrefsTable(prefs){
+  document.getElementById('prefs-body').innerHTML = DOMAINS.map(d => {
+    const p = prefs[d] || {email_enabled:true,webhook_enabled:true,slack_enabled:true,sms_enabled:true,teams_enabled:true,discord_enabled:true};
+    const cb = (key) => `<input type="checkbox" data-domain="${d}" data-key="${key}" ${p[key]?'checked':''}>`;
+    return `<tr>
+      <td class="domain">${esc(d)}</td>
+      <td class="ctr">${cb('email_enabled')}</td>
+      <td class="ctr">${cb('webhook_enabled')}</td>
+      <td class="ctr">${cb('slack_enabled')}</td>
+      <td class="ctr">${cb('sms_enabled')}</td>
+      <td class="ctr">${cb('teams_enabled')}</td>
+      <td class="ctr">${cb('discord_enabled')}</td>
+      <td><button class="btn-ghost" onclick="savePrefsRow('${d}')">Save</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function savePrefsRow(domain){
+  const inputs = document.querySelectorAll(`#prefs-body input[data-domain="${domain}"]`);
+  const body = {action:'update_preferences', cloud_account_id: currentAccountId, domain};
+  inputs.forEach(inp => { body[inp.dataset.key] = inp.checked; });
+  await fetch(NOTIF_API, {method:'POST', body: JSON.stringify(body)});
+  showToast(`Preferences saved for "${domain}"`);
+}
+
+async function loadAnalytics(){
+  const r = await fetch(NOTIF_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&analytics=1');
+  const d = await r.json();
+
+  document.getElementById('analytics-summary').innerHTML = `
+    <div class="sum-card"><div class="sum-n">${d.total_notifications ?? 0}</div><div class="sum-l">Total notifications</div></div>
+    <div class="sum-card"><div class="sum-n">${d.delivery_rate_pct ?? '—'}${d.delivery_rate_pct!=null?'%':''}</div><div class="sum-l">Delivery rate</div></div>
+    <div class="sum-card"><div class="sum-n">${d.acknowledgement_rate_pct ?? '—'}${d.acknowledgement_rate_pct!=null?'%':''}</div><div class="sum-l">Acknowledgement rate</div></div>
+    <div class="sum-card"><div class="sum-n">${d.escalated_count ?? 0}</div><div class="sum-l">Escalated</div></div>
+  `;
+
+  const health = d.integration_health || {};
+  const rows = Object.entries(health);
+  document.getElementById('health-empty').hidden = rows.length > 0;
+  document.getElementById('health-body').innerHTML = rows.map(([channel, h]) => {
+    const status = h.failure_rate_pct > 20 ? 'degraded' : 'operational';
+    return `<tr>
+      <td style="text-transform:capitalize">${esc(channel)}</td>
+      <td class="ctr">${h.attempts}</td>
+      <td class="ctr">${h.failures}</td>
+      <td class="ctr"><span class="pill ${status}">${status}</span></td>
+      <td style="font-size:11px;color:#9ca3af">${h.last_failure_reason ? esc(h.last_failure_reason).slice(0,60) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+loadAll();
+</script>
+</body>
+</html>
