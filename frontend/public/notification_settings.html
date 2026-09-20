@@ -31,19 +31,26 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .avatar{width:34px;height:34px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
 .content{flex:1;overflow-y:auto;padding:24px 28px}
 [hidden]{display:none!important}
-.page-hdr{margin-bottom:22px}
+.page-hdr{margin-bottom:18px}
 .page-title{font-size:19px;font-weight:800}
 .page-sub{font-size:12.5px;font-weight:500;color:#6b7280;margin-top:3px;max-width:640px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid #e5e7eb;margin-bottom:20px}
+.tab{padding:10px 16px;font-size:12.5px;font-weight:600;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:#111827}
+.tab.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.tab-count{background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px}
+.tab.on .tab-count{background:#eff6ff;color:#1d4ed8}
+.pane{display:none}
+.pane.on{display:block}
 .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 22px;margin-bottom:20px}
 .card-title{font-size:14px;font-weight:700;margin-bottom:4px}
 .card-note{font-size:11.5px;color:#9ca3af;margin-bottom:16px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .f-lbl{font-size:11.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block;margin-top:12px}
 .f-row{display:flex;align-items:center;justify-content:space-between}
-.f-row .f-lbl{margin-bottom:5px}
+.f-row .f-lbl{margin-bottom:5px;margin-top:12px}
 .btn-test{background:#f9fafb;color:#374151;border:1px solid #e5e7eb;padding:2px 10px;border-radius:6px;font-size:10.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
 .btn-test:hover{background:#f0f0f0}
-.btn-test:disabled{opacity:.5;cursor:default}
 .f-result{font-size:11px;margin-top:4px;min-height:14px}
 .f-result.ok{color:#16a34a}
 .f-result.fail{color:#dc2626}
@@ -58,6 +65,9 @@ th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04e
 th.ctr,td.ctr{text-align:center}
 td{padding:9px 6px;border-bottom:1px solid #f6f6f6}
 td.domain{font-weight:600;text-transform:capitalize}
+.chip-row{display:flex;flex-wrap:wrap;gap:4px}
+.chip{background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.chip.gray{background:#f3f4f6;color:#6b7280}
 .sum-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .sum-card{background:#f9fafb;border:1px solid #eef0f2;border-radius:10px;padding:14px 16px}
 .sum-n{font-size:20px;font-weight:800}
@@ -71,6 +81,23 @@ td.domain{font-weight:600;text-transform:capitalize}
 .spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .empty{color:#9ca3af;font-size:12.5px;text-align:center;padding:30px 0}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:all}
+.modal{background:#fff;border-radius:16px;width:480px;max-width:92vw;max-height:86vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #f0f0f0}
+.modal-title{font-size:15px;font-weight:700}
+.modal-close{background:none;border:none;font-size:16px;cursor:pointer;color:#9ca3af}
+.modal-body{padding:20px 22px}
+.modal-foot{padding:16px 22px;border-top:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+.step-dots{display:flex;gap:6px}
+.step-dot{width:7px;height:7px;border-radius:50%;background:#e5e7eb}
+.step-dot.on{background:#1d4ed8}
+.step{display:none}
+.step.on{display:block}
+.check-row{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12.5px}
+.check-row input[type=checkbox]{width:15px;height:15px}
+.channel-block{border:1px solid #f0f0f0;border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.channel-block input.f-in{margin-top:8px}
 </style>
 </head>
 <body>
@@ -107,111 +134,166 @@ td.domain{font-weight:600;text-transform:capitalize}
     <div id="v-content" hidden>
       <div class="page-hdr">
         <div class="page-title">Notification Settings</div>
-        <div class="page-sub">Where Niagaros sends real alerts for this account, which events are delivered on which channel, and how those deliveries are actually performing.</div>
+        <div class="page-sub">Where Niagaros sends real alerts for this account, who gets them, and how those deliveries are actually performing.</div>
       </div>
 
-      <div class="card">
-        <div class="card-title">Delivery Channels</div>
-        <div class="card-note">Leave a field empty to skip that channel. Mandatory/critical events always go out regardless of the toggles below. Use "Test" to confirm a channel actually works before relying on it.</div>
-        <div class="grid2">
-          <div>
-            <div class="f-row"><label class="f-lbl">Email address</label><button class="btn-test" onclick="testChannel('email','ch-email')">Test</button></div>
-            <input class="f-in" id="ch-email" placeholder="alerts@yourcompany.com">
-            <div class="f-error" id="err-email"></div>
-            <div class="f-result" id="res-email"></div>
+      <div class="tabs">
+        <div class="tab on" data-tab="channels" onclick="showTab('channels')">Account Channels</div>
+        <div class="tab" data-tab="people" onclick="showTab('people')">People<span class="tab-count" id="people-count">0</span></div>
+        <div class="tab" data-tab="categories" onclick="showTab('categories')">Categories</div>
+        <div class="tab" data-tab="analytics" onclick="showTab('analytics')">Analytics &amp; Health</div>
+      </div>
 
-            <div class="f-row"><label class="f-lbl">SMS number (E.164, e.g. +31612345678)</label><button class="btn-test" onclick="testChannel('sms','ch-sms')">Test</button></div>
-            <input class="f-in" id="ch-sms" placeholder="+31612345678">
-            <div class="f-error" id="err-sms"></div>
-            <div class="f-result" id="res-sms"></div>
-            <div class="f-hint">⚠ While AWS SNS is in sandbox mode, SMS only reaches numbers explicitly verified in AWS — use "Test" to check this specific number.</div>
+      <!-- ── TAB: Account Channels ─────────────────────────── -->
+      <div class="pane on" id="pane-channels">
+        <div class="card">
+          <div class="card-title">Default Delivery Channels</div>
+          <div class="card-note">Where every alert for this account goes by default. Leave a field empty to skip that channel. Mandatory/critical events always go out regardless of the category toggles. Use "Test" to confirm a channel works.</div>
+          <div class="grid2">
+            <div>
+              <div class="f-row"><label class="f-lbl">Email address</label><button class="btn-test" onclick="testChannel('email','ch-email')">Test</button></div>
+              <input class="f-in" id="ch-email" placeholder="alerts@yourcompany.com">
+              <div class="f-error" id="err-email"></div>
+              <div class="f-result" id="res-email"></div>
 
-            <label class="f-lbl">Escalation email (for unacknowledged critical alerts)</label>
-            <input class="f-in" id="ch-esc-email" placeholder="oncall@yourcompany.com">
-            <div class="f-error" id="err-esc-email"></div>
-            <label class="f-lbl">Escalate after (minutes)</label>
-            <input class="f-in" id="ch-esc-minutes" type="number" min="1" value="15">
+              <div class="f-row"><label class="f-lbl">SMS number (E.164, e.g. +31612345678)</label><button class="btn-test" onclick="testChannel('sms','ch-sms')">Test</button></div>
+              <input class="f-in" id="ch-sms" placeholder="+31612345678">
+              <div class="f-error" id="err-sms"></div>
+              <div class="f-result" id="res-sms"></div>
+              <div class="f-hint">⚠ While AWS SNS is in sandbox mode, SMS only reaches numbers explicitly verified in AWS — use "Test" to check this specific number.</div>
+
+              <label class="f-lbl">Escalation email (for unacknowledged critical alerts)</label>
+              <input class="f-in" id="ch-esc-email" placeholder="oncall@yourcompany.com">
+              <div class="f-error" id="err-esc-email"></div>
+              <label class="f-lbl">Escalate after (minutes)</label>
+              <input class="f-in" id="ch-esc-minutes" type="number" min="1" value="15">
+            </div>
+            <div>
+              <div class="f-row"><label class="f-lbl">Slack incoming webhook URL</label><button class="btn-test" onclick="testChannel('slack','ch-slack')">Test</button></div>
+              <input class="f-in" id="ch-slack" placeholder="https://hooks.slack.com/services/...">
+              <div class="f-error" id="err-slack"></div>
+              <div class="f-result" id="res-slack"></div>
+
+              <div class="f-row"><label class="f-lbl">Microsoft Teams incoming webhook URL</label><button class="btn-test" onclick="testChannel('teams','ch-teams')">Test</button></div>
+              <input class="f-in" id="ch-teams" placeholder="https://outlook.office.com/webhook/...">
+              <div class="f-error" id="err-teams"></div>
+              <div class="f-result" id="res-teams"></div>
+
+              <div class="f-row"><label class="f-lbl">Discord incoming webhook URL</label><button class="btn-test" onclick="testChannel('discord','ch-discord')">Test</button></div>
+              <input class="f-in" id="ch-discord" placeholder="https://discord.com/api/webhooks/...">
+              <div class="f-error" id="err-discord"></div>
+              <div class="f-result" id="res-discord"></div>
+
+              <div class="f-row"><label class="f-lbl">Generic webhook URL (raw JSON payload)</label><button class="btn-test" onclick="testChannel('webhook','ch-webhook')">Test</button></div>
+              <input class="f-in" id="ch-webhook" placeholder="https://your-system.example.com/hook">
+              <div class="f-error" id="err-webhook"></div>
+              <div class="f-result" id="res-webhook"></div>
+            </div>
           </div>
-          <div>
-            <div class="f-row"><label class="f-lbl">Slack incoming webhook URL</label><button class="btn-test" onclick="testChannel('slack','ch-slack')">Test</button></div>
-            <input class="f-in" id="ch-slack" placeholder="https://hooks.slack.com/services/...">
-            <div class="f-error" id="err-slack"></div>
-            <div class="f-result" id="res-slack"></div>
-
-            <div class="f-row"><label class="f-lbl">Microsoft Teams incoming webhook URL</label><button class="btn-test" onclick="testChannel('teams','ch-teams')">Test</button></div>
-            <input class="f-in" id="ch-teams" placeholder="https://outlook.office.com/webhook/...">
-            <div class="f-error" id="err-teams"></div>
-            <div class="f-result" id="res-teams"></div>
-
-            <div class="f-row"><label class="f-lbl">Discord incoming webhook URL</label><button class="btn-test" onclick="testChannel('discord','ch-discord')">Test</button></div>
-            <input class="f-in" id="ch-discord" placeholder="https://discord.com/api/webhooks/...">
-            <div class="f-error" id="err-discord"></div>
-            <div class="f-result" id="res-discord"></div>
-
-            <div class="f-row"><label class="f-lbl">Generic webhook URL (raw JSON payload)</label><button class="btn-test" onclick="testChannel('webhook','ch-webhook')">Test</button></div>
-            <input class="f-in" id="ch-webhook" placeholder="https://your-system.example.com/hook">
-            <div class="f-error" id="err-webhook"></div>
-            <div class="f-result" id="res-webhook"></div>
-          </div>
+          <button class="btn-primary" onclick="saveChannels()">Save Channels</button>
         </div>
-        <button class="btn-primary" onclick="saveChannels()">Save Channels</button>
       </div>
 
-      <div class="card">
-        <div class="card-title">Per-category preferences</div>
-        <div class="card-note">Uncheck a box to stop that channel for that category (mandatory events still go through). Saved per row.</div>
-        <div style="overflow-x:auto">
-        <table id="prefs-table">
-          <thead><tr><th>Category</th><th class="ctr">Email</th><th class="ctr">Webhook</th><th class="ctr">Slack</th><th class="ctr">SMS</th><th class="ctr">Teams</th><th class="ctr">Discord</th><th></th></tr></thead>
-          <tbody id="prefs-body"></tbody>
-        </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Additional Recipients</div>
-        <div class="card-note">For teams: give specific people their own alerts, optionally scoped to just one category — e.g. Finance only gets billing, a security engineer's phone gets everything. These are on top of the channels above, not instead of them.</div>
-        <table id="recipients-table" style="margin-bottom:14px">
-          <thead><tr><th>Who</th><th>Channel</th><th>Target</th><th>Category</th><th></th></tr></thead>
-          <tbody id="recipients-body"></tbody>
-        </table>
-        <div id="recipients-empty" class="empty" hidden>No additional recipients yet.</div>
-        <div class="grid2" style="margin-top:8px">
-          <div>
-            <label class="f-lbl">Name / role</label>
-            <input class="f-in" id="rc-label" placeholder="e.g. Jan — Security Lead">
-            <label class="f-lbl">Channel</label>
-            <select class="f-in" id="rc-channel">
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-              <option value="slack">Slack webhook</option>
-              <option value="teams">Teams webhook</option>
-              <option value="discord">Discord webhook</option>
-              <option value="webhook">Generic webhook</option>
-            </select>
-          </div>
-          <div>
-            <label class="f-lbl">Target (email, phone, or webhook URL)</label>
-            <input class="f-in" id="rc-target" placeholder="jan@domits.com">
-            <label class="f-lbl">Category (leave blank for all)</label>
-            <select class="f-in" id="rc-domain"><option value="">All categories</option></select>
-          </div>
-        </div>
-        <button class="btn-primary" onclick="addRecipient()">+ Add Recipient</button>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Delivery Analytics <button class="btn-ghost" style="float:right" onclick="loadAnalytics()">↻ Refresh</button></div>
-        <div class="card-note">Real numbers from this account's own notification history.</div>
-        <div class="sum-row" id="analytics-summary"></div>
-        <div style="margin-top:18px">
-          <div class="card-title" style="font-size:12.5px">Integration Health (last 7 days)</div>
-          <table id="health-table" style="margin-top:8px">
-            <thead><tr><th>Channel</th><th class="ctr">Attempts</th><th class="ctr">Failures</th><th class="ctr">Status</th><th>Last failure</th></tr></thead>
-            <tbody id="health-body"></tbody>
+      <!-- ── TAB: People ───────────────────────────────────── -->
+      <div class="pane" id="pane-people">
+        <div class="card">
+          <div class="card-title">People &amp; Roles <button class="btn-primary" style="float:right;margin-top:0" onclick="openAddPerson()">+ Add Person</button></div>
+          <div class="card-note">Give specific people their own alerts — pick their channel(s) and which categories they care about. These come on top of the account channels above, not instead of them.</div>
+          <table id="recipients-table" style="margin-top:6px">
+            <thead><tr><th>Who</th><th>Channels</th><th>Categories</th><th></th></tr></thead>
+            <tbody id="recipients-body"></tbody>
           </table>
-          <div id="health-empty" class="empty" hidden>No delivery attempts recorded yet — configure a channel above.</div>
+          <div id="recipients-empty" class="empty" hidden>No one added yet — click "+ Add Person" to give a teammate their own alerts.</div>
         </div>
+      </div>
+
+      <!-- ── TAB: Categories ───────────────────────────────── -->
+      <div class="pane" id="pane-categories">
+        <div class="card">
+          <div class="card-title">Per-category preferences</div>
+          <div class="card-note">Uncheck a box to stop that channel for that category on the account's default channels (mandatory events still go through). Saved per row.</div>
+          <div style="overflow-x:auto">
+          <table id="prefs-table">
+            <thead><tr><th>Category</th><th class="ctr">Email</th><th class="ctr">Webhook</th><th class="ctr">Slack</th><th class="ctr">SMS</th><th class="ctr">Teams</th><th class="ctr">Discord</th><th></th></tr></thead>
+            <tbody id="prefs-body"></tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── TAB: Analytics ────────────────────────────────── -->
+      <div class="pane" id="pane-analytics">
+        <div class="card">
+          <div class="card-title">Delivery Analytics <button class="btn-ghost" style="float:right" onclick="loadAnalytics()">↻ Refresh</button></div>
+          <div class="card-note">Real numbers from this account's own notification history.</div>
+          <div class="sum-row" id="analytics-summary"></div>
+          <div style="margin-top:18px">
+            <div class="card-title" style="font-size:12.5px">Integration Health (last 7 days)</div>
+            <table id="health-table" style="margin-top:8px">
+              <thead><tr><th>Channel</th><th class="ctr">Attempts</th><th class="ctr">Failures</th><th class="ctr">Status</th><th>Last failure</th></tr></thead>
+              <tbody id="health-body"></tbody>
+            </table>
+            <div id="health-empty" class="empty" hidden>No delivery attempts recorded yet — configure a channel first.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Person modal (2-step) ──────────────────────────── -->
+<div class="overlay" id="ov-person" onclick="if(event.target===this)closeAddPerson()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Add person</div>
+      <button class="modal-close" onclick="closeAddPerson()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="step on" id="step-1">
+        <label class="f-lbl" style="margin-top:0">Name / role</label>
+        <input class="f-in" id="ap-label" placeholder="e.g. Jan — Security Lead">
+        <label class="f-lbl">Which categories should they get?</label>
+        <div class="check-row"><input type="checkbox" id="ap-all-domains" checked onchange="toggleAllDomains()"><label for="ap-all-domains">All categories</label></div>
+        <div id="ap-domain-list" style="padding-left:2px;opacity:.4;pointer-events:none"></div>
+      </div>
+
+      <div class="step" id="step-2">
+        <label class="f-lbl" style="margin-top:0">How should they be reached? (pick one or more)</label>
+
+        <div class="channel-block">
+          <div class="check-row"><input type="checkbox" id="ap-use-email" onchange="toggleChannelInput('email')"><label for="ap-use-email">Email</label></div>
+          <input class="f-in" id="ap-email" placeholder="jan@domits.com" hidden>
+        </div>
+        <div class="channel-block">
+          <div class="check-row"><input type="checkbox" id="ap-use-sms" onchange="toggleChannelInput('sms')"><label for="ap-use-sms">SMS</label></div>
+          <input class="f-in" id="ap-sms" placeholder="+31612345678" hidden>
+        </div>
+        <div class="channel-block">
+          <div class="check-row"><input type="checkbox" id="ap-use-slack" onchange="toggleChannelInput('slack')"><label for="ap-use-slack">Slack webhook</label></div>
+          <input class="f-in" id="ap-slack" placeholder="https://hooks.slack.com/services/..." hidden>
+        </div>
+        <div class="channel-block">
+          <div class="check-row"><input type="checkbox" id="ap-use-teams" onchange="toggleChannelInput('teams')"><label for="ap-use-teams">Teams webhook</label></div>
+          <input class="f-in" id="ap-teams" placeholder="https://outlook.office.com/webhook/..." hidden>
+        </div>
+        <div class="channel-block">
+          <div class="check-row"><input type="checkbox" id="ap-use-discord" onchange="toggleChannelInput('discord')"><label for="ap-use-discord">Discord webhook</label></div>
+          <input class="f-in" id="ap-discord" placeholder="https://discord.com/api/webhooks/..." hidden>
+        </div>
+        <div class="channel-block">
+          <div class="check-row"><input type="checkbox" id="ap-use-webhook" onchange="toggleChannelInput('webhook')"><label for="ap-use-webhook">Generic webhook</label></div>
+          <input class="f-in" id="ap-webhook" placeholder="https://your-system.example.com/hook" hidden>
+        </div>
+        <div class="f-error" id="ap-error"></div>
+      </div>
+
+    </div>
+    <div class="modal-foot">
+      <div class="step-dots"><div class="step-dot on" id="dot-1"></div><div class="step-dot" id="dot-2"></div></div>
+      <div>
+        <button class="btn-ghost" id="ap-back" onclick="apBack()" hidden>Back</button>
+        <button class="btn-primary" id="ap-next" style="margin-top:0" onclick="apNext()">Next</button>
       </div>
     </div>
   </div>
@@ -235,6 +317,13 @@ function renderAcctList(){ document.getElementById('acct-list').innerHTML = allA
 function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
 
+function showTab(name){
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + name));
+}
+
+let recipientsCache = [];
+
 async function loadAll(){
   document.getElementById('v-load').style.display='flex';
   document.getElementById('v-content').hidden=true;
@@ -254,53 +343,109 @@ async function loadAll(){
   const d = await r.json();
   fillChannels(d.channels || {});
   renderPrefsTable(d.preferences || {});
-  renderRecipients(d.recipients || []);
+  recipientsCache = d.recipients || [];
+  renderRecipients(recipientsCache);
 
-  const domainSel = document.getElementById('rc-domain');
-  domainSel.innerHTML = '<option value="">All categories</option>' +
-    DOMAINS.map(dm => `<option value="${dm}">${dm[0].toUpperCase()+dm.slice(1)}</option>`).join('');
+  document.getElementById('ap-domain-list').innerHTML = DOMAINS.map(dm =>
+    `<div class="check-row"><input type="checkbox" class="ap-domain-cb" value="${dm}"><label>${dm[0].toUpperCase()+dm.slice(1)}</label></div>`
+  ).join('');
 
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-content').hidden=false;
   loadAnalytics();
 }
 
+const CHANNEL_LABELS = {email:'Email', sms:'SMS', slack:'Slack', teams:'Teams', discord:'Discord', webhook:'Webhook'};
+
 function renderRecipients(recipients){
+  document.getElementById('people-count').textContent = recipients.length;
   document.getElementById('recipients-empty').hidden = recipients.length > 0;
-  document.getElementById('recipients-body').innerHTML = recipients.map(r => `
-    <tr>
-      <td>${esc(r.label || '—')}</td>
-      <td style="text-transform:capitalize">${esc(r.channel)}</td>
-      <td style="font-size:11.5px;color:#6b7280">${esc(r.target)}</td>
-      <td>${r.domain ? esc(r.domain) : 'All categories'}</td>
-      <td><button class="btn-ghost" onclick="removeRecipient('${r.id}', '${esc(r.label || r.target)}')">Remove</button></td>
-    </tr>`).join('');
+  document.getElementById('recipients-body').innerHTML = recipients.map(r => {
+    const channelKeys = {email:r.notify_email, sms:r.sms_number, slack:r.slack_webhook_url, teams:r.teams_webhook_url, discord:r.discord_webhook_url, webhook:r.webhook_url};
+    const chips = Object.entries(channelKeys).filter(([,v]) => v).map(([k]) => `<span class="chip">${CHANNEL_LABELS[k]}</span>`).join(' ');
+    const domainChips = (r.domains && r.domains.length) ? r.domains.map(d => `<span class="chip gray">${esc(d)}</span>`).join(' ') : '<span class="chip gray">All categories</span>';
+    return `<tr>
+      <td style="font-weight:600">${esc(r.label)}</td>
+      <td><div class="chip-row">${chips}</div></td>
+      <td><div class="chip-row">${domainChips}</div></td>
+      <td><button class="btn-ghost" onclick="removeRecipient('${r.id}', '${esc(r.label)}')">Remove</button></td>
+    </tr>`;
+  }).join('');
 }
 
-async function addRecipient(){
-  const target = document.getElementById('rc-target').value.trim();
-  const channel = document.getElementById('rc-channel').value;
-  if(!target){ showToast('Target is required'); return; }
-  if(channel === 'email' && !EMAIL_RE.test(target)){ showToast('Not a valid email address'); return; }
-  if(channel === 'sms' && !PHONE_RE.test(target)){ showToast('Use E.164 format, e.g. +31612345678'); return; }
-  if(['slack','teams','discord','webhook'].includes(channel) && !URL_RE.test(target)){ showToast('Must start with http(s)://'); return; }
-  const body = {
-    action: 'add_recipient', cloud_account_id: currentAccountId,
-    label: document.getElementById('rc-label').value.trim() || null,
-    channel: document.getElementById('rc-channel').value,
-    target, domain: document.getElementById('rc-domain').value || null,
+// ── Add Person wizard ──────────────────────────────────────
+let apStep = 1;
+function openAddPerson(){
+  apStep = 1;
+  document.getElementById('ap-label').value = '';
+  document.getElementById('ap-all-domains').checked = true;
+  document.querySelectorAll('.ap-domain-cb').forEach(cb => cb.checked = false);
+  toggleAllDomains();
+  ['email','sms','slack','teams','discord','webhook'].forEach(c => {
+    document.getElementById('ap-use-'+c).checked = false;
+    document.getElementById('ap-'+c).value = '';
+    document.getElementById('ap-'+c).hidden = true;
+  });
+  document.getElementById('ap-error').textContent = '';
+  showApStep();
+  document.getElementById('ov-person').classList.add('open');
+}
+function closeAddPerson(){ document.getElementById('ov-person').classList.remove('open'); }
+function toggleAllDomains(){
+  const all = document.getElementById('ap-all-domains').checked;
+  const list = document.getElementById('ap-domain-list');
+  list.style.opacity = all ? .4 : 1;
+  list.style.pointerEvents = all ? 'none' : 'auto';
+}
+function toggleChannelInput(channel){
+  const on = document.getElementById('ap-use-'+channel).checked;
+  document.getElementById('ap-'+channel).hidden = !on;
+}
+function showApStep(){
+  document.getElementById('step-1').classList.toggle('on', apStep===1);
+  document.getElementById('step-2').classList.toggle('on', apStep===2);
+  document.getElementById('dot-1').classList.toggle('on', apStep===1);
+  document.getElementById('dot-2').classList.toggle('on', apStep===2);
+  document.getElementById('ap-back').hidden = apStep===1;
+  document.getElementById('ap-next').textContent = apStep===2 ? 'Add Person' : 'Next';
+}
+function apBack(){ apStep = 1; showApStep(); }
+async function apNext(){
+  if(apStep === 1){
+    if(!document.getElementById('ap-label').value.trim()){ showToast('Enter a name or role first'); return; }
+    apStep = 2; showApStep(); return;
+  }
+  // Step 2 → submit
+  const channels = {
+    notify_email: document.getElementById('ap-use-email').checked ? document.getElementById('ap-email').value.trim() : '',
+    sms_number: document.getElementById('ap-use-sms').checked ? document.getElementById('ap-sms').value.trim() : '',
+    slack_webhook_url: document.getElementById('ap-use-slack').checked ? document.getElementById('ap-slack').value.trim() : '',
+    teams_webhook_url: document.getElementById('ap-use-teams').checked ? document.getElementById('ap-teams').value.trim() : '',
+    discord_webhook_url: document.getElementById('ap-use-discord').checked ? document.getElementById('ap-discord').value.trim() : '',
+    webhook_url: document.getElementById('ap-use-webhook').checked ? document.getElementById('ap-webhook').value.trim() : '',
   };
+  if(!Object.values(channels).some(v => v)){ document.getElementById('ap-error').textContent = 'Pick at least one channel'; return; }
+  if(channels.notify_email && !EMAIL_RE.test(channels.notify_email)){ document.getElementById('ap-error').textContent = 'Email address is not valid'; return; }
+  if(channels.sms_number && !PHONE_RE.test(channels.sms_number)){ document.getElementById('ap-error').textContent = 'Phone must be E.164, e.g. +31612345678'; return; }
+  for(const f of ['slack_webhook_url','teams_webhook_url','discord_webhook_url','webhook_url']){
+    if(channels[f] && !URL_RE.test(channels[f])){ document.getElementById('ap-error').textContent = 'Webhook URLs must start with http(s)://'; return; }
+  }
+
+  const allDomains = document.getElementById('ap-all-domains').checked;
+  const domains = allDomains ? [] : Array.from(document.querySelectorAll('.ap-domain-cb:checked')).map(cb => cb.value);
+
+  const body = { action: 'add_recipient', cloud_account_id: currentAccountId,
+                 label: document.getElementById('ap-label').value.trim(), domains, ...channels };
   await fetch(NOTIF_API, {method:'POST', body: JSON.stringify(body)});
-  document.getElementById('rc-label').value = '';
-  document.getElementById('rc-target').value = '';
-  showToast('Recipient added');
+  closeAddPerson();
+  showToast('Person added');
   loadAll();
 }
 
 async function removeRecipient(id, label){
-  if(!confirm(`Remove ${label || 'this recipient'}? They will stop receiving alerts immediately.`)) return;
+  if(!confirm(`Remove ${label || 'this person'}? They will stop receiving alerts immediately.`)) return;
   await fetch(NOTIF_API, {method:'POST', body: JSON.stringify({action:'remove_recipient', cloud_account_id: currentAccountId, id})});
-  showToast('Recipient removed');
+  showToast('Removed');
   loadAll();
 }
 

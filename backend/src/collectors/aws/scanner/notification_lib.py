@@ -219,22 +219,31 @@ def deliver_now(conn, notification_id, cloud_account_id, domain, event_type, sev
 
     # Real "audience targeting" (from the issue's own epic description):
     # notification_channels above is one slot per channel per account —
-    # this covers any ADDITIONAL people who care about this specific
-    # category (or every category, if they didn't scope it), on top of
-    # the primary channels, not instead of them. Ignores per-domain
-    # preference toggles deliberately — a named recipient someone added
-    # on purpose should get it regardless of the account-wide toggle.
+    # this covers any ADDITIONAL people who care about this category (or
+    # every category, if they didn't scope it), on top of the primary
+    # channels, not instead of them. One person can have several channels
+    # filled in at once (e.g. email AND sms) — each gets dispatched
+    # separately. Ignores per-domain preference toggles deliberately — a
+    # named recipient someone added on purpose should get it regardless
+    # of the account-wide toggle.
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT id, label, channel, target FROM notification_recipients
-            WHERE cloud_account_id = %s AND (domain IS NULL OR domain = %s)
+            SELECT id, label, notify_email, sms_number, slack_webhook_url, teams_webhook_url,
+                   discord_webhook_url, webhook_url
+            FROM notification_recipients
+            WHERE cloud_account_id = %s AND (domains IS NULL OR domains = '{}' OR %s = ANY(domains))
         """, (cloud_account_id, domain))
         extra_recipients = cur.fetchall()
     additional = []
-    for recipient_id, label, channel, target in extra_recipients:
-        result = dispatch_to_channel(channel, target, title, description, severity, domain,
-                                       notification_id, event_type, resource_link)
-        additional.append({"recipient_id": str(recipient_id), "label": label, "channel": channel, **result})
+    for recipient_id, label, r_email, r_sms, r_slack, r_teams, r_discord, r_webhook in extra_recipients:
+        person_channels = {"email": r_email, "sms": r_sms, "slack": r_slack,
+                            "teams": r_teams, "discord": r_discord, "webhook": r_webhook}
+        for channel, target in person_channels.items():
+            if not target:
+                continue
+            result = dispatch_to_channel(channel, target, title, description, severity, domain,
+                                          notification_id, event_type, resource_link)
+            additional.append({"recipient_id": str(recipient_id), "label": label, "channel": channel, **result})
     if additional:
         delivery["additional_recipients"] = additional
 

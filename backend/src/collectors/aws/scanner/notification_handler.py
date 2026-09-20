@@ -110,19 +110,26 @@ CREATE TABLE IF NOT EXISTS notification_escalations (
 -- per channel per account (one email, one phone number, one Slack
 -- webhook) — but the issue's own epic explicitly calls for "audience
 -- targeting": different employees care about different categories (a
--- finance person for billing, a security engineer for security P0s).
--- This table is ADDITIVE, not a replacement — every notification still
--- goes to the account's primary channels as before, and ALSO goes to any
--- matching rows here. domain = NULL means "every category", otherwise
--- it's scoped to exactly one.
+-- finance person for billing, a security engineer for security P0s), and
+-- a real person often wants MORE than one channel at once (e.g. email AND
+-- sms), not a forced single choice. This table is ADDITIVE, not a
+-- replacement — every notification still goes to the account's primary
+-- channels as before, and ALSO goes to any matching rows here. One row =
+-- one person/role, with as many channels filled in as they want.
+-- domains = NULL or '{}' means "every category"; otherwise it's an array
+-- of the specific ones they chose.
 CREATE TABLE IF NOT EXISTS notification_recipients (
-    id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    cloud_account_id  UUID         NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
-    label             VARCHAR(120),
-    channel           VARCHAR(20)  NOT NULL,
-    target            VARCHAR(500) NOT NULL,
-    domain            VARCHAR(30),
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    id                   UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    cloud_account_id     UUID         NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    label                VARCHAR(120) NOT NULL,
+    domains              TEXT[],
+    notify_email         VARCHAR(255),
+    sms_number           VARCHAR(20),
+    slack_webhook_url    VARCHAR(500),
+    teams_webhook_url    VARCHAR(500),
+    discord_webhook_url  VARCHAR(500),
+    webhook_url          VARCHAR(500),
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS notification_recipients_account_idx ON notification_recipients(cloud_account_id);
 
@@ -250,11 +257,16 @@ def handler(event, context):
 
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT id, label, channel, target, domain, created_at
+                        SELECT id, label, domains, notify_email, sms_number, slack_webhook_url,
+                               teams_webhook_url, discord_webhook_url, webhook_url, created_at
                         FROM notification_recipients WHERE cloud_account_id = %s ORDER BY created_at
                     """, (account_id,))
-                    recipients = [{"id": str(r[0]), "label": r[1], "channel": r[2], "target": r[3],
-                                    "domain": r[4], "created_at": r[5].isoformat()} for r in cur.fetchall()]
+                    recipients = [{
+                        "id": str(r[0]), "label": r[1], "domains": r[2] or [],
+                        "notify_email": r[3], "sms_number": r[4], "slack_webhook_url": r[5],
+                        "teams_webhook_url": r[6], "discord_webhook_url": r[7], "webhook_url": r[8],
+                        "created_at": r[9].isoformat(),
+                    } for r in cur.fetchall()]
 
                 return _resp(200, {"preferences": preferences, "channels": channels, "recipients": recipients})
 
@@ -442,21 +454,25 @@ def handler(event, context):
                 return _resp(200, {"ok": True})
 
             if action == "add_recipient":
-                channel = body.get("channel")
-                target = (body.get("target") or "").strip()
-                domain = body.get("domain") or None
-                if channel not in ("email", "sms", "webhook", "slack", "teams", "discord"):
-                    return _resp(400, {"error": "channel must be one of email, sms, webhook, slack, teams, discord"})
-                if not target:
-                    return _resp(400, {"error": "target is required"})
-                if domain is not None and domain not in DOMAINS:
-                    return _resp(400, {"error": f"domain must be one of {DOMAINS} or omitted for all"})
+                label = (body.get("label") or "").strip()
+                domains = body.get("domains") or []
+                channel_fields = ("notify_email", "sms_number", "slack_webhook_url",
+                                   "teams_webhook_url", "discord_webhook_url", "webhook_url")
+                values = {f: (body.get(f) or "").strip() or None for f in channel_fields}
+                if not label:
+                    return _resp(400, {"error": "label is required"})
+                if not any(values.values()):
+                    return _resp(400, {"error": "at least one channel (email, sms, or a webhook) is required"})
+                bad_domains = [d for d in domains if d not in DOMAINS]
+                if bad_domains:
+                    return _resp(400, {"error": f"unknown categories: {bad_domains}"})
                 with conn:
                     with conn.cursor() as cur:
-                        cur.execute("""
-                            INSERT INTO notification_recipients (cloud_account_id, label, channel, target, domain)
-                            VALUES (%s, %s, %s, %s, %s) RETURNING id
-                        """, (account_id, body.get("label"), channel, target, domain))
+                        cur.execute(f"""
+                            INSERT INTO notification_recipients
+                                (cloud_account_id, label, domains, {", ".join(channel_fields)})
+                            VALUES (%s, %s, %s, {", ".join(["%s"] * len(channel_fields))}) RETURNING id
+                        """, [account_id, label, domains or None] + [values[f] for f in channel_fields])
                         recipient_id = str(cur.fetchone()[0])
                 return _resp(200, {"id": recipient_id})
 
