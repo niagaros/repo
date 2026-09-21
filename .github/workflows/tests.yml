@@ -1,0 +1,67 @@
+name: Critical flow tests
+
+# Issue #279. Runs on every pull request and push. A failing test fails the run; make "critical-flows" and
+# "deploy-gate" *required status checks* in the branch protection settings so a red run blocks merging.
+on:
+  pull_request:
+  push:
+    branches: [main, acceptance, develop, sofyan-dev]
+  workflow_dispatch:
+
+# The API layer writes clearly-labelled [E2E] data to one dedicated test tenant and removes it again.
+# Serialise runs so two workflows never create/clean the same data at once.
+concurrency:
+  group: e2e-test-tenant
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-gate:
+    name: deploy-gate (P0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tests/tools/deploy_gate.mjs
+
+  critical-flows:
+    name: critical-flows (unit + API + UI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      E2E_TOKEN: ${{ secrets.E2E_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          pip install pytest requests playwright pypdf boto3
+          python -m playwright install --with-deps chromium
+      - name: Run the suite (failures are re-run once to detect flaky tests)
+        run: python tests/tools/run_suite.py
+      - name: Coverage summary
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open("tests/reports/summary.json"))
+          t = d["totals"]
+          print("## Critical-flow coverage")
+          print(f"- Flows automated: **{t['flows_automated']} / {t['critical_flows_in_inventory']}** "
+                f"({t['coverage_of_existing_flows_pct']}% of flows that exist in the product)")
+          print(f"- Tests: {t['tests']} — passed {t['passed']}, failed {t['failed']}, known defects {t['known_failure']}, blocked {t['blocked']}, flaky {t['flaky']}")
+          for f in d["failures"]:
+              print(f"- `{f['test_id']}` ({f['severity']}, {f['status']}) — step: {f['failed_step'] or 'n/a'}")
+          PY
+      - name: Keep the full diagnostics (request/response, stack traces)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: tests/reports/*.json

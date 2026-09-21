@@ -31,6 +31,7 @@ import base64
 import json
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 
@@ -605,6 +606,13 @@ def _download_restricted(cur, document_id, access_token):
 
 # ── entrypoint ────────────────────────────────────────────────────────
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _is_uuid(value):
+    return isinstance(value, str) and bool(_UUID_RE.match(value))
+
+
 def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
 
@@ -634,7 +642,12 @@ def handler(event, context):
         return _resp(200, {})
 
     qs = event.get("queryStringParameters") or {}
-    body = json.loads(event["body"]) if event.get("body") else {}
+    try:
+        body = json.loads(event["body"]) if event.get("body") else {}
+        if not isinstance(body, dict):
+            raise ValueError("body must be a JSON object")
+    except (ValueError, TypeError):
+        return _resp(400, {"error": "Invalid JSON"})
 
     conn = _get_connection()
     try:
@@ -655,8 +668,8 @@ def handler(event, context):
                 return _resp(200, {"download_url": url})
 
             account_id = qs.get("cloud_account_id")
-            if not account_id:
-                return _resp(400, {"error": "cloud_account_id required"})
+            if not _is_uuid(account_id):
+                return _resp(400, {"error": "cloud_account_id must be a valid id"})
             with conn.cursor() as cur:
                 if qs.get("audit_log"):
                     return _resp(200, {"entries": _get_audit_log(cur, account_id, qs.get("document_id"))})

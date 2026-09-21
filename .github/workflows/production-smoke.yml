@@ -1,0 +1,29 @@
+name: Production smoke tests
+
+# Issue #279: continuous validation of the deployed platform. Read-only — no data is created.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [deployment-finished]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: node tests/tools/deploy_gate.mjs
+      - run: pip install pytest requests
+      - name: Availability + authentication checks (read-only)
+        run: python -m pytest tests/api/test_platform_availability.py tests/api/test_auth_and_isolation.py -k "not lifecycle"
