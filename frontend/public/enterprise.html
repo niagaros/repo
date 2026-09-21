@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Enterprise</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer;text-decoration:none}
+header a:hover{color:#fff}
+main{max-width:1000px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 18px;max-width:720px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 22px;margin-bottom:18px}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.bu{border:1px solid #eef0f2;border-radius:10px;padding:12px 14px}
+.bu h3{font-size:13px;font-weight:700;margin-bottom:8px}
+.chip{display:inline-block;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;margin:2px 4px 2px 0}
+.role{background:#f3f4f6;color:#374151}
+input,select{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+.form{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:9}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-int">Integrations</a><a href="test_dashboard.html">Automated Testing</a></header>
+<main>
+  <h1>Enterprise</h1>
+  <div class="sub">Organize several AWS accounts into business units and give each team member exactly the access they need. An account joins a business unit only when <b>its owner</b> assigns it; members see only the accounts of their own unit, and viewers can never change anything.</div>
+  <div class="card"><h2>New organization</h2>
+    <div class="form"><input id="org-name" placeholder="Organization name"><button id="org-add">Create organization</button></div></div>
+  <div id="orgs"><div class="empty">Loading…</div></div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+let accounts = [];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2600); };
+const q = params.get('account_id') ? '?account_id=' + encodeURIComponent(params.get('account_id')) : '';
+document.getElementById('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q;
+document.getElementById('nav-int').onclick = () => location.href = 'integrations.html' + q;
+
+async function post(body){
+  const r = await fetch(API + 'enterprise', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) toast(d.error === 'Forbidden' ? 'You are not allowed to do that here.' : (d.error || 'Something went wrong'));
+  return {ok: r.ok, data: d};
+}
+async function load(){
+  const [dash, ent] = await Promise.all([fetch(API + 'get-dashboard-data').then(r => r.json()).catch(() => ({})), fetch(API + 'enterprise').then(r => r.json())]);
+  accounts = dash.accounts || [];
+  const orgs = ent.organizations || [];
+  document.getElementById('orgs').innerHTML = orgs.length ? orgs.map(renderOrg).join('') : '<div class="card"><div class="empty">You are not part of an organization yet. Create one above, add business units, and assign your accounts to them.</div></div>';
+  bind();
+}
+function renderOrg(o){
+  const manage = o.my_role === 'owner' || o.my_role === 'org_admin';
+  const unitOptions = o.business_units.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+  const acctOptions = accounts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  const units = o.business_units.map(u => `<div class="bu"><h3>${esc(u.name)}</h3>
+      ${u.accounts.map(a => `<span class="chip">${esc(a.name)} <a style="cursor:pointer" data-unassign="${esc(u.id)}|${esc(a.id)}" title="Remove from this unit">✕</a></span>`).join('') || '<div class="empty">No accounts yet.</div>'}
+      <div class="form"><select data-acct-for="${esc(u.id)}">${acctOptions}</select><button class="ghost" data-assign="${esc(u.id)}">Assign my account</button></div></div>`).join('');
+  const members = manage ? `<table><thead><tr><th>Person</th><th>Role</th><th>Scope</th><th></th></tr></thead><tbody>${o.members.map(m => `<tr><td>${esc(m.email)}</td>
+      <td><select data-role="${esc(m.id)}">${['org_admin','bu_admin','viewer'].map(r => `<option value="${r}" ${r === m.role ? 'selected' : ''}>${r.replace('_',' ')}</option>`).join('')}</select></td>
+      <td>${m.business_unit_id ? esc((o.business_units.find(u => u.id === m.business_unit_id) || {}).name || 'one unit') : 'whole organization'}</td>
+      <td><button class="ghost" data-remove="${esc(m.id)}">Remove</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">Nobody invited yet.</td></tr>'}</tbody></table>
+    <div class="form"><input data-inv-email="${esc(o.id)}" placeholder="teammate@company.com"><select data-inv-role="${esc(o.id)}"><option value="viewer">Viewer (read only)</option><option value="bu_admin">Business-unit admin</option><option value="org_admin">Organization admin</option></select>
+      <select data-inv-unit="${esc(o.id)}">${unitOptions}</select><button data-invite="${esc(o.id)}">Invite</button></div>
+      <div class="note" style="margin-top:6px">Organization admins apply to the whole organization; viewers and business-unit admins are limited to the unit you pick.</div>` : '<div class="empty">Only organization admins can see and manage the team.</div>';
+  return `<div class="card"><h2>${esc(o.name)} <span class="chip role">you: ${esc(String(o.my_role).replace('_',' '))}</span></h2>
+    <div class="note">Owner: ${esc(o.owner_email)}</div>
+    <div class="grid">${units || '<div class="empty">No business units yet.</div>'}</div>
+    ${manage ? `<div class="form"><input data-bu-name="${esc(o.id)}" placeholder="New business unit (e.g. Payments)"><button class="ghost" data-add-bu="${esc(o.id)}">Add business unit</button></div>` : ''}
+    <h2 style="margin-top:18px">Team</h2>${members}
+    ${o.my_role === 'owner' ? `<div class="form"><button class="ghost" data-delete-org="${esc(o.id)}">Delete organization</button></div>` : ''}</div>`;
+}
+function bind(){
+  document.querySelectorAll('[data-add-bu]').forEach(b => b.onclick = async () => { const id = b.dataset.addBu; const name = document.querySelector(`[data-bu-name="${id}"]`).value.trim(); if(!name){toast('Enter a name');return;} if((await post({action:'create_business_unit', organization_id:id, name})).ok) load(); });
+  document.querySelectorAll('[data-assign]').forEach(b => b.onclick = async () => { const u = b.dataset.assign; const a = document.querySelector(`[data-acct-for="${u}"]`).value; if(a && (await post({action:'assign_account', business_unit_id:u, cloud_account_id:a})).ok){toast('Account assigned');load();} });
+  document.querySelectorAll('[data-unassign]').forEach(b => b.onclick = async () => { const [u, a] = b.dataset.unassign.split('|'); if((await post({action:'unassign_account', business_unit_id:u, cloud_account_id:a})).ok) load(); });
+  document.querySelectorAll('[data-invite]').forEach(b => b.onclick = async () => { const id = b.dataset.invite; const role = document.querySelector(`[data-inv-role="${id}"]`).value;
+    const r = await post({action:'invite_member', organization_id:id, email:document.querySelector(`[data-inv-email="${id}"]`).value.trim(), role, business_unit_id: role === 'org_admin' ? null : document.querySelector(`[data-inv-unit="${id}"]`).value || null});
+    if(r.ok){ toast(r.data.email && r.data.email.sent ? 'Invitation emailed' : 'Added — the email could not be delivered, tell them to sign in with this address'); load(); } });
+  document.querySelectorAll('[data-role]').forEach(s => s.onchange = async () => { if((await post({action:'update_member', member_id:s.dataset.role, role:s.value})).ok) toast('Role updated'); });
+  document.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => { if(confirm('Remove this person? They lose access immediately.') && (await post({action:'remove_member', member_id:b.dataset.remove})).ok) load(); });
+  document.querySelectorAll('[data-delete-org]').forEach(b => b.onclick = async () => { if(confirm('Delete this organization? Everyone loses the access it gave them (accounts themselves are not touched).') && (await post({action:'delete_organization', organization_id:b.dataset.deleteOrg})).ok) load(); });
+}
+document.getElementById('org-add').onclick = async () => { const name = document.getElementById('org-name').value.trim(); if(!name){toast('Enter a name');return;} if((await post({action:'create_organization', name})).ok){document.getElementById('org-name').value='';load();} };
+load();
+</script>
+</body>
+</html>

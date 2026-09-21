@@ -35,9 +35,12 @@ jobs:
     env:
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
+      E2E_PASSWORD_D: ${{ secrets.E2E_PASSWORD_D }}
       E2E_INGEST_TOKEN: ${{ secrets.E2E_INGEST_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -45,8 +48,19 @@ jobs:
         run: |
           pip install pytest requests playwright pypdf boto3
           python -m playwright install --with-deps chromium
-      - name: Run the suite (failures are re-run once to detect flaky tests)
-        run: python tests/tools/run_suite.py
+      - name: Which critical flows does this change touch?
+        id: select
+        run: |
+          FLOWS=ALL
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FLOWS=$(python tests/tools/select_tests.py --base "origin/${{ github.base_ref }}" || echo ALL)
+          fi
+          echo "flows=$FLOWS" >> "$GITHUB_OUTPUT"
+          echo "Flows selected: $FLOWS (P0 tests always run)"
+      - name: Run the suite (failures are re-run to detect flaky tests)
+        run: |
+          if [ "${{ steps.select.outputs.flows }}" = "ALL" ]; then python tests/tools/run_suite.py
+          else python tests/tools/run_suite.py --flows "${{ steps.select.outputs.flows }}"; fi
       - name: Coverage summary
         if: always()
         run: |

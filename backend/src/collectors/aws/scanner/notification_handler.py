@@ -138,6 +138,20 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON notification_preferences TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_channels TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_escalations TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_recipients TO cspm_lambda;
+
+CREATE TABLE IF NOT EXISTS security_audit_log (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    occurred_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    event_type        TEXT NOT NULL,
+    actor_email       TEXT,
+    cloud_account_ids UUID[] NOT NULL DEFAULT '{}',
+    http_method       TEXT,
+    path              TEXT,
+    source_ip         TEXT,
+    detail            JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_security_audit_accounts ON security_audit_log USING GIN (cloud_account_ids);
+CREATE INDEX IF NOT EXISTS idx_security_audit_time ON security_audit_log (occurred_at DESC);
 """
 
 
@@ -195,6 +209,17 @@ REFS = {
 
 
 def handler(event, context):
+    # Schema migration, invoked directly through the Lambda API (IAM-authorised, never through API Gateway).
+    if event and event.get("action") == "migrate":
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(BOOTSTRAP_SQL)
+            return {"statusCode": 200, "body": json.dumps({"migrated": True})}
+        finally:
+            conn.close()
+
     # Invoked by the real SQS queue (issue #274 AC20: asynchronous
     # high-volume processing) — one message per real notification that
     # create_notification() enqueued instead of delivering inline. This
@@ -245,6 +270,17 @@ def handler(event, context):
             account_id = qs.get("cloud_account_id")
             if not _is_uuid(account_id):
                 return _resp(400, {"error": "cloud_account_id is required"})
+
+            if qs.get("security_audit"):
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT id, occurred_at, event_type, actor_email, http_method, path, source_ip, detail
+                        FROM security_audit_log WHERE %s::uuid = ANY(cloud_account_ids)
+                        ORDER BY occurred_at DESC LIMIT 100
+                    """, (account_id,))
+                    events = [{"id": str(r[0]), "occurred_at": r[1], "event_type": r[2], "actor_email": r[3],
+                               "method": r[4], "path": r[5], "source_ip": r[6], "detail": r[7]} for r in cur.fetchall()]
+                return _resp(200, {"events": events})
 
             if qs.get("preferences"):
                 default_pref = {"email_enabled": True, "webhook_enabled": True, "slack_enabled": True,

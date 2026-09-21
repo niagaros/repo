@@ -54,7 +54,9 @@ def _login(username, password):
 FOREIGN_PROBE_ACTIONS = ("create_vendor", "create_audit", "add_recipient", "update_preferences", "create_framework")
 TOKEN = os.environ.get("E2E_TOKEN", "").strip() or _login(USER_A, os.environ.get("E2E_PASSWORD", ""))
 TOKEN_B = _login(USER_B, os.environ.get("E2E_PASSWORD_B", ""))
-ALLOWED_WRITE_ACCOUNTS = {ACCOUNT_ID}
+USER_D = os.environ.get("E2E_USERNAME_D", "e2e-tests-d@niagaros.test")   # a team member who owns no account
+TOKEN_D = _login(USER_D, os.environ.get("E2E_PASSWORD_D", ""))
+ALLOWED_WRITE_ACCOUNTS = {ACCOUNT_ID, ACCOUNT_B_ID}   # both are dedicated test tenants; a real customer's account is never in here
 TEST_PREFIX = "[E2E]"
 
 sys.path.insert(0, str(ROOT / "backend" / "src"))
@@ -64,6 +66,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "flow(id): critical-flow id from tests/registry/critical_flows.json")
     config.addinivalue_line("markers", "severity(level): P0 (deploy-blocking) .. P4")
     config.addinivalue_line("markers", "live: talks to the deployed environment")
+    config.addinivalue_line("markers", "needs_team: requires test users A, B and D (enterprise role tests)")
     config.addinivalue_line("markers", "needs_two_tenants: requires both dedicated test users A and B")
     config.addinivalue_line("markers", "needs_token: requires E2E_TOKEN (skipped and reported as blocked otherwise)")
     config.addinivalue_line("markers", "known_failure(issue, reason): a real, tracked defect; strict-xfail so a fix is noticed")
@@ -71,13 +74,28 @@ def pytest_configure(config):
     config._e2e_started = time.time()
 
 
+def pytest_addoption(parser):
+    parser.addoption("--flows", default="", help="comma-separated flow ids to run (P0 tests always run); empty = everything")
+
+
 def pytest_collection_modifyitems(config, items):
+    wanted = {f.strip() for f in (config.getoption("--flows") or "").split(",") if f.strip()}
+    if wanted:
+        keep, drop = [], []
+        for item in items:
+            flow, sev = item.get_closest_marker("flow"), item.get_closest_marker("severity")
+            fid = flow.args[0] if flow else None
+            (keep if (fid in wanted or (sev and sev.args[0] == "P0") or fid is None) else drop).append(item)
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
     for item in items:
         kf = item.get_closest_marker("known_failure")
         if kf:
             item.add_marker(pytest.mark.xfail(strict=True, reason=f"{kf.kwargs.get('issue', '')}: {kf.kwargs.get('reason', '')}"))
         if item.get_closest_marker("needs_token") and not TOKEN:
             item.add_marker(pytest.mark.skip(reason="blocked: no test-user credentials (set E2E_PASSWORD, or E2E_TOKEN)"))
+        if item.get_closest_marker("needs_team") and not (TOKEN and TOKEN_B and TOKEN_D):
+            item.add_marker(pytest.mark.skip(reason="blocked: needs test users A, B and D (set E2E_PASSWORD, E2E_PASSWORD_B, E2E_PASSWORD_D)"))
         if item.get_closest_marker("needs_two_tenants") and not (TOKEN and TOKEN_B):
             item.add_marker(pytest.mark.skip(reason="blocked: needs both test users (set E2E_PASSWORD and E2E_PASSWORD_B)"))
 
@@ -141,6 +159,16 @@ def pytest_runtest_makereport(item, call):
     elif rep.skipped:
         message = str(rep.longrepr[2]) if isinstance(rep.longrepr, tuple) else str(rep.longrepr)
     last = TRACE.exchanges[-1] if TRACE.exchanges else None
+    screenshot = None
+    pg = item.funcargs.get("page") if hasattr(item, "funcargs") else None
+    if status == "failed" and pg is not None and rep.when == "call":
+        try:
+            shots = REPORT_PATH.parent / "screenshots"
+            shots.mkdir(parents=True, exist_ok=True)
+            screenshot = f"screenshots/{item.name[:80].replace('/', '_')}.png"
+            pg.screenshot(path=str(REPORT_PATH.parent / screenshot), full_page=True)
+        except Exception:
+            screenshot = None
     item.config._e2e_results.append({
         "test_id": item.nodeid,
         "name": item.name,
@@ -152,6 +180,8 @@ def pytest_runtest_makereport(item, call):
         "failed_step": TRACE.failed_step,
         "message": message,
         "last_exchange": last,
+        "request_id": (last or {}).get("request_id"),
+        "screenshot": screenshot,
     })
 
 
@@ -207,6 +237,7 @@ class Api:
             "request": {"method": method, "url": r.request.url, "headers": redacted,
                         "body": (data[:600] if isinstance(data, str) else None)},
             "response": {"status": r.status_code, "body": r.text[:600]},
+            "request_id": r.headers.get("apigw-requestid") or r.headers.get("x-amzn-requestid"),
         })
         return r.status_code, payload, r
 
@@ -230,9 +261,15 @@ def api():
 
 
 @pytest.fixture(scope="session")
+def api_d():
+    """Signed in as test user D — a team member who owns no account of their own."""
+    return Api(TOKEN_D)
+
+
+@pytest.fixture(scope="session")
 def api_b():
     """Signed in as test user B (owner of tenant B) — the 'other tenant' for isolation tests."""
-    return Api(TOKEN_B, allowed={ACCOUNT_B_ID})
+    return Api(TOKEN_B)
 
 
 @pytest.fixture(scope="session")

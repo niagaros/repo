@@ -30,7 +30,7 @@ h1{font-size:19px;font-weight:800}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
 td{padding:9px 8px;border-bottom:1px solid #f6f6f6;vertical-align:top}
-td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+th.n,td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 .scroll{overflow-x:auto}
 .pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap;display:inline-block}
 .p-passing{background:#f0fdf4;color:#15803d}
@@ -70,6 +70,10 @@ td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LABEL = {passing:'Passing', known_defect:'Known defect', failing:'Failing', partially_blocked:'Partly blocked', blocked:'Blocked', gap:'Not automated yet', not_built:'Feature not built', no_result:'No result'};
 const pct = v => v == null ? '—' : v + '%';
+let FAIL_HISTORY = {};
+const FUNCTION_BY_PATH = {notifications: 'notification-handler', tprm: 'tprm-handler', 'audit-management': 'audit-management-handler', questionnaires: 'questionnaire-handler',
+  'custom-frameworks': 'custom-framework-handler', 'trust-center': 'trust-center-handler', calculators: 'calculator-handler', 'ai-agent': 'ai-agent-handler',
+  'get-dashboard-data': 'get-dashboard-data', enterprise: 'enterprise-handler', integrations: 'integrations-handler', scan: 'scan-handler', 'test-results': 'test-results-handler'};
 
 function render(d){
   const t = d.totals;
@@ -106,12 +110,27 @@ function render(d){
     <td class="n">${f.tests ? f.duration_s + 's' : '—'}</td>
     <td class="n">${f.failure_count_history}</td></tr>`).join('');
 
-  const fails = d.failures.length ? d.failures.map(x => `<div class="fail">
+  const fails = d.failures.length ? d.failures.map(x => {
+      const ex = x.last_exchange || {};
+      const path = ((ex.request || {}).url || '').split('/default/')[1] || '';
+      const fn = FUNCTION_BY_PATH[path.split('?')[0].split('/')[0]];
+      const hist = (FAIL_HISTORY[x.test_id] || []).length;
+      const issue = 'https://github.com/niagaros/repo/issues/new?title=' + encodeURIComponent('Test failing: ' + x.test_id) +
+        '&body=' + encodeURIComponent('Test: ' + x.test_id + '\nFlow: ' + x.flow + ' (' + x.severity + ')\nStep: ' + (x.failed_step || 'n/a') + '\nCommit: ' + (x.commit || 'n/a') + '\nRequest id: ' + (x.request_id || 'n/a') + '\n\n' + x.message);
+      const logs = fn ? 'https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logsV2:log-groups/log-group/' + encodeURIComponent('/aws/lambda/' + fn).replace(/%/g, '$25') : null;
+      return `<div class="fail">
       <h4>${x.status === 'failed' ? '❌' : '⚠️'} ${esc(x.test_id)}</h4>
       <div class="kv"><em>Flow</em>${esc(x.flow)} · <span class="sev ${esc(x.severity)}">${esc(x.severity)}</span> · ${x.status === 'failed' ? 'FAILING — must be fixed' : 'known, tracked defect'}</div>
       <div class="kv"><em>Failed step</em>${esc(x.failed_step || '—')}</div>
-      <div class="kv"><em>Commit</em>${esc(x.commit || '—')}</div>
-      <div class="mono">${esc(x.message)}</div></div>`).join('')
+      <div class="kv"><em>Commit</em>${esc(x.commit || '—')} · <em style="min-width:0">Layer</em> ${esc(x.layer || '—')}</div>
+      <div class="kv"><em>Request / trace id</em>${esc(x.request_id || '—')}</div>
+      ${ex.request ? `<div class="kv"><em>Request</em>${esc(ex.request.method)} /${esc(path)} → HTTP ${esc((ex.response || {}).status)}</div>` : ''}
+      <div class="kv"><em>Failed before</em>${hist} time${hist === 1 ? '' : 's'} in stored runs</div>
+      ${x.screenshot ? `<div class="kv"><em>Screenshot</em>${esc(x.screenshot)} (in the run's report folder / CI artifact)</div>` : ''}
+      <div class="mono">${esc(x.message)}</div>
+      ${ex.response ? `<div class="mono">response: ${esc(String(ex.response.body || '').slice(0, 300))}</div>` : ''}
+      <div class="kv" style="margin-top:8px">${logs ? `<a href="${logs}" target="_blank" rel="noopener">View logs</a> · ` : ''}<a href="${issue}" target="_blank" rel="noopener">Open issue</a></div></div>`;
+    }).join('')
     : '<div class="empty">No failures and no known defects in the last run.</div>';
 
   const gaps = d.flows.filter(f => f.status === 'gap' || f.status === 'not_built').map(f => `<tr>
@@ -146,8 +165,17 @@ fetch(API).then(async r => {
 }).then(d => {
   if (!d.run) { document.getElementById('root').innerHTML = '<div class="empty">No test run has been stored yet. Run <code>python tests/tools/run_suite.py</code> — it uploads its result here.</div>'; return; }
   const run = d.run;
+  FAIL_HISTORY = d.failure_history || {};
   run.flaky_tests = (run.flaky_tests || []).concat((d.flaky_by_history || []).filter(id => !(run.flaky_tests || []).some(f => f.test_id === id)).map(id => ({ test_id: id, attempts: ['seen failing and passing in the last 20 stored runs'] })));
   render(run);
+
+  if (d.smoke) {
+    const s = d.smoke, bad = s.failing || [];
+    const bars = (s.history || []).slice().reverse().map(x => `<i title="${esc(new Date(x.run_at).toLocaleString())}: ${x.failed} failing" style="display:inline-block;width:6px;height:22px;margin-right:2px;border-radius:2px;background:${x.failed ? '#dc2626' : '#16a34a'}"></i>`).join('');
+    document.getElementById('root').insertAdjacentHTML('afterbegin', `<div class="card"><div class="card-title">Production smoke <span class="pill ${bad.length ? 'p-failing' : 'p-passing'}">${bad.length ? bad.length + ' failing' : 'all passing'}</span></div>
+      <div class="note">Runs inside AWS every 30 minutes and right after every deployment. Last run ${esc(new Date(s.run_at).toLocaleString())} (${esc(s.trigger_detail)}): ${s.totals.passed}/${s.totals.tests} checks passed.</div>
+      <div>${bars}</div>${bad.map(c => `<div class="kv" style="margin-top:8px">❌ [${esc(c.severity)}] ${esc(c.name)} — got ${esc(c.detail)}</div>`).join('')}</div>`);
+  }
   const hist = (d.history || []).map(x => `<tr><td>${esc(new Date(x.run_at).toLocaleString())}</td><td>${esc(x.trigger || '')}</td><td>${esc(x.commit || '—')}</td><td class="n">${x.tests ?? '—'}</td><td class="n">${x.passed ?? '—'}</td><td class="n">${x.failed ?? '—'}</td></tr>`).join('');
   document.getElementById('root').insertAdjacentHTML('beforeend', `<div class="card" style="margin-top:20px"><div class="card-title">Recent runs</div><div class="note">Every stored run, newest first — this is the history behind the failure counts above.</div><div class="scroll"><table><thead><tr><th>Run</th><th>Trigger</th><th>Commit</th><th class="n">Tests</th><th class="n">Passed</th><th class="n">Failed</th></tr></thead><tbody>${hist}</tbody></table></div></div>`);
 }).catch(e => {

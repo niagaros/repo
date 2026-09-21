@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Integrations</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer}
+header a:hover{color:#fff}
+main{max-width:1000px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 18px;max-width:720px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 22px;margin-bottom:18px}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:12px}
+input,select{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;min-width:200px}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+.form{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6}
+.chip{display:inline-block;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:9}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-ent">Enterprise</a></header>
+<main>
+  <h1>Integrations</h1>
+  <div class="sub">Turn findings into tickets in <b>Jira Cloud</b> or <b>Monday.com</b> and keep their status in sync: when the ticket is done, the finding is closed in Niagaros. Your API token is checked against the provider first and then stored in AWS Secrets Manager — it is never shown again and never kept in the database.</div>
+  <div class="card"><h2>Connect a workspace</h2>
+    <div class="form"><select id="prov"><option value="jira">Jira Cloud</option><option value="monday">Monday.com</option></select>
+      <input id="site" placeholder="https://your-company.atlassian.net"><input id="email" placeholder="Atlassian account email"><input id="tok" type="password" placeholder="API token" autocomplete="off"><button id="connect">Connect</button></div>
+    <div class="note" id="hint" style="margin-top:8px"></div></div>
+  <div id="list"><div class="empty">Loading…</div></div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+let accountId = params.get('account_id');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 3200); };
+const q = () => accountId ? '?account_id=' + encodeURIComponent(accountId) : '';
+document.getElementById('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q();
+document.getElementById('nav-ent').onclick = () => location.href = 'enterprise.html' + q();
+const prov = document.getElementById('prov');
+function syncForm(){
+  const j = prov.value === 'jira';
+  document.getElementById('site').style.display = j ? '' : 'none';
+  document.getElementById('email').style.display = j ? '' : 'none';
+  document.getElementById('hint').textContent = j ? 'Create the token at id.atlassian.com → Security → API tokens. The site must be an Atlassian Cloud address (…atlassian.net).' : 'Create a personal API token in Monday.com → Profile → Developers → My access tokens.';
+}
+prov.onchange = syncForm; syncForm();
+
+async function post(body){
+  const r = await fetch(API + 'integrations', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({cloud_account_id: accountId, ...body})});
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) toast(d.error || 'Something went wrong');
+  return {ok: r.ok, data: d};
+}
+async function load(){
+  if(!accountId){ const d = await fetch(API + 'get-dashboard-data').then(r => r.json()); accountId = (d.accounts || [])[0] && d.accounts[0].id; }
+  if(!accountId){ document.getElementById('list').innerHTML = '<div class="empty">No account found.</div>'; return; }
+  const data = await fetch(API + 'integrations?cloud_account_id=' + encodeURIComponent(accountId)).then(r => r.json());
+  const audits = await fetch(API + 'audit-management?cloud_account_id=' + encodeURIComponent(accountId)).then(r => r.json()).catch(() => ({audits: []}));
+  const items = data.integrations || [];
+  document.getElementById('list').innerHTML = items.length ? items.map(i => `<div class="card"><h2>${i.provider === 'jira' ? 'Jira' : 'Monday.com'} <span class="chip">${esc(i.account_label || '')}</span></h2>
+    <div class="note">${esc(i.site_url || '')} · ${i.project ? 'project/board: ' + esc(i.project) : 'no project selected'} · last sync ${i.last_sync_at ? esc(new Date(i.last_sync_at).toLocaleString()) : 'never'}</div>
+    <div class="form"><input data-project="${esc(i.id)}" placeholder="Jira project key or Monday board id" value="${esc(i.project || '')}"><button class="ghost" data-select="${esc(i.id)}">Save project</button>
+      <button class="ghost" data-sync="${esc(i.id)}">Sync status now</button><button class="ghost" data-disconnect="${esc(i.id)}">Disconnect</button></div>
+    <div class="form"><select data-audit="${esc(i.id)}">${(audits.audits || []).map(a => `<option value="${esc(a.id)}">${esc(a.title)}</option>`).join('') || '<option value="">No audits yet</option>'}</select><button class="ghost" data-findings="${esc(i.id)}">Show findings</button></div>
+    <div data-flist="${esc(i.id)}"></div>
+    <table><thead><tr><th>Ticket</th><th>Provider status</th><th>Last synced</th></tr></thead><tbody>${(i.tickets || []).map(t => `<tr><td>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.key)}</a>` : esc(t.key)}</td><td>${esc(t.status || '')}</td><td>${t.last_synced_at ? esc(new Date(t.last_synced_at).toLocaleString()) : '—'}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No tickets yet.</td></tr>'}</tbody></table></div>`).join('')
+    : '<div class="card"><div class="empty">Nothing connected yet.</div></div>';
+  document.querySelectorAll('[data-select]').forEach(b => b.onclick = async () => { const id = b.dataset.select; if((await post({action:'select_project', integration_id:id, project:document.querySelector(`[data-project="${id}"]`).value.trim()})).ok){toast('Project saved');load();} });
+  document.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => { const r = await post({action:'sync', integration_id:b.dataset.sync}); if(r.ok){toast('Synced ' + r.data.synced.length + ' ticket(s)');load();} });
+  document.querySelectorAll('[data-disconnect]').forEach(b => b.onclick = async () => { if(confirm('Disconnect? The stored token is deleted.') && (await post({action:'disconnect', integration_id:b.dataset.disconnect})).ok) load(); });
+  document.querySelectorAll('[data-findings]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.findings, audit = document.querySelector(`[data-audit="${id}"]`).value; if(!audit) return;
+    const d = await fetch(API + 'audit-management?audit_detail=' + encodeURIComponent(audit)).then(r => r.json());
+    const ticketed = new Set((items.find(x => x.id === id).tickets || []).map(t => t.finding_id));
+    document.querySelector(`[data-flist="${id}"]`).innerHTML = '<table><tbody>' + (d.findings || []).map(f => `<tr><td>${esc(f.title)}</td><td>${esc(f.severity)}</td><td>${ticketed.has(f.id) ? 'ticket exists' : `<button class="ghost" data-ticket="${esc(id)}|${esc(f.id)}">Create ticket</button>`}</td></tr>`).join('') + '</tbody></table>';
+    document.querySelectorAll('[data-ticket]').forEach(t => t.onclick = async () => { const [i, f] = t.dataset.ticket.split('|'); const r = await post({action:'create_ticket', integration_id:i, finding_id:f}); if(r.ok){toast('Ticket ' + (r.data.ticket.key || '') + ' created');load();} });
+  });
+}
+document.getElementById('connect').onclick = async () => {
+  const body = {action:'connect', provider: prov.value, api_token: document.getElementById('tok').value.trim(), site_url: document.getElementById('site').value.trim(), email: document.getElementById('email').value.trim()};
+  const r = await post(body);
+  if(r.ok){ document.getElementById('tok').value = ''; toast('Connected as ' + r.data.authenticated_as + ' — now choose a project'); load(); }
+};
+load();
+</script>
+</body>
+</html>

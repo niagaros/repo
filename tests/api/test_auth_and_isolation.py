@@ -237,6 +237,57 @@ def test_tenant_a_cannot_generate_a_report_for_tenant_b(api):
     assert status == 403
 
 
+# ── Denied access leaves an audit trail (E2E-PERM-001; the issue's own example) ─────────────
+@pytest.mark.flow("E2E-PERM-001")
+@pytest.mark.severity("P0")
+@pytest.mark.needs_two_tenants
+def test_a_denied_cross_tenant_request_creates_an_audit_event_the_owner_can_read(api, api_b, step):
+    """User A -> requests tenant B's resource -> DENY -> an audit event exists for B (and only B sees it)."""
+    import time
+    from conftest import USER_A
+    with step("A is denied when requesting B's data"):
+        s, _, _ = api.get("tprm", params={"cloud_account_id": ACCOUNT_B_ID})
+        assert s == 403
+    with step("the owner of B can read the audit event"):
+        events = []
+        for _ in range(5):  # the write happens in the denying request; allow a moment for read-after-write
+            s, b, _ = api_b.get("notifications", params={"cloud_account_id": ACCOUNT_B_ID, "security_audit": "1"})
+            assert s == 200
+            events = [e for e in b["events"] if e["actor_email"] == USER_A and e["event_type"] == "access_denied" and (e["path"] or "").endswith("/tprm")]
+            if events:
+                break
+            time.sleep(1)
+        assert events, "no access_denied audit event was recorded for the denied request"
+        assert events[0]["method"] == "GET" and events[0]["source_ip"]
+
+
+@pytest.mark.flow("E2E-PERM-001")
+@pytest.mark.severity("P0")
+@pytest.mark.needs_two_tenants
+def test_audit_events_are_only_visible_to_the_targeted_accounts_owner(api, api_b):
+    """A must not see the log about B, and B's log must not be readable with A's session."""
+    s, _, _ = api.get("notifications", params={"cloud_account_id": ACCOUNT_B_ID, "security_audit": "1"})
+    assert s == 403
+    s, b, _ = api.get("notifications", params={"cloud_account_id": ACCOUNT_ID, "security_audit": "1"})
+    assert s == 200 and all(ACCOUNT_B_ID not in str(e) for e in b["events"])
+
+
+@pytest.mark.flow("E2E-PERM-001")
+@pytest.mark.severity("P0")
+@pytest.mark.needs_two_tenants
+def test_a_denied_write_is_audited_too(api, api_b):
+    import time
+    from conftest import USER_A
+    s, _, _ = api.post("tprm", {"action": "create_vendor", "cloud_account_id": ACCOUNT_B_ID}, headers=JSON, allow_foreign=True)
+    assert s == 403
+    for _ in range(5):
+        _, b, _ = api_b.get("notifications", params={"cloud_account_id": ACCOUNT_B_ID, "security_audit": "1"})
+        if any(e["actor_email"] == USER_A and e["method"] == "POST" for e in b["events"]):
+            return
+        time.sleep(1)
+    pytest.fail("the denied POST left no audit event")
+
+
 # ── Public surfaces that must stay public ───────────────────────────────
 @pytest.mark.flow("E2E-TRUST-001")
 @pytest.mark.severity("P2")

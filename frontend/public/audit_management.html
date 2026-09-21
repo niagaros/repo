@@ -486,7 +486,38 @@ function renderDetail(){
 
     <div class="sec-hdr"><span>Evidence</span><button class="btn-ghost btn-sm" onclick="openModal('ov-evidence')">+ Add evidence</button></div>
     ${evidenceHtml}
+    <div class="sec-hdr"><span>External auditors</span><button class="btn-ghost btn-sm" onclick="inviteAuditor()">+ Invite auditor</button></div>
+    <div id="auditor-list"><div class="empty" style="padding:10px 0">Loading…</div></div>
   `;
+  loadAuditors();
+}
+
+async function loadAuditors(){
+  const el=document.getElementById('auditor-list'); if(!el) return;
+  const r=await fetch(AUDIT_API+'?auditor_access='+encodeURIComponent(activeAuditId));
+  const d=await r.json();
+  el.innerHTML=(d.access||[]).length ? d.access.map(x=>`
+    <div class="evidence-row">
+      <span style="flex:1">👤 ${esc(x.auditor_name||x.auditor_email)} <span style="color:#9ca3af">${esc(x.auditor_email)}</span>
+        · ${x.active?'access until '+esc((x.expires_at||'').slice(0,10)):(x.revoked?'revoked':'expired')}
+        ${x.last_used_at?' · last opened '+esc(String(x.last_used_at).slice(0,16).replace('T',' ')):' · not opened yet'}</span>
+      ${x.active?`<button class="btn-ghost btn-sm" onclick="revokeAuditor('${x.id}')">Revoke</button>`:''}
+    </div>`).join('') : '<div class="empty" style="padding:10px 0">No auditors invited. An invited auditor sees only this audit — nothing else in your account.</div>';
+}
+async function inviteAuditor(){
+  const email=(prompt('Auditor email address')||'').trim(); if(!email) return;
+  const name=(prompt('Auditor name (optional)')||'').trim();
+  const r=await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'invite_auditor',audit_id:activeAuditId,auditor_email:email,auditor_name:name,days:30})});
+  const d=await r.json();
+  if(!r.ok){ showToast(d.error||'Could not invite'); return; }
+  if(d.email&&d.email.sent){ showToast('Invitation emailed to '+email); }
+  else { prompt('The email could not be delivered ('+((d.email&&d.email.reason)||'unknown reason').slice(0,120)+'). Send this private link to the auditor yourself:', d.url); }
+  loadAuditors();
+}
+async function revokeAuditor(id){
+  if(!confirm('Revoke this auditor’s access now?')) return;
+  await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'revoke_auditor',access_id:id})});
+  showToast('Access revoked'); loadAuditors();
 }
 
 function toggleFinding(id){const el=document.getElementById('fb-'+id);el.hidden=!el.hidden;}

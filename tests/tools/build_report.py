@@ -102,6 +102,7 @@ def main():
         "flows": flows,
         "failures": [{"test_id": t["test_id"], "flow": t["flow"], "severity": t["severity"], "status": t["status"],
                       "failed_step": t["failed_step"], "message": t["message"][-900:], "last_exchange": t["last_exchange"],
+                      "request_id": t.get("request_id"), "screenshot": t.get("screenshot"), "layer": t.get("layer"),
                       "commit": run.get("commit"), "environment": run.get("environment", {}).get("api")} for t in problems],
         "flaky_tests": [{"test_id": t["test_id"], "attempts": t.get("attempts")} for t in results if t.get("flaky")],
         "unregistered_flows_in_tests": unregistered,

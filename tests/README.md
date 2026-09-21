@@ -24,6 +24,17 @@ Every test carries `@pytest.mark.flow("E2E-…")` and `@pytest.mark.severity("P0
 ## Statuses (never hidden)
 `passed` · `failed` (blocks) · `known_failure` (a real, tracked defect — strict-xfail, so it turns red the moment it is fixed and the marker must be removed) · `blocked` (needs `E2E_TOKEN`) · `skipped` (not applicable) · `flaky` (failed, then passed on immediate re-run).
 
+## What is covered (all against the live system, with dedicated test users)
+Users A, B, C(not created), D and their tenants: **tenant isolation** (reads, writes, every id-only action, denied attempts audited), **enterprise permissions**
+(organizations, business units, scoped members, read-only viewers), **auditor access** (email invitation, sees only the invited audit, revocable),
+**notifications end to end** (event -> scoped audience -> SQS/SES delivery -> acknowledgement), the **finding lifecycle**, **sign-up -> MFA -> sign-out** on the real
+user pool, **AWS connection validation**, **Jira/Monday** (contract tests against local stand-ins, live test when credentials are supplied), and the AWS-side
+**production smoke** (Lambda `platform-smoke`, EventBridge: every 30 minutes and after every Amplify deployment; alerts by email; results in the dashboard).
+
+## Change-based selection
+`python tests/tools/select_tests.py` maps the files a change touches to critical flows (`paths` in the registry); CI runs those flows plus every P0 test, or everything
+when the change touches shared plumbing or a path no flow claims.
+
 ## Where results live
 Every run is stored in the database (tables `test_runs`, `test_results`, migration `023_test_runs.sql`) through `POST /test-results`
 (`tests/tools/upload_results.py`, called by `run_suite.py`). `GET /test-results` (Cognito **Admin** group or the ingest token) returns the

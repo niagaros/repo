@@ -59,10 +59,12 @@ framework set the rest of the product already tracks.
 """
 
 import base64
+import hashlib
 import json
 import logging
 import os
 import re
+import secrets
 from datetime import date, datetime, timezone
 
 import boto3
@@ -249,6 +251,21 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON audit_findings TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON audit_remediation_tasks TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON audit_evidence TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON audit_finding_comments TO cspm_lambda;
+
+-- External auditors get a per-audit, revocable, expiring secret link. Only the SHA-256 of the token is stored.
+CREATE TABLE IF NOT EXISTS audit_auditor_access (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    audit_id      UUID NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+    auditor_email TEXT NOT NULL,
+    auditor_name  TEXT,
+    token_hash    TEXT NOT NULL UNIQUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at    TIMESTAMPTZ NOT NULL,
+    revoked_at    TIMESTAMPTZ,
+    last_used_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS audit_auditor_access_audit_idx ON audit_auditor_access(audit_id);
+GRANT SELECT, INSERT, UPDATE, DELETE ON audit_auditor_access TO cspm_lambda;
 """
 
 
@@ -448,7 +465,13 @@ def _delete_audit(conn, audit_id):
 
 # ── findings ──────────────────────────────────────────────────────────────
 
+# Risk is calculated from severity when the caller does not supply a rating, so every finding is risk-rated.
+RISK_BY_SEVERITY = {"CRITICAL": "Critical (10/10)", "HIGH": "High (7/10)", "MEDIUM": "Medium (5/10)", "LOW": "Low (2/10)"}
+
+
 def _add_manual_finding(conn, audit_id, title, description, severity, risk_rating, root_cause):
+    severity = (severity or "MEDIUM").upper()
+    risk_rating = risk_rating or RISK_BY_SEVERITY.get(severity, "Medium (5/10)")
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -683,22 +706,154 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body, default=str)}
 
 
+
+# ── External auditor access ─────────────────────────────────────────────
+
+AUDITOR_FINDING_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _hash_token(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _invite_auditor(conn, audit_id, email, name, days, base_url):
+    token = secrets.token_urlsafe(32)
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO audit_auditor_access (audit_id, auditor_email, auditor_name, token_hash, expires_at)
+                VALUES (%s, %s, %s, %s, NOW() + (%s || ' days')::interval) RETURNING id, expires_at
+            """, (audit_id, email, name, _hash_token(token), str(days)))
+            access_id, expires_at = cur.fetchone()
+            cur.execute("SELECT title FROM audits WHERE id = %s", (audit_id,))
+            title = cur.fetchone()[0]
+    path = f"auditor_view.html?token={token}"
+    link = f"{base_url}/{path}"
+    sender = os.environ.get("AUDIT_SENDER_EMAIL") or "bottomclipzz@gmail.com"
+    try:
+        boto3.client("sesv2", region_name=os.environ.get("SECRET_REGION", "eu-west-1")).send_email(
+            FromEmailAddress=sender, Destination={"ToAddresses": [email]},
+            Content={"Simple": {
+                "Subject": {"Data": f"You have been invited to audit: {title}"},
+                "Body": {"Text": {"Data": (
+                    f"Hello{(' ' + name) if name else ''},\n\nYou have been given access to the audit \"{title}\" on Niagaros.\n"
+                    f"Open your private audit workspace: {link}\n\nThe link is personal, only shows this audit and expires on "
+                    f"{expires_at:%Y-%m-%d}. Do not forward it.\n")}},
+            }},
+        )
+        email_result = {"sent": True}
+    except Exception as e:
+        logger.warning("auditor invitation email failed: %s", e)
+        email_result = {"sent": False, "reason": str(e)}
+    return str(access_id), path, link, expires_at, email_result
+
+
+def _list_auditor_access(cur, audit_id):
+    cur.execute("""
+        SELECT id, auditor_email, auditor_name, created_at, expires_at, revoked_at, last_used_at
+        FROM audit_auditor_access WHERE audit_id = %s ORDER BY created_at DESC
+    """, (audit_id,))
+    return [{"id": str(r[0]), "auditor_email": r[1], "auditor_name": r[2], "created_at": r[3], "expires_at": r[4],
+             "revoked": r[5] is not None, "last_used_at": r[6],
+             "active": r[5] is None and r[4] > datetime.now(timezone.utc)} for r in cur.fetchall()]
+
+
+def _revoke_auditor(conn, access_id):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE audit_auditor_access SET revoked_at = NOW() WHERE id = %s AND revoked_at IS NULL", (access_id,))
+
+
+def _auditor_from_token(conn, token):
+    """(audit_id, auditor_email, auditor_name) for a valid, unexpired, unrevoked token - else None."""
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE audit_auditor_access SET last_used_at = NOW()
+                WHERE token_hash = %s AND revoked_at IS NULL AND expires_at > NOW()
+                RETURNING audit_id, auditor_email, auditor_name
+            """, (_hash_token(token),))
+            row = cur.fetchone()
+    return (str(row[0]), row[1], row[2]) if row else None
+
+
+def _auditor_view(cur, audit_id):
+    """What an invited auditor may see of ONE audit: no account ids, no stakeholder list, no owners' email addresses."""
+    d = _get_audit_detail(cur, audit_id)
+    for k in ("cloud_account_id", "stakeholders"):
+        d.pop(k, None)
+    for f in d.get("findings", []):
+        for t in f.get("remediation_tasks", f.get("tasks", [])):
+            t.pop("owner_email", None)
+    return d
+
+
+def _auditor_request(conn, method, qs, body, token):
+    who = _auditor_from_token(conn, token)
+    if not who:
+        return _resp(403, {"error": "This auditor link is invalid, expired, or has been revoked."})
+    audit_id, auditor_email, auditor_name = who
+    author = auditor_name or auditor_email
+    if method == "GET":
+        with conn.cursor() as cur:
+            if qs.get("download_evidence"):
+                cur.execute("SELECT 1 FROM audit_evidence WHERE id = %s AND audit_id = %s", (qs["download_evidence"], audit_id))
+                if not cur.fetchone():
+                    return _resp(403, {"error": "That evidence does not belong to this audit."})
+                url = _presign_evidence(cur, qs["download_evidence"])
+                return _resp(200, {"download_url": url}) if url else _resp(404, {"error": "no file for this evidence entry"})
+            return _resp(200, {"audit": _auditor_view(cur, audit_id), "auditor": {"email": auditor_email, "name": auditor_name}})
+    if method == "POST":
+        action = body.get("action")
+        if action == "auditor_add_finding":
+            if not body.get("title"):
+                return _resp(400, {"error": "title is required"})
+            severity = (body.get("severity") or "MEDIUM").upper()
+            if severity not in AUDITOR_FINDING_SEVERITIES:
+                return _resp(400, {"error": f"severity must be one of {AUDITOR_FINDING_SEVERITIES}"})
+            fid = _add_manual_finding(conn, audit_id, body["title"], body.get("description"), severity, None, None)
+            return _resp(200, {"id": fid})
+        if action == "auditor_add_comment":
+            if not body.get("body"):
+                return _resp(400, {"error": "body is required"})
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM audit_findings WHERE id = %s AND audit_id = %s", (body.get("finding_id"), audit_id))
+                if not cur.fetchone():
+                    return _resp(403, {"error": "That finding does not belong to this audit."})
+            cid = _add_finding_comment(conn, body["finding_id"], author, body["body"])
+            return _resp(200, {"id": cid})
+        return _resp(403, {"error": "Auditors can only add findings and comments."})
+    return _resp(405, {"error": "method not allowed"})
+
+
 from collectors.aws.scanner.tenant_auth import guard
 
 REFS = {
-    "audit_id": (
-        "SELECT cloud_account_id FROM audits WHERE id = %s"
+    "audit_id": "SELECT cloud_account_id FROM audits WHERE id = %s",
+    "audit_detail": "SELECT cloud_account_id FROM audits WHERE id = %s",
+    "auditor_access": "SELECT cloud_account_id FROM audits WHERE id = %s",
+    "access_id": (
+        "SELECT a.cloud_account_id FROM audit_auditor_access x JOIN audits a ON a.id = x.audit_id WHERE x.id = %s"
     ),
+    "download_evidence": (
+        "SELECT a.cloud_account_id FROM audit_evidence e JOIN audits a ON a.id = e.audit_id WHERE e.id = %s"
+    ),
+    "trust_documents": "SELECT id FROM cloud_accounts WHERE id = %s",
     "finding_id": (
         "SELECT a.cloud_account_id FROM audit_findings f JOIN audits a ON a.id = f.audit_id WHERE f.id = %s"
     ),
     "task_id": (
-        "SELECT a.cloud_account_id FROM audit_remediation_tasks t JOIN audit_findings f ON f.id = t.audit_finding_id JOIN audits a ON a.id = f.audit_id WHERE t.id = %s"
+        "SELECT a.cloud_account_id FROM audit_remediation_tasks t JOIN audit_findings f ON f.id = t.audit_finding_id "
+        "JOIN audits a ON a.id = f.audit_id WHERE t.id = %s"
     ),
-    "trust_document_id": (
-        "SELECT cloud_account_id FROM trust_documents WHERE id = %s"
-    ),
+    "trust_document_id": "SELECT cloud_account_id FROM trust_documents WHERE id = %s",
 }
+
+
+def _is_public(event, qs, body):
+    """Auditors act with the secret token from their invitation; what they may do is decided by that token alone."""
+    return bool(qs.get("auditor_token") or body.get("auditor_token"))
 
 
 def handler(event, context):
@@ -742,11 +897,16 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
-        denied = guard(event, conn, qs, body, REFS, None)
+        denied = guard(event, conn, qs, body, REFS, _is_public)
         if denied:
             return _resp(denied[0], {"error": denied[1]})
+        token = qs.get("auditor_token") or body.get("auditor_token")
+        if token:
+            return _auditor_request(conn, method, qs, body, token)
         if method == "GET":
             with conn.cursor() as cur:
+                if qs.get("auditor_access"):
+                    return _resp(200, {"access": _list_auditor_access(cur, qs["auditor_access"])})
                 if qs.get("audit_detail"):
                     detail = _get_audit_detail(cur, qs["audit_detail"])
                     if not detail:
@@ -801,6 +961,24 @@ def handler(event, context):
             if action == "delete_audit":
                 _delete_audit(conn, body["audit_id"])
                 return _resp(200, {"deleted": True})
+
+            if action == "invite_auditor":
+                email = (body.get("auditor_email") or "").strip()
+                if not _EMAIL_RE.match(email):
+                    return _resp(400, {"error": "a valid auditor_email is required"})
+                days = int(body.get("days") or 30)
+                if not 1 <= days <= 90:
+                    return _resp(400, {"error": "days must be between 1 and 90"})
+                headers = event.get("headers") or {}
+                origin = headers.get("origin") or headers.get("Origin") or ""
+                base = origin if re.match(r"^https://[a-z0-9.-]+\.amplifyapp\.com$", origin) else os.environ.get("APP_BASE_URL", "https://main.d3joqokkaynfaq.amplifyapp.com")
+                access_id, path, link, expires_at, email_result = _invite_auditor(
+                    conn, body["audit_id"], email, body.get("auditor_name"), days, base)
+                return _resp(200, {"id": access_id, "path": path, "url": link, "expires_at": expires_at, "email": email_result})
+
+            if action == "revoke_auditor":
+                _revoke_auditor(conn, body["access_id"])
+                return _resp(200, {"revoked": True})
 
             if action == "add_manual_finding":
                 if not body.get("title"):

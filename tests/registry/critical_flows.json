@@ -13,6 +13,12 @@
       "dependencies": [
         "API Gateway",
         "Cognito"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/tenant_auth.py",
+        "frontend/public/auth-fetch.js",
+        "get-dashboard-data/",
+        "backend/src/onboarding/"
       ]
     },
     {
@@ -27,22 +33,31 @@
       "dependencies": [
         "Cognito",
         "API Gateway"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/tenant_auth.py",
+        "frontend/src/",
+        "backend/src/onboarding/"
       ]
     },
     {
       "id": "E2E-AUTH-003",
       "domain": "Authentication",
-      "name": "Sign up -> verify identity (email code) -> MFA (TOTP) -> session",
+      "name": "Sign up -> verification -> MFA (TOTP) -> session -> sign out (local runs with AWS admin credentials)",
       "severity": "P0",
       "exists": true,
-      "environment": "staging",
+      "environment": "production Cognito, self-cleaning",
       "owner": "Security Engineering",
-      "frequency": "Every deployment",
+      "frequency": "Every deployment (local/admin)",
       "dependencies": [
         "Cognito",
         "SES"
       ],
-      "gap_reason": "Verification codes are delivered by email and MFA needs a TOTP secret enrolled per user; both need a mailbox the tests can read and AWS admin credentials in CI. MFA is OPTIONAL in the user pool today."
+      "paths": [
+        "backend/src/collectors/aws/scanner/tenant_auth.py",
+        "frontend/src/",
+        "backend/src/onboarding/"
+      ]
     },
     {
       "id": "E2E-PERM-001",
@@ -57,6 +72,39 @@
         "API Gateway",
         "Cognito",
         "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/tenant_auth.py",
+        "backend/src/collectors/aws/scanner/enterprise_handler.py",
+        "get-dashboard-data/",
+        "backend/src/collectors/aws/scanner/notification_handler.py",
+        "backend/src/collectors/aws/scanner/tprm_handler.py",
+        "backend/src/collectors/aws/scanner/audit_management_handler.py",
+        "backend/src/collectors/aws/scanner/questionnaire_handler.py",
+        "backend/src/collectors/aws/scanner/custom_framework_handler.py",
+        "backend/src/collectors/aws/scanner/trust_center_handler.py",
+        "backend/src/collectors/aws/scanner/calculator_handler.py",
+        "backend/src/collectors/aws/scanner/ai_agent_handler.py"
+      ]
+    },
+    {
+      "id": "E2E-PERM-002",
+      "domain": "Security",
+      "name": "Enterprise permissions: business-unit scoped members, read-only viewers, revocation, denied attempts audited",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production-safe (dedicated test users)",
+      "owner": "Security Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "Cognito",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/tenant_auth.py",
+        "backend/src/collectors/aws/scanner/enterprise_handler.py",
+        "get-dashboard-data/"
       ]
     },
     {
@@ -70,6 +118,9 @@
       "frequency": "Every PR",
       "dependencies": [
         "Chromium"
+      ],
+      "paths": [
+        "frontend/public/"
       ]
     },
     {
@@ -85,15 +136,39 @@
         "CloudWatch",
         "RDS",
         "SQS"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/status_handler.py",
+        "backend/src/collectors/aws/scanner/smoke_handler.py",
+        "frontend/public/status.html"
+      ]
+    },
+    {
+      "id": "E2E-SMOKE-001",
+      "domain": "Platform",
+      "name": "Production smoke tests after every deployment and every 30 minutes, run inside AWS, alerting on failure",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production",
+      "owner": "Platform Engineering",
+      "frequency": "After every deployment + every 30 min",
+      "dependencies": [
+        "EventBridge",
+        "Lambda",
+        "Amplify",
+        "SES"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/smoke_handler.py"
       ]
     },
     {
       "id": "E2E-INFRA-001",
       "domain": "Infrastructure",
-      "name": "Connect AWS -> validate permissions -> discover resources -> scan -> create findings -> display",
+      "name": "Connect AWS -> validate permissions -> discover resources -> scan -> findings -> display",
       "severity": "P1",
       "exists": true,
-      "environment": "staging",
+      "environment": "needs a scannable AWS test account",
       "owner": "Platform Engineering",
       "frequency": "Every deployment",
       "dependencies": [
@@ -101,21 +176,49 @@
         "Lambda",
         "PostgreSQL"
       ],
-      "gap_reason": "The scan needs a real AWS role to assume and its results are only readable by the account's owner. The test tenants use placeholder AWS account ids, and a real customer account (Domits) is deliberately never accessed by tests; a dedicated scannable AWS test account is needed."
+      "gap_reason": "The code exists and is deployed (scan-handler: validate_connection + account-scoped scan; orchestrator scoped per account) but its E2E test needs a dedicated test tenant linked to the Niagaros AWS account; creating that tenant was blocked by the safety policy (it would reuse the production account's scanner role), so it is not exercised yet.",
+      "paths": [
+        "backend/src/collectors/aws/scanner/scan_handler.py",
+        "backend/src/orchestrator/",
+        "backend/src/onboarding/"
+      ]
+    },
+    {
+      "id": "E2E-INFRA-002",
+      "domain": "Infrastructure",
+      "name": "Connect an AWS account: validated with the real role, failures reported exactly, scans account-scoped and owner-only",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (read-only)",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "STS",
+        "Lambda"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/scan_handler.py",
+        "backend/src/orchestrator/"
+      ]
     },
     {
       "id": "E2E-SEC-001",
       "domain": "Security",
-      "name": "Finding lifecycle: detected -> owner assigned -> remediation executed -> retested -> resolved",
+      "name": "Finding lifecycle: detected -> risk calculated -> owner assigned + notified -> remediation -> re-test verified -> resolved -> trail",
       "severity": "P1",
-      "exists": false,
-      "environment": "staging",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
       "owner": "Security Engineering",
-      "frequency": "Every deployment",
+      "frequency": "Every PR",
       "dependencies": [
-        "PostgreSQL"
+        "API Gateway",
+        "PostgreSQL",
+        "SES"
       ],
-      "gap_reason": "Product gap: findings are detected and tracked (first_detected_at) but there is no owner-assignment or remediation-execution workflow to test yet."
+      "paths": [
+        "backend/src/collectors/aws/scanner/audit_management_handler.py"
+      ]
     },
     {
       "id": "E2E-CMP-001",
@@ -129,6 +232,10 @@
       "dependencies": [
         "API Gateway",
         "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/custom_framework_handler.py",
+        "backend/src/collectors/aws/scanner/calculator_handler.py"
       ]
     },
     {
@@ -140,7 +247,10 @@
       "environment": "unit",
       "owner": "Compliance Engineering",
       "frequency": "Every PR",
-      "dependencies": []
+      "dependencies": [],
+      "paths": [
+        "backend/src/collectors/aws/scanner/_mapper_handler.py"
+      ]
     },
     {
       "id": "E2E-AUD-001",
@@ -154,6 +264,29 @@
       "dependencies": [
         "API Gateway",
         "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/audit_management_handler.py"
+      ]
+    },
+    {
+      "id": "E2E-AUD-002",
+      "domain": "Audit",
+      "name": "Auditor invited (email) -> sees only the invited audit -> adds findings/comments -> revoked",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
+      "owner": "Compliance Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL",
+        "SES",
+        "S3"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/audit_management_handler.py",
+        "frontend/public/auditor_view.html"
       ]
     },
     {
@@ -168,6 +301,9 @@
       "dependencies": [
         "API Gateway",
         "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/tprm_handler.py"
       ]
     },
     {
@@ -183,6 +319,11 @@
         "API Gateway",
         "PostgreSQL",
         "SES/SNS"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/notification_handler.py",
+        "backend/src/collectors/aws/scanner/notification_lib.py",
+        "frontend/public/notification_settings.html"
       ]
     },
     {
@@ -194,7 +335,31 @@
       "environment": "unit",
       "owner": "Platform Engineering",
       "frequency": "Every PR",
-      "dependencies": []
+      "dependencies": [],
+      "paths": [
+        "backend/src/collectors/aws/scanner/notification_lib.py"
+      ]
+    },
+    {
+      "id": "E2E-NOT-003",
+      "domain": "Notifications",
+      "name": "Critical event -> severity -> audience scoped -> delivered (SQS + SES) -> acknowledged -> analytics",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "SQS",
+        "SES",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/notification_handler.py",
+        "backend/src/collectors/aws/scanner/notification_lib.py",
+        "backend/src/collectors/aws/scanner/audit_management_handler.py"
+      ]
     },
     {
       "id": "E2E-AI-001",
@@ -205,7 +370,10 @@
       "environment": "unit",
       "owner": "AI Engineering",
       "frequency": "Every PR",
-      "dependencies": []
+      "dependencies": [],
+      "paths": [
+        "backend/src/collectors/aws/scanner/ai_agent_handler.py"
+      ]
     },
     {
       "id": "E2E-QST-001",
@@ -219,6 +387,9 @@
       "dependencies": [
         "API Gateway",
         "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/questionnaire_handler.py"
       ]
     },
     {
@@ -230,7 +401,10 @@
       "environment": "unit",
       "owner": "Compliance Engineering",
       "frequency": "Every PR",
-      "dependencies": []
+      "dependencies": [],
+      "paths": [
+        "backend/src/collectors/aws/scanner/questionnaire_handler.py"
+      ]
     },
     {
       "id": "E2E-TRUST-001",
@@ -244,6 +418,9 @@
       "dependencies": [
         "API Gateway",
         "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/trust_center_handler.py"
       ]
     },
     {
@@ -257,6 +434,9 @@
       "frequency": "Every PR",
       "dependencies": [
         "Chromium"
+      ],
+      "paths": [
+        "frontend/public/notification_settings.html"
       ]
     },
     {
@@ -270,6 +450,9 @@
       "frequency": "Every PR",
       "dependencies": [
         "Chromium"
+      ],
+      "paths": [
+        "frontend/public/"
       ]
     },
     {
@@ -286,6 +469,10 @@
         "API Gateway",
         "Cognito",
         "Chromium"
+      ],
+      "paths": [
+        "frontend/",
+        "get-dashboard-data/"
       ]
     },
     {
@@ -299,6 +486,9 @@
       "frequency": "Every PR",
       "dependencies": [
         "API Gateway"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/"
       ]
     },
     {
@@ -312,6 +502,9 @@
       "frequency": "Every run",
       "dependencies": [
         "PostgreSQL"
+      ],
+      "paths": [
+        "tests/"
       ]
     },
     {
@@ -327,6 +520,11 @@
         "API Gateway",
         "PostgreSQL",
         "Secrets Manager"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/test_results_handler.py",
+        "tests/tools/",
+        "frontend/public/test_dashboard.html"
       ]
     },
     {
@@ -342,34 +540,48 @@
         "API Gateway",
         "Cognito",
         "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/onboarding/"
       ]
     },
     {
       "id": "E2E-ONB-001",
       "domain": "Enterprise",
-      "name": "Create enterprise -> business units -> invite team -> assign roles -> connect infra -> onboarding complete",
+      "name": "Enterprise onboarding: organization -> business units -> account assigned by its owner -> team invited with roles",
       "severity": "P1",
-      "exists": false,
-      "environment": "staging",
+      "exists": true,
+      "environment": "production-safe (dedicated test tenants)",
       "owner": "Product",
-      "frequency": "Every deployment",
-      "dependencies": [],
-      "gap_reason": "Product gap: Niagaros has no enterprise / business-unit / team-invitation model today (accounts are single-owner). Nothing exists to test."
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "Cognito",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/enterprise_handler.py",
+        "frontend/public/enterprise.html"
+      ]
     },
     {
       "id": "E2E-WS-001",
       "domain": "Integrations",
-      "name": "Jira / Monday: connect -> map project -> create ticket -> synchronize status",
+      "name": "Jira / Monday: connect -> select project -> create ticket -> synchronize status -> finding updated (contract-tested; live needs the customer's credentials)",
       "severity": "P1",
-      "exists": false,
-      "environment": "staging",
+      "exists": true,
+      "environment": "local stand-ins + live validation",
       "owner": "Product",
-      "frequency": "Every deployment",
+      "frequency": "Every PR",
       "dependencies": [
         "Jira",
-        "Monday"
+        "Monday",
+        "Secrets Manager"
       ],
-      "gap_reason": "Product gap: there is no Jira or Monday integration (the AI agent even lists them as unsupported). Only a GitHub integration exists."
+      "paths": [
+        "backend/src/collectors/aws/scanner/integrations_handler.py",
+        "frontend/public/integrations.html"
+      ]
     }
   ]
 }

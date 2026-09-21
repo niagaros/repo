@@ -21,6 +21,11 @@ def test_a_wrong_ingest_token_is_refused(anon):
     assert anon.post("test-results", {"summary": {}, "results": []}, headers={**JSON, "X-Ingest-Token": "nope"})[0] == 403
 
 
+def test_an_expired_or_invalid_session_is_sent_back_to_sign_in_not_told_it_is_not_admin(anon):
+    s, b, _ = anon.get("test-results", headers={"Authorization": "Bearer expired.or.invalid"})
+    assert s == 401 and "expired" in b["error"]
+
+
 @pytest.mark.needs_token
 def test_a_normal_signed_in_user_is_not_an_admin_and_cannot_see_test_results(api):
     s, b, _ = api.get("test-results")

@@ -1,6 +1,7 @@
 name: Production smoke tests
 
-# Issue #279: continuous validation of the deployed platform. Read-only — no data is created.
+# Issue #279: a second, GitHub-side copy of the production smoke. The primary one runs inside AWS (Lambda platform-smoke,
+# EventBridge: every 30 minutes and after every Amplify deployment). Read-only — no data is created.
 on:
   schedule:
     - cron: "*/30 * * * *"
@@ -18,6 +19,7 @@ jobs:
     env:
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
+      E2E_PASSWORD_D: ${{ secrets.E2E_PASSWORD_D }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

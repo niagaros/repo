@@ -19,7 +19,6 @@ import boto3
 import psycopg2
 from psycopg2.extras import Json
 
-from collectors.aws.scanner.notification_lib import is_admin_caller
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -27,6 +26,7 @@ logger.setLevel(logging.INFO)
 DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
 TOKEN_SECRET_NAME = os.environ.get("INGEST_TOKEN_SECRET", "cspm/tests/ingest-token")
 REGION = os.environ.get("SECRET_REGION", "eu-west-1")
+ADMIN_GROUP_NAME = "Admin"
 MAX_RESULTS = 5000
 STATUSES = {"passed", "failed", "known_failure", "blocked", "skipped"}
 
@@ -91,17 +91,38 @@ def _get_connection():
                             password=s["password"], sslmode="require", connect_timeout=10)
 
 
-def _authorized(event):
-    """True for a caller holding the ingest token, or a signed-in Cognito Admin."""
+def _caller(event):
+    """Who is calling? Returns 'ingest' (valid ingest token), 'admin', 'not_admin', 'invalid_session' or 'anonymous'.
+    An expired/invalid session is deliberately distinct from a valid session that lacks the Admin group."""
     headers = {k.lower(): v for k, v in ((event or {}).get("headers") or {}).items()}
     supplied = (headers.get("x-ingest-token") or "").strip()
     if supplied:
         try:
-            return hmac.compare_digest(supplied.encode(), _secret(TOKEN_SECRET_NAME).strip().encode())
+            ok = hmac.compare_digest(supplied.encode(), _secret(TOKEN_SECRET_NAME).strip().encode())
         except Exception:
             logger.exception("could not read the ingest token secret")
-            return False
-    return is_admin_caller(event)
+            return "invalid_session"
+        return "ingest" if ok else "invalid_session"
+    auth = headers.get("authorization") or ""
+    if not auth.startswith("Bearer ") or not auth[7:].strip():
+        return "anonymous"
+    try:
+        cognito = boto3.client("cognito-idp", region_name=REGION)
+        user = cognito.get_user(AccessToken=auth[7:].strip())
+    except Exception as e:
+        logger.warning("session token rejected by Cognito: %s", type(e).__name__)
+        return "invalid_session"
+    try:
+        groups = cognito.admin_list_groups_for_user(UserPoolId=os.environ["COGNITO_USER_POOL_ID"], Username=user["Username"])
+    except Exception as e:
+        logger.error("could not read the caller's groups: %s: %s", type(e).__name__, e)
+        return "not_admin"
+    names = [g["GroupName"] for g in groups.get("Groups", [])]
+    if ADMIN_GROUP_NAME not in names:
+        email = next((a["Value"] for a in user.get("UserAttributes", []) if a["Name"] == "email"), "?")
+        logger.info("caller is not an Admin: username=%s email=%s groups=%s", user["Username"], email, names)
+    logger.info("caller groups: %s", names)
+    return "admin" if ADMIN_GROUP_NAME in names else "not_admin"
 
 
 def validate_run(payload):
@@ -147,10 +168,10 @@ def _read(cur, run_id=None):
     if run_id:
         cur.execute("SELECT id, summary FROM test_runs WHERE id = %s", (run_id,))
     else:
-        cur.execute("SELECT id, summary FROM test_runs ORDER BY run_at DESC LIMIT 1")
+        cur.execute("SELECT id, summary FROM test_runs WHERE trigger NOT LIKE 'production-smoke%%' ORDER BY run_at DESC LIMIT 1")
     row = cur.fetchone()
     if not row:
-        return {"run": None, "history": [], "failure_counts": {}, "flaky_by_history": []}
+        return {"run": None, "history": [], "failure_counts": {}, "flaky_by_history": [], "smoke": None, "failure_history": {}}
     latest_id, summary = str(row[0]), row[1]
 
     cur.execute("SELECT flow, count(*) FROM test_results WHERE status = 'failed' AND flow IS NOT NULL GROUP BY flow")
@@ -159,19 +180,31 @@ def _read(cur, run_id=None):
         f["failure_count_history"] = failure_counts.get(f["id"], 0)
 
     cur.execute("""
-        SELECT id, run_at, commit_sha, trigger, totals FROM test_runs ORDER BY run_at DESC LIMIT 30
+        SELECT id, run_at, commit_sha, trigger, totals FROM test_runs WHERE trigger NOT LIKE 'production-smoke%%' ORDER BY run_at DESC LIMIT 30
     """)
     history = [{"id": str(i), "run_at": t, "commit": c, "trigger": g, "tests": tot.get("tests"), "passed": tot.get("passed"),
                 "failed": tot.get("failed")} for i, t, c, g, tot in cur.fetchall()]
 
     cur.execute("""
         SELECT test_id FROM test_results
-        WHERE run_id IN (SELECT id FROM test_runs ORDER BY run_at DESC LIMIT 20)
+        WHERE run_id IN (SELECT id FROM test_runs WHERE trigger NOT LIKE 'production-smoke%%' ORDER BY run_at DESC LIMIT 20)
         GROUP BY test_id
         HAVING count(*) FILTER (WHERE status = 'failed') > 0 AND count(*) FILTER (WHERE status = 'passed') > 0
     """)
     flaky = [r[0] for r in cur.fetchall()]
-    return {"run": summary, "run_id": latest_id, "history": history, "failure_counts": failure_counts, "flaky_by_history": flaky}
+    failing_ids = [f["test_id"] for f in summary.get("failures", []) if f.get("status") == "failed"]
+    failure_history = {}
+    if failing_ids:
+        cur.execute("""SELECT r.test_id, array_agg(t.run_at ORDER BY t.run_at DESC) FROM test_results r JOIN test_runs t ON t.id = r.run_id
+                       WHERE r.status = 'failed' AND r.test_id = ANY(%s) GROUP BY r.test_id""", (failing_ids,))
+        failure_history = {tid: list(runs)[:10] for tid, runs in cur.fetchall()}
+    cur.execute("SELECT run_at, commit_sha, totals, summary FROM test_runs WHERE trigger = 'production-smoke' ORDER BY run_at DESC LIMIT 1")
+    sm = cur.fetchone()
+    cur.execute("SELECT run_at, (totals->>'passed')::int, (totals->>'failed')::int FROM test_runs WHERE trigger = 'production-smoke' ORDER BY run_at DESC LIMIT 48")
+    smoke_history = [{"run_at": a, "passed": b, "failed": c} for a, b, c in cur.fetchall()]
+    smoke = None if not sm else {"run_at": sm[0], "trigger_detail": sm[1], "totals": sm[2], "failing": [c for c in sm[3].get("checks", []) if not c["ok"]],
+                                 "history": smoke_history}
+    return {"run": summary, "run_id": latest_id, "history": history, "failure_counts": failure_counts, "flaky_by_history": flaky, "smoke": smoke, "failure_history": failure_history}
 
 
 def handler(event, context):
@@ -189,11 +222,14 @@ def handler(event, context):
     method = event["httpMethod"]
     if method == "OPTIONS":
         return _resp(200, {})
-    if not _authorized(event):
+    who = _caller(event)
+    if who == "anonymous":
+        return _resp(401, {"error": "Unauthorized"})
+    if who == "invalid_session":
+        # An expired session must send the user back to sign in; a wrong ingest token is simply refused.
         headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
-        has_credentials = bool(headers.get("x-ingest-token") or headers.get("authorization"))
-        if not has_credentials:
-            return _resp(401, {"error": "Unauthorized"})
+        return _resp(403 if headers.get("x-ingest-token") else 401, {"error": "Your session is invalid or has expired." if not headers.get("x-ingest-token") else "Invalid ingest token."})
+    if who == "not_admin":
         return _resp(403, {"error": "Test results are visible to Admins only."})
 
     conn = _get_connection()

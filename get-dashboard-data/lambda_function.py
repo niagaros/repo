@@ -158,11 +158,19 @@ def lambda_handler(event, context):
             # ── 1. Accounts — only accounts owned by this user ───────
             try:
                 cur.execute("""
-                    SELECT id, account_name, account_id, last_scan_at
-                    FROM cloud_accounts
-                    WHERE owner_email = %s
-                    ORDER BY account_name
-                """, (authenticated_email,))
+                    SELECT c.id, c.account_name, c.account_id, c.last_scan_at
+                    FROM cloud_accounts c
+                    WHERE lower(c.owner_email) = lower(%(e)s)
+                       OR EXISTS (
+                            SELECT 1 FROM bu_accounts ba
+                            JOIN business_units b ON b.id = ba.business_unit_id
+                            JOIN organizations o ON o.id = b.organization_id
+                            LEFT JOIN org_members m ON m.organization_id = o.id AND lower(m.email) = lower(%(e)s)
+                            WHERE ba.cloud_account_id = c.id
+                              AND ( lower(o.owner_email) = lower(%(e)s)
+                                    OR (m.id IS NOT NULL AND (m.business_unit_id IS NULL OR m.business_unit_id = b.id)) ) )
+                    ORDER BY c.account_name
+                """, {"e": authenticated_email})
                 for row in cur.fetchall():
                     data["accounts"].append({
                         "id":             str(row[0]),
@@ -188,10 +196,19 @@ def lambda_handler(event, context):
 
             # ── Ownership check ──────────────────────────────────────
             try:
-                cur.execute(
-                    "SELECT id FROM cloud_accounts WHERE id = %s AND owner_email = %s",
-                    (account_id, authenticated_email),
-                )
+                cur.execute("""
+                    SELECT c.id FROM cloud_accounts c
+                    WHERE c.id = %(id)s
+                      AND ( lower(c.owner_email) = lower(%(e)s)
+                            OR EXISTS (
+                                SELECT 1 FROM bu_accounts ba
+                                JOIN business_units b ON b.id = ba.business_unit_id
+                                JOIN organizations o ON o.id = b.organization_id
+                                LEFT JOIN org_members m ON m.organization_id = o.id AND lower(m.email) = lower(%(e)s)
+                                WHERE ba.cloud_account_id = c.id
+                                  AND ( lower(o.owner_email) = lower(%(e)s)
+                                        OR (m.id IS NOT NULL AND (m.business_unit_id IS NULL OR m.business_unit_id = b.id)) ) ) )
+                """, {"id": account_id, "e": authenticated_email})
                 if not cur.fetchone():
                     conn.close()
                     return {

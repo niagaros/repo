@@ -233,16 +233,17 @@ def test_zz_no_test_data_left_behind(api, api_b):
     assert not leaks, f"test data leaked into the test tenants: {leaks}"
 
 
-def _leaks(api, ACCOUNT_ID):
+def _leaks(api, account_id):
+    """The two test tenants are dedicated to tests, so after a run NOTHING may be left in them — prefixed or not."""
     leaks = []
-    _, b, _ = api.get("tprm", params={"cloud_account_id": ACCOUNT_ID})
-    leaks += [("vendor", v["name"]) for v in b["vendors"] if v["name"].startswith(TEST_PREFIX)]
-    _, b, _ = api.get("audit-management", params={"cloud_account_id": ACCOUNT_ID})
-    leaks += [("audit", a["title"]) for a in b["audits"] if a["title"].startswith(TEST_PREFIX)]
-    _, b, _ = api.get("questionnaires", params={"cloud_account_id": ACCOUNT_ID})
-    leaks += [("questionnaire", q["name"]) for q in b["questionnaires"] if q["name"].startswith(TEST_PREFIX)]
-    _, b, _ = api.get("custom-frameworks", params={"cloud_account_id": ACCOUNT_ID})
-    leaks += [("framework", f["name"]) for f in b["frameworks"] if f["name"].startswith(TEST_PREFIX)]
-    _, b, _ = api.get("notifications", params={"cloud_account_id": ACCOUNT_ID, "preferences": "1"})
-    leaks += [("recipient", r["label"]) for r in b["recipients"] if r["label"].startswith(TEST_PREFIX)]
+    _, b, _ = api.get("tprm", params={"cloud_account_id": account_id})
+    leaks += [("vendor", v["name"]) for v in b["vendors"]]
+    _, b, _ = api.get("audit-management", params={"cloud_account_id": account_id})
+    leaks += [("audit", a["title"]) for a in b["audits"]]
+    _, b, _ = api.get("questionnaires", params={"cloud_account_id": account_id})
+    leaks += [("questionnaire", q["name"]) for q in b["questionnaires"]]
+    _, b, _ = api.get("custom-frameworks", params={"cloud_account_id": account_id})
+    leaks += [("framework", f["name"]) for f in b["frameworks"]]
+    _, b, _ = api.get("notifications", params={"cloud_account_id": account_id, "preferences": "1"})
+    leaks += [("recipient", r["label"]) for r in b["recipients"]]
     return leaks

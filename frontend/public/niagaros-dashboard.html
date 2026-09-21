@@ -554,6 +554,8 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="ni-item"><span class="ni">🔑</span><span class="nt">IAM Analysis</span></div>
     <div class="ni-item" onclick="location.href='notification_settings.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🔔</span><span class="nt">Alerts</span></div>
     <div class="nl">Platform</div>
+    <div class="ni-item" onclick="location.href='enterprise.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🏢</span><span class="nt">Enterprise</span></div>
+    <div class="ni-item" onclick="location.href='integrations.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🔗</span><span class="nt">Integrations</span></div>
     <div class="ni-item" onclick="location.href='test_dashboard.html'"><span class="ni">🧪</span><span class="nt">Automated Testing</span></div>
     <div class="ni-item" onclick="location.href='status.html'"><span class="ni">🟢</span><span class="nt">System Status</span></div>
   </nav>
@@ -582,7 +584,7 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="tp-chip">🌍 All Regions ▾</div>
     <div class="tp-right">
       <div class="tp-scan-info"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
-      <button class="btn-primary" id="btn-scan" onclick="triggerScan()">↻ Scan Now</button>
+      <button class="btn-ghost" style="margin-right:8px" onclick="testConnection()" title="Assume the scanner role and check every permission the scans need">✔ Test connection</button><button class="btn-primary" id="btn-scan" onclick="triggerScan()">↻ Scan Now</button>
       <button class="btn-primary" id="btn-report" onclick="runReportPreview()" style="background:#fff;color:#374151;border:1px solid #e5e7eb" title="Generates and sends a report immediately, without disrupting the scheduled monthly cycle">✉ Run Report Now</button>
       <div class="btn-icon">🔔</div>
       <div class="avatar" onclick="logout()" title="Log out" style="cursor:pointer">DN</div>
@@ -856,7 +858,13 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 
 <script>
 const API         = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
-const TRIGGER_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trigger-orchestrator';
+const SCAN_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/scan';
+async function testConnection(){
+  const r=await fetch(SCAN_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'validate_connection',cloud_account_id:currentAccountId})});
+  const d=await r.json();
+  if(!r.ok){alert(d.error||'Could not test the connection');return;}
+  alert((d.connected?'Connected to AWS account '+d.aws_account_id+'\n':'NOT fully connected\n')+(d.error?d.error+'\n':'')+(d.checks||[]).map(c=>(c.ok?'OK   ':'FAIL ')+c.permission).join('\n'));
+}
 let allF=[], filtF=[], pg=1, svcF='', drResults=[];
 let currentAccountId=null, allAccounts=[];
 let lastCrossCompliance=null, hmShowPct=false, hmBiF='all';
@@ -975,10 +983,12 @@ async function triggerScan(){
 
   try {
     const _tok=localStorage.getItem('niagaros_token')||'';
-    const triggerResp = await fetch(TRIGGER_API + (currentAccountId ? '?account_id='+encodeURIComponent(currentAccountId) : ''), {
-      method: 'POST', headers: _tok ? {Authorization:'Bearer '+_tok} : {}
+    const triggerResp = await fetch(SCAN_API, {
+      method: 'POST', headers: {'Content-Type':'application/json', ...(_tok ? {Authorization:'Bearer '+_tok} : {})},
+      body: JSON.stringify({action:'scan', cloud_account_id: currentAccountId})
     });
     if (triggerResp.status === 401) { location.href = '/'; return; }
+    if (triggerResp.status === 429 || triggerResp.status === 403) { const e = await triggerResp.json().catch(()=>({})); btn.disabled=false; btn.textContent='↻ Scan Now'; alert(e.error || 'This scan could not be started.'); return; }
     renderToastSteps([0], [1]);
 
     // Poll every 10s; close only when total findings count is stable for 2 consecutive

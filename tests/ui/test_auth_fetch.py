@@ -8,7 +8,7 @@ from conftest import PUBLIC_DIR
 from ui_support import ACCOUNT, CORS, FakeBackend
 
 pytestmark = [pytest.mark.flow("E2E-AUTH-001"), pytest.mark.severity("P0")]
-PUBLIC_PAGES = {"index.html", "status.html", "questionnaire_share_view.html", "trust_center_public.html", "test_dashboard.html"}
+PUBLIC_PAGES = {"index.html", "status.html", "questionnaire_share_view.html", "trust_center_public.html", "test_dashboard.html", "auditor_view.html"}
 
 
 def test_every_page_that_calls_the_api_loads_the_token_forwarder():
