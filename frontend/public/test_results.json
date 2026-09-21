@@ -1,41 +1,41 @@
 {
-  "run_at": "2026-09-21T12:04:48Z",
-  "commit": "b41714c",
+  "run_at": "2026-09-21T20:34:39Z",
+  "commit": "74a2043",
   "branch": "sofyan-dev",
   "trigger": "local",
   "environment": {
     "tested_against": "deployed environment",
-    "token_provided": false
+    "token_provided": true
   },
-  "full_run_duration_s": 57.8,
+  "full_run_duration_s": 174.9,
   "totals": {
-    "critical_flows_in_inventory": 23,
-    "flows_that_exist_in_product": 20,
-    "flows_automated": 18,
-    "coverage_of_inventory_pct": 78.3,
-    "coverage_of_existing_flows_pct": 90.0,
-    "tests": 254,
-    "passed": 232,
+    "critical_flows_in_inventory": 26,
+    "flows_that_exist_in_product": 23,
+    "flows_automated": 21,
+    "coverage_of_inventory_pct": 80.8,
+    "coverage_of_existing_flows_pct": 91.3,
+    "tests": 358,
+    "passed": 347,
     "failed": 0,
-    "known_failure": 9,
-    "blocked": 2,
+    "known_failure": 0,
+    "blocked": 0,
     "skipped": 11,
     "flaky": 0
   },
   "by_severity": {
     "P0": {
-      "flows": 5,
-      "automated": 4,
-      "coverage_pct": 80.0,
-      "passing": 2,
-      "known_defect": 1,
+      "flows": 7,
+      "automated": 6,
+      "coverage_pct": 85.7,
+      "passing": 6,
+      "known_defect": 0,
       "failing": 0
     },
     "P1": {
-      "flows": 16,
-      "automated": 12,
-      "coverage_pct": 75.0,
-      "passing": 12,
+      "flows": 17,
+      "automated": 13,
+      "coverage_pct": 76.5,
+      "passing": 13,
       "known_defect": 0,
       "failing": 0
     },
@@ -63,30 +63,56 @@
         "Cognito"
       ],
       "automated": true,
-      "status": "partially_blocked",
-      "tests": 9,
-      "passed": 8,
+      "status": "passing",
+      "tests": 66,
+      "passed": 66,
       "failed": 0,
       "known_failures": 0,
-      "blocked": 1,
+      "blocked": 0,
       "flaky": 0,
-      "duration_s": 2.5,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 25.9,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
       "id": "E2E-AUTH-002",
       "domain": "Authentication",
-      "name": "Sign up -> verify identity -> login -> MFA -> session -> logout",
+      "name": "Sign in -> session -> refresh -> sign out (revoked token is rejected); wrong password and unknown user are indistinguishable",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production-safe (dedicated test users)",
+      "owner": "Security Engineering",
+      "frequency": "Every PR + every 30 min",
+      "dependencies": [
+        "Cognito",
+        "API Gateway"
+      ],
+      "automated": true,
+      "status": "passing",
+      "tests": 7,
+      "passed": 7,
+      "failed": 0,
+      "known_failures": 0,
+      "blocked": 0,
+      "flaky": 0,
+      "duration_s": 7.3,
+      "last_run": "2026-09-21T20:34:39Z",
+      "failure_count_history": 0
+    },
+    {
+      "id": "E2E-AUTH-003",
+      "domain": "Authentication",
+      "name": "Sign up -> verify identity (email code) -> MFA (TOTP) -> session",
       "severity": "P0",
       "exists": true,
       "environment": "staging",
       "owner": "Security Engineering",
       "frequency": "Every deployment",
       "dependencies": [
-        "Cognito"
+        "Cognito",
+        "SES"
       ],
-      "gap_reason": "Needs a dedicated Cognito test user and a way to receive the verification/MFA code; account listing was refused by the safety policy, so no test identity exists yet.",
+      "gap_reason": "Verification codes are delivered by email and MFA needs a TOTP secret enrolled per user; both need a mailbox the tests can read and AWS admin credentials in CI. MFA is OPTIONAL in the user pool today.",
       "automated": false,
       "status": "gap",
       "tests": 0,
@@ -96,7 +122,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -114,16 +140,16 @@
         "PostgreSQL"
       ],
       "automated": true,
-      "status": "known_defect",
-      "tests": 10,
-      "passed": 0,
+      "status": "passing",
+      "tests": 31,
+      "passed": 31,
       "failed": 0,
-      "known_failures": 9,
-      "blocked": 1,
+      "known_failures": 0,
+      "blocked": 0,
       "flaky": 0,
-      "duration_s": 2.6,
-      "last_run": "2026-09-21T12:04:48Z",
-      "failure_count_history": 0
+      "duration_s": 18.8,
+      "last_run": "2026-09-21T20:34:39Z",
+      "failure_count_history": 3
     },
     {
       "id": "E2E-SEC-002",
@@ -146,7 +172,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0.9,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -172,7 +198,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0.7,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -189,7 +215,7 @@
         "Lambda",
         "PostgreSQL"
       ],
-      "gap_reason": "The scan is triggered by an asynchronous orchestrator and its results are only readable with an authenticated dashboard session; needs E2E_TOKEN (dedicated test user) to assert on discovered resources and findings.",
+      "gap_reason": "The scan needs a real AWS role to assume and its results are only readable by the account's owner. The test tenants use placeholder AWS account ids, and a real customer account (Domits) is deliberately never accessed by tests; a dedicated scannable AWS test account is needed.",
       "automated": false,
       "status": "gap",
       "tests": 0,
@@ -199,7 +225,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -224,7 +250,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -248,8 +274,8 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 1.6,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 2.9,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -271,7 +297,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0.0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -295,8 +321,8 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 1.0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 2.0,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -320,8 +346,8 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 1.6,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 2.8,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -346,8 +372,8 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 3.8,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 7.4,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -369,7 +395,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 2.1,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -391,7 +417,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0.0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -415,8 +441,8 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 2.5,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 4.0,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -438,7 +464,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0.0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -456,14 +482,14 @@
       ],
       "automated": true,
       "status": "passing",
-      "tests": 2,
-      "passed": 2,
+      "tests": 3,
+      "passed": 3,
       "failed": 0,
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 0.6,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 0.9,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -487,7 +513,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 2.4,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -510,8 +536,35 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 24.2,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 23.9,
+      "last_run": "2026-09-21T20:34:39Z",
+      "failure_count_history": 0
+    },
+    {
+      "id": "E2E-UI-003",
+      "domain": "Frontend",
+      "name": "Deployed pages work end to end with a real session against the enforcing API (no mocks)",
+      "severity": "P0",
+      "exists": true,
+      "environment": "deployed preview",
+      "owner": "Frontend Engineering",
+      "frequency": "Every PR + every 30 min",
+      "dependencies": [
+        "Amplify",
+        "API Gateway",
+        "Cognito",
+        "Chromium"
+      ],
+      "automated": true,
+      "status": "passing",
+      "tests": 10,
+      "passed": 10,
+      "failed": 0,
+      "known_failures": 0,
+      "blocked": 0,
+      "flaky": 0,
+      "duration_s": 41.8,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -534,8 +587,8 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 4.3,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 8.2,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -558,8 +611,34 @@
       "known_failures": 0,
       "blocked": 0,
       "flaky": 0,
-      "duration_s": 1.2,
-      "last_run": "2026-09-21T12:04:48Z",
+      "duration_s": 4.8,
+      "last_run": "2026-09-21T20:34:39Z",
+      "failure_count_history": 0
+    },
+    {
+      "id": "E2E-ONB-002",
+      "domain": "Onboarding",
+      "name": "Account onboarding: tied to a verified identity, validated, idempotent",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (dedicated test tenants)",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "Cognito",
+        "PostgreSQL"
+      ],
+      "automated": true,
+      "status": "passing",
+      "tests": 8,
+      "passed": 8,
+      "failed": 0,
+      "known_failures": 0,
+      "blocked": 0,
+      "flaky": 0,
+      "duration_s": 3.0,
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -582,7 +661,7 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     },
     {
@@ -608,93 +687,11 @@
       "blocked": 0,
       "flaky": 0,
       "duration_s": 0,
-      "last_run": "2026-09-21T12:04:48Z",
+      "last_run": "2026-09-21T20:34:39Z",
       "failure_count_history": 0
     }
   ],
-  "failures": [
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_private_data_endpoints_require_authentication[notifications]",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "AssertionError: notifications answered 200 to an anonymous caller",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_private_data_endpoints_require_authentication[tprm]",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "AssertionError: tprm answered 200 to an anonymous caller",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_private_data_endpoints_require_authentication[questionnaires]",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "AssertionError: questionnaires answered 200 to an anonymous caller",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_private_data_endpoints_require_authentication[audit-management]",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "AssertionError: audit-management answered 200 to an anonymous caller",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_private_data_endpoints_require_authentication[trust-center]",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "AssertionError: trust-center answered 200 to an anonymous caller",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_private_data_endpoints_require_authentication[custom-frameworks]",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "AssertionError: custom-frameworks answered 200 to an anonymous caller",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_private_data_endpoints_require_authentication[ai-agent]",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "AssertionError: ai-agent answered 200 to an anonymous caller",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_anonymous_delete_is_rejected",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "assert 200 in (401, 403)",
-      "commit": "b41714c"
-    },
-    {
-      "test_id": "tests/api/test_auth_and_isolation.py::test_ai_agent_history_is_not_public",
-      "flow": "E2E-PERM-001",
-      "severity": "P0",
-      "status": "known_failure",
-      "failed_step": null,
-      "message": "+  where [{'id': '58deff52-09c9-441d-8024-9db003a9c08e', 'question': 'hi', 'intent': 'unsupported', 'answer': \"I can only answe...t your risks, compliance, vendors, audits, or specific security practices \u2014 I'll search fo",
-      "commit": "b41714c"
-    }
-  ],
+  "failures": [],
   "flaky_tests": [],
   "unregistered_flows_in_tests": []
 }

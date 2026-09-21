@@ -280,7 +280,10 @@ function OnboardingWizard({ email, onComplete }: { email: string; onComplete: ()
     try {
       const resp = await fetch(`${getApiBase()}/onboard`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("niagaros_token") || ""}`,
+        },
         body: JSON.stringify({ email, company_name: companyName.trim(), aws_account_id: awsAccountId.trim(), region }),
       });
       const data = await resp.json();

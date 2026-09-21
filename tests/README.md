@@ -32,8 +32,11 @@ Every test carries `@pytest.mark.flow("E2E-…")` and `@pytest.mark.severity("P0
 - Everything created is prefixed `[E2E]`, removed in finalizers even if a test fails, and `test_zz_no_test_data_left_behind` verifies nothing leaked.
 - No production customer data is read into or modified by tests.
 
+## Deliberately not automated
+`POST /trigger-orchestrator` (starts a real scan) is protected by the same session check, but no test calls it: a regression would start a real scan. `POST /stripe-checkout` is public by design (pre-login pricing page).
+
 ## Authenticated tests
-Set `E2E_TOKEN` (a Cognito access token of a **dedicated test user**; in CI: repository secret `E2E_TOKEN`). Without it those tests are reported as *blocked*, not passed.
+Two dedicated Cognito test users (`e2e-tests@niagaros.test`, `e2e-tests-b@niagaros.test`) each own one test tenant, created through the real onboarding endpoint. Tests sign in with `E2E_PASSWORD` / `E2E_PASSWORD_B` (in CI: repository secrets of the same names) on a dedicated app client. Without them those tests are reported as *blocked*, never as passed.
 
 ## CI
 `.github/workflows/tests.yml` runs on every PR/push; `production-smoke.yml` runs read-only checks every 30 minutes. To make a red run **block merging**, mark `deploy-gate (P0)` and `critical-flows (unit + API + UI)` as *required status checks* in the repository's branch protection settings (an admin-only GitHub setting).

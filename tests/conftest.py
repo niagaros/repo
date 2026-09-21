@@ -49,6 +49,9 @@ def _login(username, password):
     return r.json()["AuthenticationResult"]["AccessToken"]
 
 
+# Actions that fail validation when sent without their required fields, so a probe against a real customer's account
+# cannot write anything even if isolation were broken.
+FOREIGN_PROBE_ACTIONS = ("create_vendor", "create_audit", "add_recipient", "update_preferences", "create_framework")
 TOKEN = os.environ.get("E2E_TOKEN", "").strip() or _login(USER_A, os.environ.get("E2E_PASSWORD", ""))
 TOKEN_B = _login(USER_B, os.environ.get("E2E_PASSWORD_B", ""))
 ALLOWED_WRITE_ACCOUNTS = {ACCOUNT_ID}
@@ -186,7 +189,7 @@ class Api:
         h = dict(headers or {})
         if self.token and "Authorization" not in h:
             h["Authorization"] = f"Bearer {self.token}"
-        if allow_foreign and REAL_CUSTOMER_ACCOUNT_ID in json.dumps(body or {}) and body and body.get("action") not in ("create_vendor", "create_audit"):
+        if allow_foreign and REAL_CUSTOMER_ACCOUNT_ID in json.dumps(body or {}) and body and body.get("action") not in FOREIGN_PROBE_ACTIONS:
             raise AssertionError("safety guard: probes against the real customer account may only use validation-failing create actions")
         if body is not None:
             acct = body.get("cloud_account_id") if isinstance(body, dict) else None

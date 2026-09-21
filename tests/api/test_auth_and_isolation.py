@@ -221,6 +221,22 @@ def test_a_denied_cross_tenant_access_leaves_no_data_in_the_response(api, tenant
     assert s == 403 and b == {"error": "Forbidden"} and "vendors" not in r.text
 
 
+@pytest.mark.flow("E2E-PERM-001")
+@pytest.mark.severity("P0")
+def test_monthly_report_preview_requires_a_session(anon):
+    """The preview returns a full security report for an account, so it is private like every other data endpoint."""
+    status, body, _ = anon.post("monthly-report-preview", {"cloud_account_id": ACCOUNT_ID}, headers=JSON)
+    assert status == 401 and body == {"error": "Unauthorized"}
+
+
+@pytest.mark.flow("E2E-PERM-001")
+@pytest.mark.severity("P0")
+@pytest.mark.needs_two_tenants
+def test_tenant_a_cannot_generate_a_report_for_tenant_b(api):
+    status, _, _ = api.post("monthly-report-preview", {"cloud_account_id": ACCOUNT_B_ID}, headers=JSON, allow_foreign=True)
+    assert status == 403
+
+
 # ── Public surfaces that must stay public ───────────────────────────────
 @pytest.mark.flow("E2E-TRUST-001")
 @pytest.mark.severity("P2")

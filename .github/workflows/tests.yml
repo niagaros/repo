@@ -33,7 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      E2E_TOKEN: ${{ secrets.E2E_TOKEN }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

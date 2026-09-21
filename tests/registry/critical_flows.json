@@ -1,28 +1,360 @@
 {
   "_about": "Inventory of Niagaros critical enterprise flows (issue #279). 'exists' says whether the product feature exists today. A flow is COVERED only when at least one automated test in this repo is tagged with its id. Flows for features that do not exist are kept in the inventory as honest gaps, never tested with fake stand-ins. 'owner' is the responsible team role (proposed; no per-person ownership is recorded anywhere yet).",
   "flows": [
-    {"id": "E2E-AUTH-001", "domain": "Authentication", "name": "Authentication gate: missing/invalid/forged tokens are rejected", "severity": "P0", "exists": true, "environment": "production-safe (read-only)", "owner": "Security Engineering", "frequency": "Every PR + every 30 min", "dependencies": ["API Gateway", "Cognito"]},
-    {"id": "E2E-AUTH-002", "domain": "Authentication", "name": "Sign up -> verify identity -> login -> MFA -> session -> logout", "severity": "P0", "exists": true, "environment": "staging", "owner": "Security Engineering", "frequency": "Every deployment", "dependencies": ["Cognito"], "gap_reason": "Needs a dedicated Cognito test user and a way to receive the verification/MFA code; account listing was refused by the safety policy, so no test identity exists yet."},
-    {"id": "E2E-PERM-001", "domain": "Security", "name": "Tenant isolation / authorization: users only reach their own account's data", "severity": "P0", "exists": true, "environment": "production-safe (read-only)", "owner": "Security Engineering", "frequency": "Every PR + every 30 min", "dependencies": ["API Gateway", "Cognito", "PostgreSQL"]},
-    {"id": "E2E-SEC-002", "domain": "Security", "name": "Injection / XSS regression protection in the frontend", "severity": "P0", "exists": true, "environment": "local browser", "owner": "Security Engineering", "frequency": "Every PR", "dependencies": ["Chromium"]},
-    {"id": "E2E-PLAT-001", "domain": "Platform", "name": "Platform availability: independent status endpoint + public status page", "severity": "P0", "exists": true, "environment": "production", "owner": "Platform Engineering", "frequency": "Every 30 min", "dependencies": ["CloudWatch", "RDS", "SQS"]},
-    {"id": "E2E-INFRA-001", "domain": "Infrastructure", "name": "Connect AWS -> validate permissions -> discover resources -> scan -> create findings -> display", "severity": "P1", "exists": true, "environment": "staging", "owner": "Platform Engineering", "frequency": "Every deployment", "dependencies": ["AWS", "Lambda", "PostgreSQL"], "gap_reason": "The scan is triggered by an asynchronous orchestrator and its results are only readable with an authenticated dashboard session; needs E2E_TOKEN (dedicated test user) to assert on discovered resources and findings."},
-    {"id": "E2E-SEC-001", "domain": "Security", "name": "Finding lifecycle: detected -> owner assigned -> remediation executed -> retested -> resolved", "severity": "P1", "exists": false, "environment": "staging", "owner": "Security Engineering", "frequency": "Every deployment", "dependencies": ["PostgreSQL"], "gap_reason": "Product gap: findings are detected and tracked (first_detected_at) but there is no owner-assignment or remediation-execution workflow to test yet."},
-    {"id": "E2E-CMP-001", "domain": "Compliance", "name": "Compliance: custom frameworks, controls and calculators work end to end", "severity": "P1", "exists": true, "environment": "production-safe (self-cleaning)", "owner": "Compliance Engineering", "frequency": "Every PR", "dependencies": ["API Gateway", "PostgreSQL"]},
-    {"id": "E2E-CMP-002", "domain": "Compliance", "name": "Framework mappers: every control maps to real checks or is honestly manual", "severity": "P1", "exists": true, "environment": "unit", "owner": "Compliance Engineering", "frequency": "Every PR", "dependencies": []},
-    {"id": "E2E-AUD-001", "domain": "Audit", "name": "Audit created -> listed -> validated -> removed", "severity": "P1", "exists": true, "environment": "production-safe (self-cleaning)", "owner": "Compliance Engineering", "frequency": "Every PR", "dependencies": ["API Gateway", "PostgreSQL"]},
-    {"id": "E2E-TPRM-001", "domain": "Third-Party Risk", "name": "Vendor created -> listed -> updated -> deleted", "severity": "P1", "exists": true, "environment": "production-safe (self-cleaning)", "owner": "Risk Engineering", "frequency": "Every PR", "dependencies": ["API Gateway", "PostgreSQL"]},
-    {"id": "E2E-NOT-001", "domain": "Notifications", "name": "Recipient added -> scoped -> failure of an external integration reported -> removed; preferences round-trip; analytics consistent", "severity": "P1", "exists": true, "environment": "production-safe (self-cleaning)", "owner": "Platform Engineering", "frequency": "Every PR", "dependencies": ["API Gateway", "PostgreSQL", "SES/SNS"]},
-    {"id": "E2E-NOT-002", "domain": "Notifications", "name": "Delivery routing: each channel reaches the right sender; failures are reported, never thrown", "severity": "P1", "exists": true, "environment": "unit", "owner": "Platform Engineering", "frequency": "Every PR", "dependencies": []},
-    {"id": "E2E-AI-001", "domain": "AI Agent", "name": "AI agent: intent classification is hardened against malformed/invented model output", "severity": "P1", "exists": true, "environment": "unit", "owner": "AI Engineering", "frequency": "Every PR", "dependencies": []},
-    {"id": "E2E-QST-001", "domain": "Questionnaires", "name": "Questionnaire uploaded -> stored -> renamed -> deleted; public share link handles bad tokens", "severity": "P1", "exists": true, "environment": "production-safe (self-cleaning)", "owner": "Compliance Engineering", "frequency": "Every PR", "dependencies": ["API Gateway", "PostgreSQL"]},
-    {"id": "E2E-QST-002", "domain": "Questionnaires", "name": "Questionnaire parsing, evidence confidence and upload validation", "severity": "P1", "exists": true, "environment": "unit", "owner": "Compliance Engineering", "frequency": "Every PR", "dependencies": []},
-    {"id": "E2E-TRUST-001", "domain": "Trust Center", "name": "Trust Center admin view and public page behave correctly", "severity": "P2", "exists": true, "environment": "production-safe (read-only)", "owner": "Compliance Engineering", "frequency": "Every PR", "dependencies": ["API Gateway", "PostgreSQL"]},
-    {"id": "E2E-UI-001", "domain": "Frontend", "name": "Notification Settings: tabs, add-person wizard, validation, test buttons, save", "severity": "P1", "exists": true, "environment": "local browser", "owner": "Frontend Engineering", "frequency": "Every PR", "dependencies": ["Chromium"]},
-    {"id": "E2E-UI-002", "domain": "Frontend", "name": "Every shipped page loads without script errors", "severity": "P1", "exists": true, "environment": "local browser", "owner": "Frontend Engineering", "frequency": "Every PR", "dependencies": ["Chromium"]},
-    {"id": "E2E-API-001", "domain": "API", "name": "API error handling: validation, malformed input, CORS, no leaked internals", "severity": "P2", "exists": true, "environment": "production-safe", "owner": "Platform Engineering", "frequency": "Every PR", "dependencies": ["API Gateway"]},
-    {"id": "E2E-DATA-001", "domain": "Test Data", "name": "Test data hygiene: nothing created by tests is left behind", "severity": "P1", "exists": true, "environment": "production-safe", "owner": "Platform Engineering", "frequency": "Every run", "dependencies": ["PostgreSQL"]},
-    {"id": "E2E-ONB-001", "domain": "Enterprise", "name": "Create enterprise -> business units -> invite team -> assign roles -> connect infra -> onboarding complete", "severity": "P1", "exists": false, "environment": "staging", "owner": "Product", "frequency": "Every deployment", "dependencies": [], "gap_reason": "Product gap: Niagaros has no enterprise / business-unit / team-invitation model today (accounts are single-owner). Nothing exists to test."},
-    {"id": "E2E-WS-001", "domain": "Integrations", "name": "Jira / Monday: connect -> map project -> create ticket -> synchronize status", "severity": "P1", "exists": false, "environment": "staging", "owner": "Product", "frequency": "Every deployment", "dependencies": ["Jira", "Monday"], "gap_reason": "Product gap: there is no Jira or Monday integration (the AI agent even lists them as unsupported). Only a GitHub integration exists."}
+    {
+      "id": "E2E-AUTH-001",
+      "domain": "Authentication",
+      "name": "Authentication gate: missing/invalid/forged tokens are rejected",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production-safe (read-only)",
+      "owner": "Security Engineering",
+      "frequency": "Every PR + every 30 min",
+      "dependencies": [
+        "API Gateway",
+        "Cognito"
+      ]
+    },
+    {
+      "id": "E2E-AUTH-002",
+      "domain": "Authentication",
+      "name": "Sign in -> session -> refresh -> sign out (revoked token is rejected); wrong password and unknown user are indistinguishable",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production-safe (dedicated test users)",
+      "owner": "Security Engineering",
+      "frequency": "Every PR + every 30 min",
+      "dependencies": [
+        "Cognito",
+        "API Gateway"
+      ]
+    },
+    {
+      "id": "E2E-AUTH-003",
+      "domain": "Authentication",
+      "name": "Sign up -> verify identity (email code) -> MFA (TOTP) -> session",
+      "severity": "P0",
+      "exists": true,
+      "environment": "staging",
+      "owner": "Security Engineering",
+      "frequency": "Every deployment",
+      "dependencies": [
+        "Cognito",
+        "SES"
+      ],
+      "gap_reason": "Verification codes are delivered by email and MFA needs a TOTP secret enrolled per user; both need a mailbox the tests can read and AWS admin credentials in CI. MFA is OPTIONAL in the user pool today."
+    },
+    {
+      "id": "E2E-PERM-001",
+      "domain": "Security",
+      "name": "Tenant isolation / authorization: users only reach their own account's data",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production-safe (read-only)",
+      "owner": "Security Engineering",
+      "frequency": "Every PR + every 30 min",
+      "dependencies": [
+        "API Gateway",
+        "Cognito",
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-SEC-002",
+      "domain": "Security",
+      "name": "Injection / XSS regression protection in the frontend",
+      "severity": "P0",
+      "exists": true,
+      "environment": "local browser",
+      "owner": "Security Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "Chromium"
+      ]
+    },
+    {
+      "id": "E2E-PLAT-001",
+      "domain": "Platform",
+      "name": "Platform availability: independent status endpoint + public status page",
+      "severity": "P0",
+      "exists": true,
+      "environment": "production",
+      "owner": "Platform Engineering",
+      "frequency": "Every 30 min",
+      "dependencies": [
+        "CloudWatch",
+        "RDS",
+        "SQS"
+      ]
+    },
+    {
+      "id": "E2E-INFRA-001",
+      "domain": "Infrastructure",
+      "name": "Connect AWS -> validate permissions -> discover resources -> scan -> create findings -> display",
+      "severity": "P1",
+      "exists": true,
+      "environment": "staging",
+      "owner": "Platform Engineering",
+      "frequency": "Every deployment",
+      "dependencies": [
+        "AWS",
+        "Lambda",
+        "PostgreSQL"
+      ],
+      "gap_reason": "The scan needs a real AWS role to assume and its results are only readable by the account's owner. The test tenants use placeholder AWS account ids, and a real customer account (Domits) is deliberately never accessed by tests; a dedicated scannable AWS test account is needed."
+    },
+    {
+      "id": "E2E-SEC-001",
+      "domain": "Security",
+      "name": "Finding lifecycle: detected -> owner assigned -> remediation executed -> retested -> resolved",
+      "severity": "P1",
+      "exists": false,
+      "environment": "staging",
+      "owner": "Security Engineering",
+      "frequency": "Every deployment",
+      "dependencies": [
+        "PostgreSQL"
+      ],
+      "gap_reason": "Product gap: findings are detected and tracked (first_detected_at) but there is no owner-assignment or remediation-execution workflow to test yet."
+    },
+    {
+      "id": "E2E-CMP-001",
+      "domain": "Compliance",
+      "name": "Compliance: custom frameworks, controls and calculators work end to end",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
+      "owner": "Compliance Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-CMP-002",
+      "domain": "Compliance",
+      "name": "Framework mappers: every control maps to real checks or is honestly manual",
+      "severity": "P1",
+      "exists": true,
+      "environment": "unit",
+      "owner": "Compliance Engineering",
+      "frequency": "Every PR",
+      "dependencies": []
+    },
+    {
+      "id": "E2E-AUD-001",
+      "domain": "Audit",
+      "name": "Audit created -> listed -> validated -> removed",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
+      "owner": "Compliance Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-TPRM-001",
+      "domain": "Third-Party Risk",
+      "name": "Vendor created -> listed -> updated -> deleted",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
+      "owner": "Risk Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-NOT-001",
+      "domain": "Notifications",
+      "name": "Recipient added -> scoped -> failure of an external integration reported -> removed; preferences round-trip; analytics consistent",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL",
+        "SES/SNS"
+      ]
+    },
+    {
+      "id": "E2E-NOT-002",
+      "domain": "Notifications",
+      "name": "Delivery routing: each channel reaches the right sender; failures are reported, never thrown",
+      "severity": "P1",
+      "exists": true,
+      "environment": "unit",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": []
+    },
+    {
+      "id": "E2E-AI-001",
+      "domain": "AI Agent",
+      "name": "AI agent: intent classification is hardened against malformed/invented model output",
+      "severity": "P1",
+      "exists": true,
+      "environment": "unit",
+      "owner": "AI Engineering",
+      "frequency": "Every PR",
+      "dependencies": []
+    },
+    {
+      "id": "E2E-QST-001",
+      "domain": "Questionnaires",
+      "name": "Questionnaire uploaded -> stored -> renamed -> deleted; public share link handles bad tokens",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (self-cleaning)",
+      "owner": "Compliance Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-QST-002",
+      "domain": "Questionnaires",
+      "name": "Questionnaire parsing, evidence confidence and upload validation",
+      "severity": "P1",
+      "exists": true,
+      "environment": "unit",
+      "owner": "Compliance Engineering",
+      "frequency": "Every PR",
+      "dependencies": []
+    },
+    {
+      "id": "E2E-TRUST-001",
+      "domain": "Trust Center",
+      "name": "Trust Center admin view and public page behave correctly",
+      "severity": "P2",
+      "exists": true,
+      "environment": "production-safe (read-only)",
+      "owner": "Compliance Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-UI-001",
+      "domain": "Frontend",
+      "name": "Notification Settings: tabs, add-person wizard, validation, test buttons, save",
+      "severity": "P1",
+      "exists": true,
+      "environment": "local browser",
+      "owner": "Frontend Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "Chromium"
+      ]
+    },
+    {
+      "id": "E2E-UI-002",
+      "domain": "Frontend",
+      "name": "Every shipped page loads without script errors",
+      "severity": "P1",
+      "exists": true,
+      "environment": "local browser",
+      "owner": "Frontend Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "Chromium"
+      ]
+    },
+    {
+      "id": "E2E-UI-003",
+      "domain": "Frontend",
+      "name": "Deployed pages work end to end with a real session against the enforcing API (no mocks)",
+      "severity": "P0",
+      "exists": true,
+      "environment": "deployed preview",
+      "owner": "Frontend Engineering",
+      "frequency": "Every PR + every 30 min",
+      "dependencies": [
+        "Amplify",
+        "API Gateway",
+        "Cognito",
+        "Chromium"
+      ]
+    },
+    {
+      "id": "E2E-API-001",
+      "domain": "API",
+      "name": "API error handling: validation, malformed input, CORS, no leaked internals",
+      "severity": "P2",
+      "exists": true,
+      "environment": "production-safe",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway"
+      ]
+    },
+    {
+      "id": "E2E-DATA-001",
+      "domain": "Test Data",
+      "name": "Test data hygiene: nothing created by tests is left behind",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe",
+      "owner": "Platform Engineering",
+      "frequency": "Every run",
+      "dependencies": [
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-ONB-002",
+      "domain": "Onboarding",
+      "name": "Account onboarding: tied to a verified identity, validated, idempotent",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe (dedicated test tenants)",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "Cognito",
+        "PostgreSQL"
+      ]
+    },
+    {
+      "id": "E2E-ONB-001",
+      "domain": "Enterprise",
+      "name": "Create enterprise -> business units -> invite team -> assign roles -> connect infra -> onboarding complete",
+      "severity": "P1",
+      "exists": false,
+      "environment": "staging",
+      "owner": "Product",
+      "frequency": "Every deployment",
+      "dependencies": [],
+      "gap_reason": "Product gap: Niagaros has no enterprise / business-unit / team-invitation model today (accounts are single-owner). Nothing exists to test."
+    },
+    {
+      "id": "E2E-WS-001",
+      "domain": "Integrations",
+      "name": "Jira / Monday: connect -> map project -> create ticket -> synchronize status",
+      "severity": "P1",
+      "exists": false,
+      "environment": "staging",
+      "owner": "Product",
+      "frequency": "Every deployment",
+      "dependencies": [
+        "Jira",
+        "Monday"
+      ],
+      "gap_reason": "Product gap: there is no Jira or Monday integration (the AI agent even lists them as unsupported). Only a GitHub integration exists."
+    }
   ]
 }

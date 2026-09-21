@@ -33,6 +33,23 @@ await check('E2E-AUTH-001', 'dashboard rejects a forged unsigned (alg=none) JWT'
   if (r.status !== 401) throw new Error(`expected 401, got ${r.status}`);
   return '401';
 });
+for (const path of ['notifications', 'tprm', 'questionnaires', 'audit-management', 'trust-center', 'custom-frameworks', 'ai-agent']) {
+  await check('E2E-PERM-001', `${path}: anonymous callers cannot read an account's data`, async () => {
+    const r = await get(`${path}?cloud_account_id=00000000-0000-4000-8000-000000000000`);
+    if (r.status !== 401) throw new Error(`expected 401, got ${r.status}`);
+    return '401';
+  });
+}
+await check('E2E-PERM-001', 'monthly report preview requires a session (it returns a full account report)', async () => {
+  const r = await fetch(`${API}/monthly-report-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cloud_account_id: '00000000-0000-4000-8000-000000000000' }), signal: AbortSignal.timeout(20000) });
+  if (r.status !== 401) throw new Error(`expected 401, got ${r.status}`);
+  return '401';
+});
+await check('E2E-ONB-002', 'onboarding requires a signed-in user', async () => {
+  const r = await fetch(`${API}/onboard`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(20000) });
+  if (r.status !== 401) throw new Error(`expected 401, got ${r.status}`);
+  return '401';
+});
 await check('E2E-PLAT-001', 'database is available according to the independent status endpoint', async () => {
   const r = await get('status');
   if (r.status !== 200) throw new Error(`status endpoint answered ${r.status}`);

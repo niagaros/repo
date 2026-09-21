@@ -15,6 +15,9 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: node tests/tools/deploy_gate.mjs
-      - run: pip install pytest requests
+      - run: pip install pytest requests playwright boto3 pypdf
+      - run: python -m playwright install --with-deps chromium
       - name: Availability + authentication checks (read-only)
-        run: python -m pytest tests/api/test_platform_availability.py tests/api/test_auth_and_isolation.py -k "not lifecycle"
+        run: python -m pytest tests/api/test_platform_availability.py tests/api/test_auth_and_isolation.py tests/api/test_auth_session.py tests/ui/test_live_session_pages.py
