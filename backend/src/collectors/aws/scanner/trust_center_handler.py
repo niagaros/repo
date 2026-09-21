@@ -617,6 +617,22 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "document_id": (
+        "SELECT cloud_account_id FROM trust_documents WHERE id = %s"
+    ),
+    "request_id": (
+        "SELECT d.cloud_account_id FROM trust_document_access_requests r JOIN trust_documents d ON d.id = r.document_id WHERE r.id = %s"
+    ),
+}
+
+
+def _is_public(event, qs, body):
+    return (event.get("httpMethod") == "GET" and (bool(qs.get("slug")) or (bool(qs.get("download_document")) and bool(qs.get("access_token"))))) or (event.get("httpMethod") == "POST" and body.get("action") == "request_access")
+
+
 def handler(event, context):
     if event and event.get("migrate"):
         secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -651,6 +667,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, _is_public)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             if qs.get("slug"):
                 view = _get_public_view(conn.cursor(), qs["slug"])

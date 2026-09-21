@@ -815,6 +815,18 @@ def _phrase_answer(question, intent, evidence):
                 f"but couldn't reach the AI service to phrase it in words ({e}).")
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "query_id": (
+        "SELECT cloud_account_id FROM ai_agent_queries WHERE id = %s"
+    ),
+    "finding_id": (
+        "SELECT r.cloud_account_id FROM findings f JOIN resources r ON r.id = f.resource_id WHERE f.id = %s"
+    ),
+}
+
+
 def handler(event, context):
     if not event or "httpMethod" not in event:
         return {"statusCode": 400, "body": json.dumps({"error": "not an API Gateway event"})}
@@ -833,6 +845,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             account_id = qs.get("cloud_account_id")
             if not _is_uuid(account_id):

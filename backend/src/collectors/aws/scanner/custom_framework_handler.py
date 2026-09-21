@@ -245,6 +245,18 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "framework_id": (
+        "SELECT cloud_account_id FROM custom_frameworks WHERE id = %s"
+    ),
+    "control_id": (
+        "SELECT f.cloud_account_id FROM custom_framework_controls c JOIN custom_frameworks f ON f.id = c.custom_framework_id WHERE c.id = %s"
+    ),
+}
+
+
 def handler(event, context):
     if event and event.get("migrate"):
         secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -283,6 +295,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             account_id = qs.get("cloud_account_id")
             if not _is_uuid(account_id):

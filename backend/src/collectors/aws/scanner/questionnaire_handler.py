@@ -1058,6 +1058,25 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "questionnaire_id": (
+        "SELECT cloud_account_id FROM questionnaires WHERE id = %s"
+    ),
+    "item_id": (
+        "SELECT q.cloud_account_id FROM questionnaire_items i JOIN questionnaires q ON q.id = i.questionnaire_id WHERE i.id = %s"
+    ),
+    "token": (
+        "SELECT q.cloud_account_id FROM questionnaire_share_links l JOIN questionnaires q ON q.id = l.questionnaire_id WHERE l.token = %s"
+    ),
+}
+
+
+def _is_public(event, qs, body):
+    return event.get("httpMethod") == "GET" and bool(qs.get("share_token"))
+
+
 def handler(event, context):
     if event and event.get("migrate"):
         secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -1110,6 +1129,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, _is_public)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             if qs.get("share_token"):
                 with conn.cursor() as cur:

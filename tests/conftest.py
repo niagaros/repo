@@ -25,11 +25,33 @@ REPORT_PATH = Path(os.environ.get("E2E_REPORT_PATH") or ROOT / "tests" / "report
 
 API_BASE = os.environ.get("E2E_API_BASE", "https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default")
 SITE_BASE = os.environ.get("E2E_SITE_BASE", "https://sofyan-dev.d3joqokkaynfaq.amplifyapp.com")
-# The dedicated test tenant. Every write is refused for any other account, so
-# a test can never modify another customer's data.
-ACCOUNT_ID = os.environ.get("E2E_ACCOUNT_ID", "cbb94e43-4e42-4fac-997e-8f931131bde7")
-ALLOWED_WRITE_ACCOUNTS = set(filter(None, os.environ.get("E2E_ALLOWED_WRITE_ACCOUNTS", ACCOUNT_ID).split(",")))
-TOKEN = os.environ.get("E2E_TOKEN", "").strip()
+# Two dedicated test tenants, each owned by its own dedicated Cognito test user (created through the real
+# onboarding endpoint). Every write is refused for any account a client does not own, so a test can never
+# modify a real customer's data. Domits (a real customer account) is only ever probed read-only / expect-denied.
+ACCOUNT_ID = os.environ.get("E2E_ACCOUNT_ID", "1449717e-0e03-4cf7-b832-9c95ba69d821")      # tenant A
+ACCOUNT_B_ID = os.environ.get("E2E_ACCOUNT_B_ID", "3e36a28a-e6c5-4a83-b00e-14f145d5ffbe")   # tenant B
+REAL_CUSTOMER_ACCOUNT_ID = "cbb94e43-4e42-4fac-997e-8f931131bde7"                             # Domits: never written to
+COGNITO_CLIENT_ID = os.environ.get("E2E_CLIENT_ID", "6vp0qrku3dkvia5qsf4cj199lj")           # dedicated test app client
+USER_A = os.environ.get("E2E_USERNAME", "e2e-tests@niagaros.test")
+USER_B = os.environ.get("E2E_USERNAME_B", "e2e-tests-b@niagaros.test")
+
+
+def _login(username, password):
+    """Real Cognito sign-in (USER_PASSWORD_AUTH on the dedicated test client); '' when no credentials are configured."""
+    if not password:
+        return ""
+    r = requests.post("https://cognito-idp.eu-west-1.amazonaws.com/", timeout=30,
+                      headers={"X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth", "Content-Type": "application/x-amz-json-1.1"},
+                      data=json.dumps({"AuthFlow": "USER_PASSWORD_AUTH", "ClientId": COGNITO_CLIENT_ID,
+                                       "AuthParameters": {"USERNAME": username, "PASSWORD": password}}))
+    if r.status_code != 200:
+        raise RuntimeError(f"test-user login failed for {username}: {r.status_code} {r.text[:120]}")
+    return r.json()["AuthenticationResult"]["AccessToken"]
+
+
+TOKEN = os.environ.get("E2E_TOKEN", "").strip() or _login(USER_A, os.environ.get("E2E_PASSWORD", ""))
+TOKEN_B = _login(USER_B, os.environ.get("E2E_PASSWORD_B", ""))
+ALLOWED_WRITE_ACCOUNTS = {ACCOUNT_ID}
 TEST_PREFIX = "[E2E]"
 
 sys.path.insert(0, str(ROOT / "backend" / "src"))
@@ -39,6 +61,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "flow(id): critical-flow id from tests/registry/critical_flows.json")
     config.addinivalue_line("markers", "severity(level): P0 (deploy-blocking) .. P4")
     config.addinivalue_line("markers", "live: talks to the deployed environment")
+    config.addinivalue_line("markers", "needs_two_tenants: requires both dedicated test users A and B")
     config.addinivalue_line("markers", "needs_token: requires E2E_TOKEN (skipped and reported as blocked otherwise)")
     config.addinivalue_line("markers", "known_failure(issue, reason): a real, tracked defect; strict-xfail so a fix is noticed")
     config._e2e_results = []
@@ -51,7 +74,9 @@ def pytest_collection_modifyitems(config, items):
         if kf:
             item.add_marker(pytest.mark.xfail(strict=True, reason=f"{kf.kwargs.get('issue', '')}: {kf.kwargs.get('reason', '')}"))
         if item.get_closest_marker("needs_token") and not TOKEN:
-            item.add_marker(pytest.mark.skip(reason="blocked: E2E_TOKEN not set (needs a dedicated test user's Cognito access token)"))
+            item.add_marker(pytest.mark.skip(reason="blocked: no test-user credentials (set E2E_PASSWORD, or E2E_TOKEN)"))
+        if item.get_closest_marker("needs_two_tenants") and not (TOKEN and TOKEN_B):
+            item.add_marker(pytest.mark.skip(reason="blocked: needs both test users (set E2E_PASSWORD and E2E_PASSWORD_B)"))
 
 
 # ── Diagnostics captured per test ───────────────────────────────────────
@@ -145,24 +170,27 @@ def pytest_sessionfinish(session, exitstatus):
         "commit": os.environ.get("GITHUB_SHA") or _git("rev-parse", "--short=7", "HEAD"),
         "branch": os.environ.get("GITHUB_REF_NAME") or _git("rev-parse", "--abbrev-ref", "HEAD"),
         "trigger": "ci" if os.environ.get("CI") else "local",
-        "environment": {"api": API_BASE, "site": SITE_BASE, "account": ACCOUNT_ID, "token_provided": bool(TOKEN)},
+        "environment": {"api": API_BASE, "site": SITE_BASE, "account": ACCOUNT_ID, "token_provided": bool(TOKEN), "two_tenants": bool(TOKEN and TOKEN_B)},
         "results": cfg._e2e_results,
     }, indent=2), encoding="utf-8")
 
 
 # ── HTTP client: records every exchange, refuses cross-tenant writes ────
 class Api:
-    def __init__(self, token=""):
+    def __init__(self, token="", allowed=None):
         self.s = requests.Session()
         self.token = token
+        self.allowed = set(allowed if allowed is not None else ALLOWED_WRITE_ACCOUNTS)
 
-    def _do(self, method, path, params=None, body=None, headers=None, raw_body=None, timeout=45):
+    def _do(self, method, path, params=None, body=None, headers=None, raw_body=None, timeout=45, allow_foreign=False):
         h = dict(headers or {})
         if self.token and "Authorization" not in h:
             h["Authorization"] = f"Bearer {self.token}"
+        if allow_foreign and REAL_CUSTOMER_ACCOUNT_ID in json.dumps(body or {}) and body and body.get("action") not in ("create_vendor", "create_audit"):
+            raise AssertionError("safety guard: probes against the real customer account may only use validation-failing create actions")
         if body is not None:
             acct = body.get("cloud_account_id") if isinstance(body, dict) else None
-            if acct and acct not in ALLOWED_WRITE_ACCOUNTS:
+            if acct and acct not in self.allowed and not allow_foreign:
                 raise AssertionError(f"safety guard: refusing to write to non-test account {acct}")
         data = raw_body if raw_body is not None else (json.dumps(body) if body is not None else None)
         url = f"{API_BASE}/{path.lstrip('/')}"
@@ -194,7 +222,14 @@ class Api:
 
 @pytest.fixture(scope="session")
 def api():
+    """Signed in as test user A (owner of tenant A)."""
     return Api(TOKEN)
+
+
+@pytest.fixture(scope="session")
+def api_b():
+    """Signed in as test user B (owner of tenant B) — the 'other tenant' for isolation tests."""
+    return Api(TOKEN_B, allowed={ACCOUNT_B_ID})
 
 
 @pytest.fixture(scope="session")

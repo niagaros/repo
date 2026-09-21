@@ -7,9 +7,9 @@ import uuid
 
 import pytest
 
-from conftest import ACCOUNT_ID, TEST_PREFIX
+from conftest import ACCOUNT_B_ID, ACCOUNT_ID, TEST_PREFIX, TOKEN_B
 
-pytestmark = [pytest.mark.live]
+pytestmark = [pytest.mark.live, pytest.mark.needs_token]
 JSON = {"Content-Type": "application/json"}
 
 
@@ -226,7 +226,14 @@ def test_calculator_lists_supported_frameworks(api):
 # ── Test-data hygiene (E2E-DATA-001) — must run last ────────────────────
 @pytest.mark.flow("E2E-DATA-001")
 @pytest.mark.severity("P1")
-def test_zz_no_test_data_left_behind(api):
+def test_zz_no_test_data_left_behind(api, api_b):
+    leaks = _leaks(api, ACCOUNT_ID)
+    if TOKEN_B:
+        leaks += _leaks(api_b, ACCOUNT_B_ID)
+    assert not leaks, f"test data leaked into the test tenants: {leaks}"
+
+
+def _leaks(api, ACCOUNT_ID):
     leaks = []
     _, b, _ = api.get("tprm", params={"cloud_account_id": ACCOUNT_ID})
     leaks += [("vendor", v["name"]) for v in b["vendors"] if v["name"].startswith(TEST_PREFIX)]
@@ -238,4 +245,4 @@ def test_zz_no_test_data_left_behind(api):
     leaks += [("framework", f["name"]) for f in b["frameworks"] if f["name"].startswith(TEST_PREFIX)]
     _, b, _ = api.get("notifications", params={"cloud_account_id": ACCOUNT_ID, "preferences": "1"})
     leaks += [("recipient", r["label"]) for r in b["recipients"] if r["label"].startswith(TEST_PREFIX)]
-    assert not leaks, f"test data leaked into the test tenant: {leaks}"
+    return leaks

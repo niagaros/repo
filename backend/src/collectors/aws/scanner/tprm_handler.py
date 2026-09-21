@@ -1211,6 +1211,24 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body, default=str)}
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "vendor_id": (
+        "SELECT cloud_account_id FROM tprm_vendors WHERE id = %s"
+    ),
+    "assessment_id": (
+        "SELECT v.cloud_account_id FROM tprm_assessments a JOIN tprm_vendors v ON v.id = a.vendor_id WHERE a.id = %s"
+    ),
+    "item_id": (
+        "SELECT v.cloud_account_id FROM tprm_assessment_items i JOIN tprm_assessments a ON a.id = i.assessment_id JOIN tprm_vendors v ON v.id = a.vendor_id WHERE i.id = %s"
+    ),
+    "task_id": (
+        "SELECT v.cloud_account_id FROM tprm_remediation_tasks t JOIN tprm_vendors v ON v.id = t.vendor_id WHERE t.id = %s"
+    ),
+}
+
+
 def handler(event, context):
     # Direct-invoke-only (EventBridge scheduled check), same shape as the
     # other scanner handlers' non-HTTP entrypoints — unreachable via the
@@ -1257,6 +1275,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             account_id = qs.get("cloud_account_id")
             if not _is_uuid(account_id):

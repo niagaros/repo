@@ -185,6 +185,15 @@ def _list_notifications(cur, account_id, domain_filter, severity_filter, unread_
     } for r in cur.fetchall()]
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "notification_id": (
+        "SELECT cloud_account_id FROM notifications WHERE id = %s"
+    ),
+}
+
+
 def handler(event, context):
     # Invoked by the real SQS queue (issue #274 AC20: asynchronous
     # high-volume processing) — one message per real notification that
@@ -229,6 +238,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             account_id = qs.get("cloud_account_id")
             if not _is_uuid(account_id):

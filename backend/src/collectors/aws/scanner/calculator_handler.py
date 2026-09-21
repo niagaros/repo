@@ -336,6 +336,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON calculator_scenarios TO cspm_lambda;
 """
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "scenario_id": (
+        "SELECT cloud_account_id FROM calculator_scenarios WHERE id = %s"
+    ),
+}
+
+
 def handler(event, context):
     if event and event.get("migrate"):
         secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -370,6 +379,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             with conn.cursor() as cur:
                 if qs.get("gap_data"):

@@ -683,6 +683,24 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body, default=str)}
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "audit_id": (
+        "SELECT cloud_account_id FROM audits WHERE id = %s"
+    ),
+    "finding_id": (
+        "SELECT a.cloud_account_id FROM audit_findings f JOIN audits a ON a.id = f.audit_id WHERE f.id = %s"
+    ),
+    "task_id": (
+        "SELECT a.cloud_account_id FROM audit_remediation_tasks t JOIN audit_findings f ON f.id = t.audit_finding_id JOIN audits a ON a.id = f.audit_id WHERE t.id = %s"
+    ),
+    "trust_document_id": (
+        "SELECT cloud_account_id FROM trust_documents WHERE id = %s"
+    ),
+}
+
+
 def handler(event, context):
     if event and event.get("check_and_notify"):
         conn = _get_connection()
@@ -724,6 +742,9 @@ def handler(event, context):
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             with conn.cursor() as cur:
                 if qs.get("audit_detail"):
