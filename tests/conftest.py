@@ -54,6 +54,9 @@ def _login(username, password):
 FOREIGN_PROBE_ACTIONS = ("create_vendor", "create_audit", "add_recipient", "update_preferences", "create_framework")
 TOKEN = os.environ.get("E2E_TOKEN", "").strip() or _login(USER_A, os.environ.get("E2E_PASSWORD", ""))
 TOKEN_B = _login(USER_B, os.environ.get("E2E_PASSWORD_B", ""))
+USER_C = os.environ.get("E2E_USERNAME_C", "e2e-tests-c@niagaros.test")   # owner of the tenant linked to the Niagaros AWS account
+ACCOUNT_C_ID = os.environ.get("E2E_ACCOUNT_C_ID", "98014d38-2e53-496c-bec6-ce1ae5bb3722")
+TOKEN_C = _login(USER_C, os.environ.get("E2E_PASSWORD_C", ""))
 USER_D = os.environ.get("E2E_USERNAME_D", "e2e-tests-d@niagaros.test")   # a team member who owns no account
 TOKEN_D = _login(USER_D, os.environ.get("E2E_PASSWORD_D", ""))
 ALLOWED_WRITE_ACCOUNTS = {ACCOUNT_ID, ACCOUNT_B_ID}   # both are dedicated test tenants; a real customer's account is never in here
@@ -66,6 +69,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "flow(id): critical-flow id from tests/registry/critical_flows.json")
     config.addinivalue_line("markers", "severity(level): P0 (deploy-blocking) .. P4")
     config.addinivalue_line("markers", "live: talks to the deployed environment")
+    config.addinivalue_line("markers", "needs_aws_tenant: requires test user C and its tenant linked to the Niagaros AWS account")
     config.addinivalue_line("markers", "needs_team: requires test users A, B and D (enterprise role tests)")
     config.addinivalue_line("markers", "needs_two_tenants: requires both dedicated test users A and B")
     config.addinivalue_line("markers", "needs_token: requires E2E_TOKEN (skipped and reported as blocked otherwise)")
@@ -94,6 +98,8 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.xfail(strict=True, reason=f"{kf.kwargs.get('issue', '')}: {kf.kwargs.get('reason', '')}"))
         if item.get_closest_marker("needs_token") and not TOKEN:
             item.add_marker(pytest.mark.skip(reason="blocked: no test-user credentials (set E2E_PASSWORD, or E2E_TOKEN)"))
+        if item.get_closest_marker("needs_aws_tenant") and not TOKEN_C:
+            item.add_marker(pytest.mark.skip(reason="blocked: needs test user C (set E2E_PASSWORD_C)"))
         if item.get_closest_marker("needs_team") and not (TOKEN and TOKEN_B and TOKEN_D):
             item.add_marker(pytest.mark.skip(reason="blocked: needs test users A, B and D (set E2E_PASSWORD, E2E_PASSWORD_B, E2E_PASSWORD_D)"))
         if item.get_closest_marker("needs_two_tenants") and not (TOKEN and TOKEN_B):
@@ -258,6 +264,12 @@ class Api:
 def api():
     """Signed in as test user A (owner of tenant A)."""
     return Api(TOKEN)
+
+
+@pytest.fixture(scope="session")
+def api_c():
+    """Signed in as test user C, owner of the tenant that is linked to the real Niagaros AWS account."""
+    return Api(TOKEN_C, allowed={ACCOUNT_C_ID})
 
 
 @pytest.fixture(scope="session")
