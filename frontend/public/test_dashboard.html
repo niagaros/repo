@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="auth-fetch.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Niagaros — Automated Testing</title>
@@ -62,7 +63,7 @@ td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 </aside>
 <div class="main">
   <h1>Automated Testing</h1>
-  <div class="sub">Coverage is measured by critical business flows, not lines of code. Every number below is computed from the last real test run — nothing on this page is typed in by hand.</div>
+  <div class="sub">Coverage is measured by critical business flows, not lines of code. Every number below is read from the test runs stored in the Niagaros database (Admins only) — nothing on this page is typed in by hand.</div>
   <div id="root"><div class="empty">Loading…</div></div>
 </div>
 <script>
@@ -137,8 +138,20 @@ function render(d){
     <div class="foot">Last run ${esc(new Date(d.run_at).toLocaleString())} · ${esc(d.trigger)} · branch ${esc(d.branch || '—')} · commit ${esc(d.commit || '—')} · ${d.environment && d.environment.token_provided ? 'authenticated tests enabled' : 'authenticated tests blocked (no test session token)'}</div>`;
 }
 
-fetch('test_results.json?t=' + Date.now()).then(r => r.json()).then(render).catch(() => {
-  document.getElementById('root').innerHTML = '<div class="empty">No test results published yet. Run <code>python tests/tools/run_suite.py</code> or wait for the next CI run.</div>';
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/test-results';
+fetch(API).then(async r => {
+  if (r.status === 403) throw new Error('Test results are visible to Admins only. Sign in with an Admin account.');
+  if (!r.ok) throw new Error('Could not load test results (' + r.status + ').');
+  return r.json();
+}).then(d => {
+  if (!d.run) { document.getElementById('root').innerHTML = '<div class="empty">No test run has been stored yet. Run <code>python tests/tools/run_suite.py</code> — it uploads its result here.</div>'; return; }
+  const run = d.run;
+  run.flaky_tests = (run.flaky_tests || []).concat((d.flaky_by_history || []).filter(id => !(run.flaky_tests || []).some(f => f.test_id === id)).map(id => ({ test_id: id, attempts: ['seen failing and passing in the last 20 stored runs'] })));
+  render(run);
+  const hist = (d.history || []).map(x => `<tr><td>${esc(new Date(x.run_at).toLocaleString())}</td><td>${esc(x.trigger || '')}</td><td>${esc(x.commit || '—')}</td><td class="n">${x.tests ?? '—'}</td><td class="n">${x.passed ?? '—'}</td><td class="n">${x.failed ?? '—'}</td></tr>`).join('');
+  document.getElementById('root').insertAdjacentHTML('beforeend', `<div class="card" style="margin-top:20px"><div class="card-title">Recent runs</div><div class="note">Every stored run, newest first — this is the history behind the failure counts above.</div><div class="scroll"><table><thead><tr><th>Run</th><th>Trigger</th><th>Commit</th><th class="n">Tests</th><th class="n">Passed</th><th class="n">Failed</th></tr></thead><tbody>${hist}</tbody></table></div></div>`);
+}).catch(e => {
+  document.getElementById('root').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
 });
 </script>
 </body>

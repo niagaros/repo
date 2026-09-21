@@ -49,16 +49,21 @@ def test_flow_status_is_the_most_severe_honest_state(statuses, expected):
     assert br.flow_status([{"status": s} for s in statuses]) == expected
 
 
-def test_public_view_never_contains_request_response_bodies_or_the_api_url():
-    summary = {"environment": {"api": "https://secret.example/default", "account": "acct", "token_provided": False},
-               "failures": [{"message": "E   assert 200 in (401, 403)\nresponse body with private data", "last_exchange": {"response": {"body": "private"}},
-                             "environment": "https://secret.example/default"}]}
-    pub = br.public_view(summary)
-    text = json.dumps(pub)
-    assert "private" not in text and "secret.example" not in text and "acct" not in text
-    assert pub["failures"][0]["message"] == "assert 200 in (401, 403)"
-
-
-def test_a_dashboard_file_exists_and_reads_the_generated_results():
+def test_a_dashboard_page_exists_and_reads_the_stored_results_from_the_api():
     html = (ROOT / "frontend" / "public" / "test_dashboard.html").read_text(encoding="utf-8")
-    assert "test_results.json" in html
+    assert "/test-results" in html and "test_results.json" not in html
+
+
+def test_results_are_no_longer_published_as_a_public_file():
+    assert not (ROOT / "frontend" / "public" / "test_results.json").exists()
+
+
+def test_ingest_validation_accepts_a_real_run_and_rejects_malformed_ones():
+    from collectors.aws.scanner.test_results_handler import validate_run
+    ok = {"summary": {"run_at": "2026-09-21T10:00:00Z", "totals": {"tests": 1}}, "results": [{"test_id": "t::a", "status": "passed"}]}
+    assert validate_run(ok) is None
+    assert validate_run([]) and validate_run({}) and validate_run({**ok, "results": []})
+    assert validate_run({**ok, "results": [{"test_id": "t", "status": "great"}]})
+    assert validate_run({**ok, "results": [{"status": "passed"}]})
+    assert validate_run({**ok, "summary": {"totals": {}}})
+    assert validate_run({**ok, "results": [{"test_id": "t", "status": "passed"}] * 5001})

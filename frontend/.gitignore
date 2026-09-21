@@ -43,6 +43,3 @@ out/
 
 # Logs
 *.log
-
-# Published, sanitized test results for the Automated Testing dashboard (issue #279)
-!public/test_results.json

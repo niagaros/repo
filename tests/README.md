@@ -24,8 +24,15 @@ Every test carries `@pytest.mark.flow("E2E-…")` and `@pytest.mark.severity("P0
 ## Statuses (never hidden)
 `passed` · `failed` (blocks) · `known_failure` (a real, tracked defect — strict-xfail, so it turns red the moment it is fixed and the marker must be removed) · `blocked` (needs `E2E_TOKEN`) · `skipped` (not applicable) · `flaky` (failed, then passed on immediate re-run).
 
+## Where results live
+Every run is stored in the database (tables `test_runs`, `test_results`, migration `023_test_runs.sql`) through `POST /test-results`
+(`tests/tools/upload_results.py`, called by `run_suite.py`). `GET /test-results` (Cognito **Admin** group or the ingest token) returns the
+latest run, the 30 most recent runs, failure counts per flow and tests that both failed and passed within the last 20 runs (flaky by
+history). The dashboard page reads that endpoint, so nothing about test results is public. Ingest token: Secrets Manager
+`cspm/tests/ingest-token`; in CI, repository secret `E2E_INGEST_TOKEN` (without it the upload step reports that it was skipped).
+
 ## Diagnostics
-`tests/reports/latest.json` / `summary.json` (git-ignored, also the CI artifact) hold, per failure: test id, flow, severity, failed step, request/response, stack trace, commit, environment. The public dashboard (`frontend/public/test_dashboard.html`) only receives the sanitized `test_results.json` (numbers + a one-line diagnosis — no bodies, URLs or account ids).
+`tests/reports/latest.json` / `summary.json` (git-ignored, also the CI artifact) hold, per failure: test id, flow, severity, failed step, request/response, stack trace, commit, environment. The dashboard (`frontend/public/test_dashboard.html`) shows them to Admins.
 
 ## Test data & production safety
 - All writes go to one dedicated test tenant (`E2E_ACCOUNT_ID`); the HTTP client refuses writes to any other account.

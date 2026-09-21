@@ -315,6 +315,21 @@
       ]
     },
     {
+      "id": "E2E-RES-001",
+      "domain": "Test Platform",
+      "name": "Test runs are stored in the database, readable only by Admins / the ingest token, and validated on ingest",
+      "severity": "P1",
+      "exists": true,
+      "environment": "production-safe",
+      "owner": "Platform Engineering",
+      "frequency": "Every PR",
+      "dependencies": [
+        "API Gateway",
+        "PostgreSQL",
+        "Secrets Manager"
+      ]
+    },
+    {
       "id": "E2E-ONB-002",
       "domain": "Onboarding",
       "name": "Account onboarding: tied to a verified identity, validated, idempotent",

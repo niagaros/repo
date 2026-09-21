@@ -1,8 +1,8 @@
 """Join the latest real test run with the critical-flow registry into the coverage dashboard data.
 
 Reads  tests/reports/latest.json  (written by pytest) and tests/registry/critical_flows.json.
-Writes tests/reports/summary.json, appends to tests/reports/history.json and copies the summary to
-frontend/public/test_results.json (the file the dashboard page renders). Nothing here invents a number:
+Writes tests/reports/summary.json and appends to tests/reports/history.json; upload_results.py then stores the run
+in the database, which the dashboard page reads. Nothing here invents a number:
 every figure is computed from the run that produced latest.json.
 
 Exit code 1 when a P0 test FAILED (a known, tracked defect does not count — it is shown, not hidden).
@@ -31,27 +31,6 @@ def flow_status(tests):
     if "blocked" in st:
         return "blocked"
     return "no_result"
-
-
-def one_line(message):
-    """First assertion line of a pytest failure — enough to see expected vs actual, never a full response body."""
-    for line in (message or "").splitlines():
-        line = line.strip()
-        if line.startswith("E ") and line[1:].strip():
-            return line[1:].strip()[:220]
-    return (message or "").strip().splitlines()[0][:220] if (message or "").strip() else ""
-
-
-def public_view(summary):
-    """The dashboard page is served publicly, so it gets the numbers and a one-line diagnosis per failure —
-    full request/response detail stays in the private tests/reports/summary.json and the CI artifact."""
-    pub = json.loads(json.dumps(summary))
-    pub["environment"] = {"tested_against": "deployed environment", "token_provided": summary["environment"].get("token_provided")}
-    for f in pub["failures"]:
-        f["message"] = one_line(f["message"])
-        f.pop("last_exchange", None)
-        f.pop("environment", None)
-    return pub
 
 
 def main():
@@ -128,7 +107,6 @@ def main():
         "unregistered_flows_in_tests": unregistered,
     }
     (REPORTS / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    (ROOT / "frontend" / "public" / "test_results.json").write_text(json.dumps(public_view(summary), indent=2), encoding="utf-8")
 
     history.append({"run_at": run["run_at"], "commit": run.get("commit"), "passed": counts["passed"], "failed": counts["failed"],
                     "failed_by_flow": {fid: sum(t["status"] == "failed" for t in ts) for fid, ts in by_flow.items() if any(t["status"] == "failed" for t in ts)}})

@@ -54,7 +54,9 @@ def main():
                         r["flaky"] = True
                         r["message"] = "FLAKY: failed first, passed on re-run. First failure: " + r["message"][-500:]
     latest.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    return subprocess.run([sys.executable, str(ROOT / "tests" / "tools" / "build_report.py")], cwd=ROOT).returncode
+    code = subprocess.run([sys.executable, str(ROOT / "tests" / "tools" / "build_report.py")], cwd=ROOT).returncode
+    subprocess.run([sys.executable, str(ROOT / "tests" / "tools" / "upload_results.py")], cwd=ROOT)
+    return code
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ jobs:
     env:
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
+      E2E_INGEST_TOKEN: ${{ secrets.E2E_INGEST_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
