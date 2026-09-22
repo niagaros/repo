@@ -436,7 +436,7 @@ function toggleCheck(el,check){
 async function submitNewControl(){
   const title=document.getElementById('in-ctrl-title').value.trim();
   if(!title){showToast('Geef de control een titel');return;}
-  if(!selectedChecks.size){showToast('Selecteer minstens 1 check');return;}
+  if(!selectedChecks.size){showToast('Select at least 1 check');return;}
   await fetch(CUSTOM_API,{method:'POST',body:JSON.stringify({
     action:'add_control', framework_id:targetFrameworkId, title,
     description:document.getElementById('in-ctrl-desc').value.trim(),
@@ -450,19 +450,19 @@ async function submitNewControl(){
 }
 
 async function runFramework(frameworkId){
-  showToast('Bezig met scannen…');
+  showToast('Scanning…');
   await fetch(CUSTOM_API,{method:'POST',body:JSON.stringify({action:'run',cloud_account_id:currentAccountId})});
   showToast('Klaar');
   loadAll();
 }
 async function deleteFramework(id,name){
-  if(!confirm('Framework "'+name+'" en al zijn controls verwijderen?'))return;
+  if(!confirm('Delete framework "'+name+'" and all its controls?'))return;
   await fetch(CUSTOM_API+'?framework_id='+encodeURIComponent(id),{method:'DELETE'});
   showToast('Framework verwijderd');
   loadAll();
 }
 async function deleteControl(id){
-  if(!confirm('Deze control verwijderen?'))return;
+  if(!confirm('Delete this control?'))return;
   await fetch(CUSTOM_API+'?control_id='+encodeURIComponent(id),{method:'DELETE'});
   showToast('Control verwijderd');
   loadAll();

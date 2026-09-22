@@ -752,7 +752,7 @@ async function generateAll(){
 async function saveItem(itemId,status){
   const text=document.getElementById('ans-'+itemId).value;
   await fetch(QNR_API,{method:'POST',body:JSON.stringify({action:'update_item',item_id:itemId,answer_text:text,answer_status:status,actor_name:myDisplayName()})});
-  showToast(status==='approved'?'Goedgekeurd':'Opgeslagen');
+  showToast(status==='approved'?'Approved':'Saved');
   await openDetail(activeQuestionnaire.id);
 }
 

@@ -304,6 +304,29 @@ def dispatch_to_channel(channel, target, title, description, severity, domain, n
     return {"sent": False, "reason": f"unknown channel: {channel}"}
 
 
+
+def _friendly_reason(e):
+    """A short, honest, non-technical explanation of a real delivery failure — the full exception is always
+    logged separately for debugging, this is only what a customer sees."""
+    text = str(e)
+    low = text.lower()
+    if "messagerejected" in low and "not verified" in low:
+        return "This email address is not verified yet (AWS SES sandbox mode). Verify it in AWS, or request production access, before real delivery will work."
+    if "connection refused" in low or "errno 111" in low:
+        return "Could not connect — the destination refused the connection. Double-check the URL and that the receiving service is running."
+    if "name or service not known" in low or "nodename nor servname" in low or "getaddrinfo failed" in low:
+        return "Could not connect — the address could not be resolved. Double-check the URL for typos."
+    if "timed out" in low or "timeout" in low:
+        return "The destination did not respond in time. It may be down or blocking our request."
+    if "404" in text and ("http error" in low or "not found" in low):
+        return "The destination address responded with \"not found\" — double-check the URL is still valid."
+    if "401" in text or "403" in text or "unauthorized" in low or "forbidden" in low:
+        return "The destination rejected our credentials — double-check the URL/token is still valid."
+    if "ssl" in low or "certificate" in low:
+        return "Could not establish a secure connection to the destination."
+    return "Delivery failed. Double-check the address is correct and reachable."
+
+
 def _send_email(to_email, title, description, severity):
     if not NOTIFICATION_SENDER_EMAIL:
         return {"sent": False, "reason": "not_configured"}
@@ -319,7 +342,7 @@ def _send_email(to_email, title, description, severity):
         return {"sent": True}
     except Exception as e:
         logger.exception("notification email failed")
-        return {"sent": False, "reason": str(e)}
+        return {"sent": False, "reason": _friendly_reason(e)}
 
 
 def run_retry_check(conn):
@@ -446,7 +469,7 @@ def _send_sms(phone_number, title, severity):
         return {"sent": True, "message_id": resp.get("MessageId")}
     except Exception as e:
         logger.exception("notification sms failed")
-        return {"sent": False, "reason": str(e)}
+        return {"sent": False, "reason": _friendly_reason(e)}
 
 
 def _post_webhook(url, payload):
@@ -459,7 +482,7 @@ def _post_webhook(url, payload):
             return {"sent": True, "status": resp.status}
     except Exception as e:
         logger.exception("notification webhook failed")
-        return {"sent": False, "reason": str(e)}
+        return {"sent": False, "reason": _friendly_reason(e)}
 
 
 def _post_discord(url, title, description, severity, domain):

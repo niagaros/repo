@@ -70,3 +70,12 @@ def test_audit_validation_errors_are_400(api, payload):
 def test_sql_injection_attempt_in_account_id_does_not_execute(api):
     status, body, _ = api.get("tprm", params={"cloud_account_id": "x'; DROP TABLE vendors;--"})
     assert status == 200 and body == {"vendors": []}
+
+
+@pytest.mark.severity("P0")
+def test_an_unhandled_internal_error_never_leaks_exception_details_to_the_client(api):
+    """A customer must never see a stack trace, SQL fragment, or file path — only a safe, generic message."""
+    s, b, _ = api.post("custom-frameworks", {"action": "add_control", "framework_id": "00000000-0000-4000-8000-000000000000", "title": "x"}, headers=JSON_HEADERS)
+    assert s == 500
+    text = str(b["error"])
+    assert "Traceback" not in text and "KeyError" not in text and "line " not in text and len(text) < 150
