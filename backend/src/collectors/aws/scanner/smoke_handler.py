@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 import boto3
 import psycopg2
 from psycopg2.extras import Json
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -30,6 +31,13 @@ API = os.environ.get("API_BASE", "https://hzf92ft6j7.execute-api.eu-west-1.amazo
 SITES = [s for s in os.environ.get("SMOKE_SITES", "https://main.d3joqokkaynfaq.amplifyapp.com,https://sofyan-dev.d3joqokkaynfaq.amplifyapp.com").split(",") if s]
 ALERT_EMAIL = os.environ.get("SMOKE_ALERT_EMAIL", "bottomclipzz@gmail.com")
 REPEAT_ALERT_SECONDS = 6 * 3600
+DB_INSTANCE_ID = os.environ.get("DB_INSTANCE_ID", "cspm-db")
+# The database is publicly reachable (Lambdas are not in a VPC and need its dynamic AWS egress IPs to reach it -
+# see docs/internal/security/database_network_exposure.md for the full accepted-risk record). A connection-count
+# spike is the cheapest real signal of a brute-force/exhaustion attempt against that open port. Real 7-day traffic
+# on this db.t3.micro peaks at 1-2 connections; the instance's own max_connections is ~112, so 30 is a wide margin
+# that will not fire on legitimate load but will catch a genuine anomaly.
+ANOMALOUS_CONNECTIONS_THRESHOLD = 30
 PRIVATE_ENDPOINTS = ("notifications", "tprm", "questionnaires", "audit-management", "trust-center", "custom-frameworks", "ai-agent", "enterprise")
 
 
@@ -50,6 +58,20 @@ def run_checks():
 
     def check(name, ok, detail="", severity="P0"):
         checks.append({"name": name, "ok": bool(ok), "detail": str(detail)[:200], "severity": severity})
+
+    try:
+        cw = boto3.client("cloudwatch", region_name=REGION)
+        now = datetime.now(timezone.utc)
+        resp = cw.get_metric_data(StartTime=now - timedelta(minutes=15), EndTime=now, MetricDataQueries=[{
+            "Id": "dbconn", "MetricStat": {"Metric": {"Namespace": "AWS/RDS", "MetricName": "DatabaseConnections",
+                "Dimensions": [{"Name": "DBInstanceIdentifier", "Value": DB_INSTANCE_ID}]}, "Period": 300, "Stat": "Maximum"}}])
+        values = resp["MetricDataResults"][0]["Values"]
+        peak = max(values) if values else 0
+        check("database connection count is not anomalous (public-endpoint attack signal)", peak < ANOMALOUS_CONNECTIONS_THRESHOLD,
+              f"{int(peak)} concurrent connections (threshold {ANOMALOUS_CONNECTIONS_THRESHOLD})", "P1")
+    except Exception as e:
+        logger.exception("could not read the DatabaseConnections metric")
+        check("database connection count is not anomalous (public-endpoint attack signal)", False, f"could not read the metric: {type(e).__name__}: {e}", "P1")
 
     s, b = _http("GET", f"{API}/status")
     try:
