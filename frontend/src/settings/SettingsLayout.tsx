@@ -17,6 +17,7 @@ const SUB_NAV = [
   { label: "Rate Plans",          href: "/settings/plans" },
   { label: "Cloud Infrastructure", href: "/settings/infrastructure" },
   { label: "Team",                href: "/settings/team" },
+  { label: "Auditors",            href: "/settings/auditor" },
   { label: "GitHub",              href: "/settings/github" },
 ];
 

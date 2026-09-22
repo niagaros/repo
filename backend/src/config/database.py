@@ -552,6 +552,199 @@ class Database:
             for r in rows
         ]
 
+    # ── audit engagements (issue #266, "Invite Auditors") ────────────
+
+    def create_audit_engagement(
+        self, organization_id: str, name: str, end_date: str, created_by: str,
+        cloud_account_ids: list, auditor_emails: list,
+    ) -> str:
+        """Issue #266, acceptance criterion #1 — the write side."""
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO audit_engagements (organization_id, name, end_date, created_by)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (organization_id, name, end_date, created_by))
+            engagement_id = cur.fetchone()[0]
+            for cloud_account_id in cloud_account_ids:
+                cur.execute(
+                    "INSERT INTO engagement_scope (engagement_id, cloud_account_id) VALUES (%s, %s)",
+                    (engagement_id, cloud_account_id),
+                )
+            for email in auditor_emails:
+                cur.execute(
+                    "INSERT INTO engagement_auditors (engagement_id, email) VALUES (%s, %s)",
+                    (engagement_id, email.strip().lower()),
+                )
+        self.conn.commit()
+        return str(engagement_id)
+
+    def list_organization_engagements(self, organization_id: str) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, name, start_date, end_date, (end_date >= CURRENT_DATE)
+                FROM audit_engagements
+                WHERE organization_id = %s
+                ORDER BY created_at DESC
+            """, (organization_id,))
+            rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]), "name": r[1], "start_date": str(r[2]),
+                "end_date": str(r[3]), "active": bool(r[4]),
+            }
+            for r in rows
+        ]
+
+    def get_active_engagement_for_auditor(self, email: str) -> dict | None:
+        """
+        Issue #266, acceptance criterion #3's actual mechanism — same
+        pattern as team_handler._get_caller's status check for issue #265
+        AC5: access is computed live from end_date >= CURRENT_DATE on
+        every call, so closing an engagement needs no separate revocation
+        step. If an auditor somehow has more than one active engagement,
+        the one ending soonest wins — the most conservative choice.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT ae.id, ae.organization_id, ae.name, ae.end_date
+                FROM engagement_auditors ea
+                JOIN audit_engagements ae ON ae.id = ea.engagement_id
+                WHERE ea.email = %s AND ae.end_date >= CURRENT_DATE
+                ORDER BY ae.end_date ASC
+                LIMIT 1
+            """, (email,))
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": str(row[0]), "organization_id": str(row[1]), "name": row[2], "end_date": str(row[3])}
+
+    def list_engagement_scope(self, engagement_id: str) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT ca.id, ca.account_name, ca.account_id
+                FROM engagement_scope es
+                JOIN cloud_accounts ca ON ca.id = es.cloud_account_id
+                WHERE es.engagement_id = %s
+            """, (engagement_id,))
+            rows = cur.fetchall()
+        return [{"id": str(r[0]), "account_name": r[1], "account_id": r[2]} for r in rows]
+
+    def get_cloud_account_compliance(self, cloud_account_id: str) -> dict | None:
+        """
+        Issue #266, acceptance criterion #4's "evidence": the same
+        compliance_score issue #269 already computes and stores per
+        cloud account, not a fabricated document.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT account_name, compliance_score, last_scan_at FROM cloud_accounts WHERE id = %s",
+                (cloud_account_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "account_name": row[0], "compliance_score": row[1],
+            "last_scan_at": str(row[2]) if row[2] else None,
+        }
+
+    def is_cloud_account_in_engagement_scope(self, engagement_id: str, cloud_account_id: str) -> bool:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM engagement_scope WHERE engagement_id = %s AND cloud_account_id = %s",
+                (engagement_id, cloud_account_id),
+            )
+            return cur.fetchone() is not None
+
+    def create_evidence_request(self, engagement_id: str, auditor_email: str, cloud_account_id: str) -> str:
+        """Issue #266, acceptance criterion #2 — the request half."""
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO engagement_evidence_requests (engagement_id, auditor_email, cloud_account_id)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (engagement_id, auditor_email, cloud_account_id))
+            request_id = cur.fetchone()[0]
+        self.conn.commit()
+        return str(request_id)
+
+    def list_evidence_requests(self, engagement_id: str) -> list:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, auditor_email, cloud_account_id, status, created_at
+                FROM engagement_evidence_requests
+                WHERE engagement_id = %s
+                ORDER BY created_at DESC
+            """, (engagement_id,))
+            rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]), "auditor_email": r[1], "cloud_account_id": str(r[2]),
+                "status": r[3], "created_at": str(r[4]),
+            }
+            for r in rows
+        ]
+
+    def resolve_evidence_request(self, request_id: str, engagement_id: str, approve: bool) -> bool:
+        """
+        Issue #266, acceptance criterion #2 — the approval half.
+        Approving adds the requested cloud_account_id to engagement_scope,
+        so the auditor's already-existing scope view (list_engagement_scope)
+        grows by exactly that one account and nothing else — denying
+        leaves scope untouched. Only a still-'pending' request can be
+        resolved, so double-approving can't add the same account twice
+        through this path (the INSERT below still no-ops safely either way).
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                UPDATE engagement_evidence_requests
+                SET status = %s, resolved_at = NOW()
+                WHERE id = %s AND engagement_id = %s AND status = 'pending'
+                RETURNING cloud_account_id
+            """, ("approved" if approve else "denied", request_id, engagement_id))
+            row = cur.fetchone()
+            if not row:
+                return False
+            if approve:
+                cur.execute("""
+                    INSERT INTO engagement_scope (engagement_id, cloud_account_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (engagement_id, row[0]))
+        self.conn.commit()
+        return True
+
+    def log_engagement_activity(
+        self, engagement_id: str, auditor_email: str, action: str, details: dict | None = None,
+    ):
+        """Issue #266, acceptance criterion #4 — every auditor action
+        (download, evidence request, ...) lands here, feeding directly
+        into acceptance criterion #5's activity dashboard."""
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO engagement_activity_log (engagement_id, auditor_email, action, details)
+                VALUES (%s, %s, %s, %s)
+            """, (engagement_id, auditor_email, action, json.dumps(details or {})))
+        self.conn.commit()
+
+    def get_engagement_activity(self, engagement_id: str, limit: int = 100) -> list:
+        """Issue #266, acceptance criterion #5: "all logins, downloads,
+        comments, and evidence requests are displayed" for an engagement."""
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT auditor_email, action, details, created_at
+                FROM engagement_activity_log
+                WHERE engagement_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (engagement_id, limit))
+            rows = cur.fetchall()
+        return [
+            {"auditor_email": r[0], "action": r[1], "details": r[2], "created_at": str(r[3])}
+            for r in rows
+        ]
+
     # ── utils ──────────────────────────────────────────────────────
 
     def close(self):

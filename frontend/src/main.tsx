@@ -11,6 +11,8 @@ import Plans           from "./settings/Plans";
 import GitHub          from "./settings/GitHub";
 import Infrastructure  from "./settings/Infrastructure";
 import Team            from "./settings/Team";
+import Auditors        from "./settings/Auditors";
+import AuditorPortal   from "./auditor/AuditorPortal";
 import OnboardingHome  from "./onboarding/OnboardingHome";
 import MfaSetup        from "./mfa/MfaSetup";
 
@@ -55,6 +57,8 @@ async function bootstrap() {
           <Route path="/settings/plans"          element={<Plans         />} />
           <Route path="/settings/infrastructure" element={<Infrastructure />} />
           <Route path="/settings/team"           element={<Team           />} />
+          <Route path="/settings/auditor"        element={<Auditors      />} />
+          <Route path="/auditor"                 element={<AuditorPortal />} />
           <Route path="/settings/github"         element={<GitHub        />} />
 
           {/* ── Existing app (login / onboarding / dashboard redirect) ── */}

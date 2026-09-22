@@ -39,12 +39,23 @@ BACKEND_SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(BACKEND_SRC))
 
 import api.team_handler as team_handler  # noqa: E402
+import api.auditor_handler as auditor_handler  # noqa: E402
 
 PORT = 8787
 DB_PATH = str(Path(__file__).resolve().parent / "_local_team_server.sqlite")
 
 # Change this if you log into Niagaros with a different address.
 ADMIN_EMAIL = "hicham.bellahlal2@hotmail.com"
+
+
+def _today() -> str:
+    from datetime import date
+    return date.today().isoformat()
+
+
+def _in_days(n: int) -> str:
+    from datetime import date, timedelta
+    return (date.today() + timedelta(days=n)).isoformat()
 
 
 class SqliteTeamDb:
@@ -221,6 +232,120 @@ class SqliteTeamDb:
         self.conn.commit()
         return cur.rowcount > 0
 
+    # ── audit engagements (issue #266, "Invite Auditors") ────────────
+
+    def list_organization_engagements(self, organization_id):
+        rows = self.conn.execute(
+            "SELECT id, name, start_date, end_date FROM audit_engagements WHERE organization_id = ?",
+            (organization_id,),
+        ).fetchall()
+        today = _today()
+        return [
+            {"id": r[0], "name": r[1], "start_date": r[2], "end_date": r[3], "active": r[3] >= today}
+            for r in rows
+        ]
+
+    def create_audit_engagement(self, organization_id, name, end_date, created_by, cloud_account_ids, auditor_emails):
+        engagement_id = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO audit_engagements VALUES (?, ?, ?, ?, ?, ?)",
+            (engagement_id, organization_id, name, _today(), end_date, created_by),
+        )
+        for cloud_account_id in cloud_account_ids:
+            self.conn.execute("INSERT INTO engagement_scope VALUES (?, ?)", (engagement_id, cloud_account_id))
+        for email in auditor_emails:
+            self.conn.execute(
+                "INSERT INTO engagement_auditors VALUES (?, ?, ?)",
+                (str(uuid.uuid4()), engagement_id, email.strip().lower()),
+            )
+        self.conn.commit()
+        return engagement_id
+
+    def get_active_engagement_for_auditor(self, email):
+        row = self.conn.execute("""
+            SELECT ae.id, ae.organization_id, ae.name, ae.end_date
+            FROM engagement_auditors ea
+            JOIN audit_engagements ae ON ae.id = ea.engagement_id
+            WHERE ea.email = ? AND ae.end_date >= ?
+            ORDER BY ae.end_date ASC
+            LIMIT 1
+        """, (email, _today())).fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "organization_id": row[1], "name": row[2], "end_date": row[3]}
+
+    def list_engagement_scope(self, engagement_id):
+        rows = self.conn.execute("""
+            SELECT ca.id, ca.account_name, ca.account_id
+            FROM engagement_scope es
+            JOIN cloud_accounts ca ON ca.id = es.cloud_account_id
+            WHERE es.engagement_id = ?
+        """, (engagement_id,)).fetchall()
+        return [{"id": r[0], "account_name": r[1], "account_id": r[2]} for r in rows]
+
+    def is_cloud_account_in_engagement_scope(self, engagement_id, cloud_account_id):
+        row = self.conn.execute(
+            "SELECT 1 FROM engagement_scope WHERE engagement_id = ? AND cloud_account_id = ?",
+            (engagement_id, cloud_account_id),
+        ).fetchone()
+        return row is not None
+
+    def create_evidence_request(self, engagement_id, auditor_email, cloud_account_id):
+        request_id = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO engagement_evidence_requests VALUES (?, ?, ?, ?, 'pending', NULL)",
+            (request_id, engagement_id, auditor_email, cloud_account_id),
+        )
+        self.conn.commit()
+        return request_id
+
+    def list_evidence_requests(self, engagement_id):
+        rows = self.conn.execute(
+            "SELECT id, auditor_email, cloud_account_id, status FROM engagement_evidence_requests WHERE engagement_id = ?",
+            (engagement_id,),
+        ).fetchall()
+        return [{"id": r[0], "auditor_email": r[1], "cloud_account_id": r[2], "status": r[3]} for r in rows]
+
+    def resolve_evidence_request(self, request_id, engagement_id, approve):
+        row = self.conn.execute(
+            "SELECT cloud_account_id FROM engagement_evidence_requests WHERE id = ? AND engagement_id = ? AND status = 'pending'",
+            (request_id, engagement_id),
+        ).fetchone()
+        if not row:
+            return False
+        self.conn.execute(
+            "UPDATE engagement_evidence_requests SET status = ? WHERE id = ?",
+            ("approved" if approve else "denied", request_id),
+        )
+        if approve:
+            self.conn.execute("INSERT INTO engagement_scope VALUES (?, ?)", (engagement_id, row[0]))
+        self.conn.commit()
+        return True
+
+    def log_engagement_activity(self, engagement_id, auditor_email, action, details=None):
+        n = self.conn.execute("SELECT COUNT(*) FROM engagement_activity_log").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO engagement_activity_log VALUES (?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), engagement_id, auditor_email, action, json.dumps(details or {}), n),
+        )
+        self.conn.commit()
+
+    def get_engagement_activity(self, engagement_id, limit=100):
+        rows = self.conn.execute(
+            "SELECT auditor_email, action, details FROM engagement_activity_log "
+            "WHERE engagement_id = ? ORDER BY rowid_order DESC LIMIT ?",
+            (engagement_id, limit),
+        ).fetchall()
+        return [{"auditor_email": r[0], "action": r[1], "details": json.loads(r[2]), "created_at": ""} for r in rows]
+
+    def get_cloud_account_compliance(self, cloud_account_id):
+        row = self.conn.execute(
+            "SELECT account_name FROM cloud_accounts WHERE id = ?", (cloud_account_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {"account_name": row[0], "compliance_score": {"score": 88}, "last_scan_at": None}
+
     def close(self):
         self.conn.close()
 
@@ -246,6 +371,20 @@ def seed_database():
         id TEXT PRIMARY KEY, organization_id TEXT, resource_type TEXT,
         resource_name TEXT, created_by TEXT, cloud_account_id TEXT
     )""")
+    conn.execute("""CREATE TABLE audit_engagements (
+        id TEXT PRIMARY KEY, organization_id TEXT, name TEXT,
+        start_date TEXT, end_date TEXT, created_by TEXT
+    )""")
+    conn.execute("CREATE TABLE engagement_scope (engagement_id TEXT, cloud_account_id TEXT)")
+    conn.execute("CREATE TABLE engagement_auditors (id TEXT PRIMARY KEY, engagement_id TEXT, email TEXT)")
+    conn.execute("""CREATE TABLE engagement_evidence_requests (
+        id TEXT PRIMARY KEY, engagement_id TEXT, auditor_email TEXT,
+        cloud_account_id TEXT, status TEXT DEFAULT 'pending', resolved_at TEXT
+    )""")
+    conn.execute("""CREATE TABLE engagement_activity_log (
+        id TEXT PRIMARY KEY, engagement_id TEXT, auditor_email TEXT,
+        action TEXT, details TEXT, rowid_order INTEGER
+    )""")
 
     org_id, admin_id, colleague_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     cloud_account_id = str(uuid.uuid4())
@@ -266,6 +405,15 @@ def seed_database():
                  (str(uuid.uuid4()), org_id, admin_id, json.dumps({"email": "test.collega@example.com", "role": "viewer"})))
     conn.execute("INSERT INTO team_audit_log VALUES (?, ?, ?, 'role_changed', ?, ?)",
                  (str(uuid.uuid4()), org_id, admin_id, colleague_id, json.dumps({"new_role": "viewer"})))
+
+    # Pre-seeded active engagement so /settings/auditor and /auditor both
+    # show something immediately, without you having to click anything first.
+    engagement_id = str(uuid.uuid4())
+    conn.execute("INSERT INTO audit_engagements VALUES (?, ?, ?, ?, ?, ?)",
+                 (engagement_id, org_id, "Q4 Compliance Audit", _today(), _in_days(7), admin_id))
+    conn.execute("INSERT INTO engagement_scope VALUES (?, ?)", (engagement_id, cloud_account_id))
+    conn.execute("INSERT INTO engagement_auditors VALUES (?, ?, ?)",
+                 (str(uuid.uuid4()), engagement_id, "external.auditor@example.com"))
 
     conn.commit()
     conn.close()
@@ -321,6 +469,16 @@ class Handler(BaseHTTPRequestHandler):
             path_params["id"] = path.rsplit("/", 1)[-1]
         elif path.startswith("/team/shared-resources/"):
             path_params["id"] = path.rsplit("/", 1)[-1]
+        elif path.startswith("/auditor/evidence/"):
+            path_params["cloud_account_id"] = path.rsplit("/", 1)[-1]
+        elif path.startswith("/auditors/engagements/") and "/requests/" in path:
+            parts = path.split("/")  # ["", "auditors", "engagements", "{eid}", "requests", "{rid}"]
+            path_params["engagement_id"] = parts[3]
+            path_params["request_id"] = parts[5]
+        elif path.startswith("/auditors/engagements/") and path.endswith("/requests"):
+            path_params["engagement_id"] = path.split("/")[3]
+        elif path.startswith("/auditors/engagements/") and path.endswith("/activity"):
+            path_params["engagement_id"] = path.split("/")[3]
 
         event = {
             "requestContext": {"http": {"method": method}},
@@ -329,10 +487,15 @@ class Handler(BaseHTTPRequestHandler):
             "body": body,
         }
 
+        is_auditor_route = path.startswith("/auditors/") or path.startswith("/auditor/")
+        handler_module = auditor_handler if is_auditor_route else team_handler
+
         with patch.object(team_handler, "Database", side_effect=fresh_db), \
+             patch.object(auditor_handler, "Database", side_effect=fresh_db), \
              patch.object(team_handler, "_get_authenticated_email", side_effect=lambda *_: current_actor["email"]), \
+             patch.object(auditor_handler, "_get_authenticated_email", side_effect=lambda *_: current_actor["email"]), \
              patch.object(team_handler, "terminate_all_sessions", return_value=True):
-            resp = team_handler.lambda_handler(event, None)
+            resp = handler_module.lambda_handler(event, None)
 
         self.send_response(resp["statusCode"])
         self._cors()

@@ -8,10 +8,10 @@ import { useRequireAuth } from "../settings/useRequireAuth";
 // individual settings pages together into one sequence with a visible
 // progress indicator.
 //
-// Honesty over completeness: Steps 1 and 2 (Cloud Infrastructure, Team) have
-// real backend signals to check today. Steps 3, 4 and 5 (Auditors,
-// Workspace, Training) have no settings page or API behind them yet — they
-// are shown as "In progress" rather than faked as clickable/complete.
+// Honesty over completeness: Steps 1, 2 and 3 (Cloud Infrastructure, Team,
+// Auditors) have real backend signals to check today. Steps 4 and 5
+// (Workspace, Training) have no settings page or API behind them yet —
+// they are shown as "In progress" rather than faked as clickable/complete.
 // (Note: the existing /settings/github page is a source-code scanner
 // connection, not the Jira/ServiceNow-style "Connect Workspace" step #268
 // describes — deliberately not reused here to avoid overstating progress.)
@@ -53,7 +53,7 @@ const STEPS: Step[] = [
     n: 3, id: "auditor",
     title: "Invite Auditors",
     description: "Give auditors time-limited, read-only access to evidence.",
-    href: "/settings/auditor", available: false,
+    href: "/settings/auditor", available: true,
   },
   {
     n: 4, id: "workspace",
@@ -74,6 +74,7 @@ export default function OnboardingHome() {
   const navigate = useNavigate();
   const [infraState, setInfraState] = useState<StepState>("loading");
   const [teamState, setTeamState]   = useState<StepState>("loading");
+  const [auditorState, setAuditorState] = useState<StepState>("loading");
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
@@ -118,17 +119,34 @@ export default function OnboardingHome() {
     })();
   }, [authLoading, email]);
 
+  // Step 3 — "done" once at least one audit engagement has been created.
+  // Fails gracefully to "not_done" while /auditors isn't deployed yet.
+  useEffect(() => {
+    if (authLoading || !email) return;
+    (async () => {
+      try {
+        const resp = await fetch(`${getApiBase()}/auditors/engagements`, { cache: "no-store", headers: authHeader() });
+        if (!resp.ok) throw new Error(String(resp.status));
+        const data = await resp.json();
+        setAuditorState((data.engagements?.length || 0) > 0 ? "done" : "not_done");
+      } catch {
+        setAuditorState("not_done");
+      }
+    })();
+  }, [authLoading, email]);
+
   const stateFor = (step: Step): StepState => {
     if (!step.available) return "unavailable";
     if (step.id === "infrastructure") return infraState;
     if (step.id === "team") return teamState;
+    if (step.id === "auditor") return auditorState;
     return "not_done";
   };
 
   const doneCount = STEPS.filter(s => stateFor(s) === "done").length;
   const progressPct = Math.round((doneCount / STEPS.length) * 100);
 
-  if (authLoading || infraState === "loading" || teamState === "loading") return (
+  if (authLoading || infraState === "loading" || teamState === "loading" || auditorState === "loading") return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#080b12", color: "#64748b", fontSize: 14 }}>
       Loading…
     </div>
