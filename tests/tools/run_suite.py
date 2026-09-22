@@ -52,8 +52,24 @@ def main():
     a = ap.parse_args()
 
     latest = REPORTS / "latest.json"
+    # F02: a collection error (a broken import, a fixture that blows up before any test
+    # runs) can make pytest exit without conftest's pytest_sessionfinish ever writing a
+    # fresh report — deleting the previous one first means that failure mode produces a
+    # missing file (a loud crash below), never a stale, previously-successful report
+    # silently reported as this run's real result.
+    latest.unlink(missing_ok=True)
     extra = ["--flows", a.flows] if a.flows else []
-    pytest([f"tests/{l}" for l in a.layers] + extra, latest)
+    rc = pytest([f"tests/{l}" for l in a.layers] + extra, latest)
+    # pytest exit codes: 0 = all passed, 1 = some tests failed — both are a real run
+    # whose report can be trusted. 2 (interrupted), 3 (internal error), 4 (usage error)
+    # and 5 (no tests collected) mean something went wrong before/during collection —
+    # treat that as a hard failure rather than trying to read whatever report exists.
+    if rc not in (0, 1):
+        print(f"pytest exited {rc} before completing a real run (collection/internal/usage error) — treating as a hard failure.")
+        return 1
+    if not latest.exists():
+        print(f"pytest exited {rc} but {latest} was never written — treating as a hard failure.")
+        return 1
     data = json.loads(latest.read_text(encoding="utf-8"))
 
     def run_again(ids):
@@ -71,8 +87,13 @@ def main():
         apply_reruns(data, run_again)
     latest.write_text(json.dumps(data, indent=2), encoding="utf-8")
     code = subprocess.run([sys.executable, str(ROOT / "tests" / "tools" / "build_report.py")], cwd=ROOT).returncode
-    subprocess.run([sys.executable, str(ROOT / "tests" / "tools" / "upload_results.py")], cwd=ROOT)
-    return code
+    upload_code = subprocess.run([sys.executable, str(ROOT / "tests" / "tools" / "upload_results.py")], cwd=ROOT).returncode
+    # upload_results.py itself already returns 1 on a genuine upload failure (not on a
+    # clean "skipped, no token" — that returns 0) — but this script previously never
+    # looked at that returncode at all, so a failed upload never failed the overall run.
+    if upload_code != 0:
+        print("Uploading test results to the database failed — treating the run as failed too.")
+    return code or upload_code
 
 
 if __name__ == "__main__":

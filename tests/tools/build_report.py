@@ -124,7 +124,14 @@ def main():
     p0_failed = [x for x in problems if x["status"] == "failed" and x["severity"] == "P0"]
     if p0_failed:
         print("P0 FAILURES (deployment-blocking):", [x["test_id"] for x in p0_failed])
-    return 1 if any(x["status"] == "failed" for x in problems) or unregistered else 0
+    # A P0 test that never ran at all — "blocked" (missing credentials/prerequisites),
+    # not "skipped" as genuinely not-applicable — must gate the suite exactly like a
+    # failure. Real bug this fixes: a run missing e.g. E2E_PASSWORD_C silently reported
+    # 0 failures and exit code 0, even though a mandatory P0 flow was never executed.
+    p0_blocked = [t for t in results if t["status"] == "blocked" and t["severity"] == "P0"]
+    if p0_blocked:
+        print("P0 BLOCKED — never ran (deployment-blocking):", [t["test_id"] for t in p0_blocked])
+    return 1 if any(x["status"] == "failed" for x in problems) or unregistered or p0_blocked else 0
 
 
 if __name__ == "__main__":

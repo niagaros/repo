@@ -21,9 +21,12 @@ channel configured AND (the event is mandatory OR the account's
 per-domain preference for that channel is enabled).
 """
 
+import ipaddress
 import json
 import logging
 import os
+import socket
+import urllib.parse
 import urllib.request
 
 import boto3
@@ -110,11 +113,22 @@ def _enqueue_delivery(notification_id):
     response. Delivery is now handed off to a real SQS queue and a
     separate Lambda invocation (notification-handler's own SQS trigger,
     see deliver_queued_notification) performs it — the caller's request
-    returns as soon as the in-app row exists."""
+    returns as soon as the in-app row exists.
+
+    Returns False (never raises) on a send failure too — the row is already
+    committed by this point, so the caller must fall back to the same
+    synchronous delivery used when no queue is configured at all; otherwise
+    a transient SQS error leaves a notification permanently stuck with
+    delivery=NULL, which run_retry_check's own WHERE clause can never pick
+    up (it only looks at notifications where delivery IS NOT NULL)."""
     if not NOTIFICATION_QUEUE_URL:
         return False
-    sqs = boto3.client("sqs", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
-    sqs.send_message(QueueUrl=NOTIFICATION_QUEUE_URL, MessageBody=json.dumps({"notification_id": notification_id}))
+    try:
+        sqs = boto3.client("sqs", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+        sqs.send_message(QueueUrl=NOTIFICATION_QUEUE_URL, MessageBody=json.dumps({"notification_id": notification_id}))
+    except Exception:
+        logger.exception("could not enqueue notification %s for delivery — falling back to synchronous delivery", notification_id)
+        return False
     return True
 
 
@@ -128,17 +142,25 @@ def create_notification(conn, cloud_account_id, domain, event_type, severity, ti
 
     with conn:
         with conn.cursor() as cur:
-            # Real, simple deduplication: same event+resource for this
-            # account within 24h does not create a second notification.
+            # Real, simple deduplication: same event+resource for this account
+            # within 24h does not create a second notification — UNLESS the new
+            # occurrence is more severe than the one already recorded. Without
+            # that check, a resource whose LOW-severity finding already fired
+            # once could re-fail as CRITICAL an hour later and be silently
+            # suppressed as "a duplicate" for the rest of the 24h window.
             cur.execute(f"""
-                SELECT id FROM notifications
+                SELECT id, severity FROM notifications
                 WHERE cloud_account_id = %s AND event_type = %s
                   AND resource_link IS NOT DISTINCT FROM %s AND {DEDUP_WINDOW_SQL}
                 LIMIT 1
             """, (cloud_account_id, event_type, resource_link))
             existing = cur.fetchone()
             if existing:
-                return {"id": str(existing[0]), "deduplicated": True}
+                existing_id, existing_severity = existing
+                existing_idx = SEVERITIES.index(existing_severity) if existing_severity in SEVERITIES else len(SEVERITIES)
+                new_idx = SEVERITIES.index(severity)
+                if new_idx >= existing_idx:
+                    return {"id": str(existing_id), "deduplicated": True}
 
             cur.execute("""
                 INSERT INTO notifications (cloud_account_id, domain, event_type, severity, title,
@@ -254,25 +276,67 @@ def deliver_now(conn, notification_id, cloud_account_id, domain, event_type, sev
         with conn.cursor() as cur:
             cur.execute("UPDATE notifications SET delivery = %s WHERE id = %s",
                         (json.dumps(delivery, default=str), notification_id))
+    _log_delivery_attempts(conn, notification_id, delivery, "initial")
 
     return {"id": notification_id, "deduplicated": False, "mandatory": mandatory, "delivery": delivery}
+
+
+def _log_delivery_attempts(conn, notification_id, delivery, attempt_kind):
+    """Real, append-only delivery history — notifications.delivery is a single
+    JSONB field every later attempt overwrites, so this is the only place the
+    outcome of an earlier attempt survives a later retry. Never raises: a
+    logging failure must not break real delivery."""
+    try:
+        rows = []
+        for channel in ("email", "webhook", "slack", "sms", "teams", "discord"):
+            r = delivery.get(channel)
+            if isinstance(r, dict) and "sent" in r:
+                rows.append((notification_id, channel, None, bool(r.get("sent")), r.get("reason"), attempt_kind))
+        for entry in delivery.get("additional_recipients") or []:
+            if "sent" in entry:
+                rows.append((notification_id, entry.get("channel"), entry.get("recipient_id"),
+                             bool(entry.get("sent")), entry.get("reason"), attempt_kind))
+        if not rows:
+            return
+        with conn:
+            with conn.cursor() as cur:
+                cur.executemany("""
+                    INSERT INTO notification_delivery_attempts
+                        (notification_id, channel, recipient_id, sent, reason, attempt_kind)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, rows)
+    except Exception:
+        logger.exception("could not log delivery attempt history for notification %s", notification_id)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 def deliver_queued_notification(conn, notification_id):
     """Called from notification-handler's SQS trigger (one real
     notification per queue message). Looks up the row this Lambda
     invocation didn't itself create, then runs the same real delivery
-    logic as the synchronous fallback."""
+    logic as the synchronous fallback.
+
+    SQS is at-least-once — the same message can be (and, in practice,
+    sometimes is) delivered to this trigger more than once. Without a check,
+    a redelivery re-runs deliver_now and re-sends every real email/SMS/
+    webhook a second time. deliver_now already sets `delivery` at the end of
+    a real run, so its presence means "already delivered" and a redelivery
+    is a genuine no-op, not a second send."""
     with conn.cursor() as cur:
         cur.execute("""
             SELECT cloud_account_id, domain, event_type, severity, title, description,
-                   resource_link, mandatory
+                   resource_link, mandatory, delivery
             FROM notifications WHERE id = %s
         """, (notification_id,))
         row = cur.fetchone()
     if not row:
         return {"error": "notification not found", "id": notification_id}
-    cloud_account_id, domain, event_type, severity, title, description, resource_link, mandatory = row
+    cloud_account_id, domain, event_type, severity, title, description, resource_link, mandatory, delivery = row
+    if delivery is not None:
+        return {"id": notification_id, "already_delivered": True, "delivery": delivery}
     return deliver_now(conn, notification_id, str(cloud_account_id), domain, event_type, severity, title,
                         description, resource_link, mandatory)
 
@@ -370,7 +434,11 @@ def run_retry_check(conn):
                     (n.delivery->'slack'->>'sent' = 'false') OR
                     (n.delivery->'sms'->>'sent' = 'false') OR
                     (n.delivery->'teams'->>'sent' = 'false') OR
-                    (n.delivery->'discord'->>'sent' = 'false')
+                    (n.delivery->'discord'->>'sent' = 'false') OR
+                    EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(COALESCE(n.delivery->'additional_recipients', '[]'::jsonb)) e
+                        WHERE e->>'sent' = 'false'
+                    )
                   )
             """, (MAX_DELIVERY_RETRIES,))
             rows = cur.fetchall()
@@ -379,11 +447,13 @@ def run_retry_check(conn):
          delivery, retry_count, notify_email, webhook_url, slack_webhook_url, sms_number,
          teams_webhook_url, discord_webhook_url) in rows:
         changed = False
+        just_retried = {"additional_recipients": []}  # only what THIS round actually retried — for history logging
         # dict.get(key, {}) only falls back to {} when the key is absent —
         # here every channel key is always PRESENT with value None when
         # unconfigured, so that default never applies. `or {}` catches that.
         if (delivery.get("email") or {}).get("sent") is False and notify_email:
             delivery["email"] = _send_email(notify_email, title, description, severity)
+            just_retried["email"] = delivery["email"]
             changed = True
         if (delivery.get("webhook") or {}).get("sent") is False and webhook_url:
             delivery["webhook"] = _post_webhook(webhook_url, {
@@ -391,11 +461,13 @@ def run_retry_check(conn):
                 "severity": severity, "title": title, "description": description,
                 "resource_link": resource_link,
             })
+            just_retried["webhook"] = delivery["webhook"]
             changed = True
         if (delivery.get("slack") or {}).get("sent") is False and slack_webhook_url:
             delivery["slack"] = _post_webhook(slack_webhook_url, {
                 "text": f"[{severity}] {title}" + (f"\n{description}" if description else ""),
             })
+            just_retried["slack"] = delivery["slack"]
             changed = True
         if (delivery.get("teams") or {}).get("sent") is False and teams_webhook_url:
             delivery["teams"] = _post_webhook(teams_webhook_url, {
@@ -403,19 +475,51 @@ def run_retry_check(conn):
                 "summary": title, "themeColor": _SEVERITY_HEX.get(severity, "808080"),
                 "title": f"Niagaros [{severity}] {domain}", "text": title,
             })
+            just_retried["teams"] = delivery["teams"]
             changed = True
         if (delivery.get("sms") or {}).get("sent") is False and sms_number:
             delivery["sms"] = _send_sms(sms_number, title, severity)
+            just_retried["sms"] = delivery["sms"]
             changed = True
         if (delivery.get("discord") or {}).get("sent") is False and discord_webhook_url:
             delivery["discord"] = _post_discord(discord_webhook_url, title, description, severity, domain)
+            just_retried["discord"] = delivery["discord"]
             changed = True
+        # Additional (named) recipients were never covered by a retry at all — only
+        # the account's primary channels above were. Re-look-up each failed
+        # recipient's current target (the failure result itself only records the
+        # channel and outcome, not the address/URL) and retry just that channel.
+        additional = delivery.get("additional_recipients") or []
+        failed_additional = [a for a in additional if a.get("sent") is False]
+        if failed_additional:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, notify_email, sms_number, slack_webhook_url, teams_webhook_url,
+                           discord_webhook_url, webhook_url
+                    FROM notification_recipients WHERE cloud_account_id = %s
+                """, (account_id,))
+                targets_by_id = {str(r[0]): {"email": r[1], "sms": r[2], "slack": r[3],
+                                              "teams": r[4], "discord": r[5], "webhook": r[6]}
+                                  for r in cur.fetchall()}
+            for entry in failed_additional:
+                target = (targets_by_id.get(entry.get("recipient_id")) or {}).get(entry.get("channel"))
+                if not target:
+                    continue  # recipient or that channel was removed since — nothing left to retry
+                result = dispatch_to_channel(entry["channel"], target, title, description, severity, domain,
+                                              notif_id, event_type, resource_link)
+                entry.update(result)
+                just_retried["additional_recipients"].append(entry)
+                changed = True
         if changed:
             with conn:
                 with conn.cursor() as cur:
                     cur.execute("""
                         UPDATE notifications SET delivery = %s, retry_count = retry_count + 1 WHERE id = %s
                     """, (json.dumps(delivery, default=str), notif_id))
+            # Log only what this round actually retried — delivery still carries
+            # every earlier, already-succeeded channel's result too, and those
+            # must not be re-logged as if they were retried again just now.
+            _log_delivery_attempts(conn, notif_id, just_retried, "retry")
             retried.append({"notification_id": str(notif_id), "delivery": delivery})
     return retried
 
@@ -445,10 +549,19 @@ def run_escalation_check(conn):
                 result = _send_email(escalation_email, f"ESCALATED — unacknowledged: {title}",
                                       f"This {severity} {domain} notification has not been acknowledged.",
                                       severity)
-                cur.execute("""
-                    INSERT INTO notification_escalations (notification_id, escalated_to)
-                    VALUES (%s, %s)
-                """, (notif_id, escalation_email))
+                # Only a real, sent escalation counts as "done" (this query's own
+                # WHERE clause treats a row here as "already escalated, never
+                # again"). A failed send must be left alone so the next scheduled
+                # run picks it back up and actually retries it, instead of the
+                # unacknowledged notification silently never escalating at all.
+                if result.get("sent"):
+                    cur.execute("""
+                        INSERT INTO notification_escalations (notification_id, escalated_to)
+                        VALUES (%s, %s)
+                    """, (notif_id, escalation_email))
+                else:
+                    logger.warning("escalation email failed for notification %s, will retry next run: %s",
+                                    notif_id, result.get("reason"))
                 escalated.append({"notification_id": str(notif_id), "escalated_to": escalation_email,
                                    "email_result": result})
     return escalated
@@ -472,14 +585,51 @@ def _send_sms(phone_number, title, severity):
         return {"sent": False, "reason": _friendly_reason(e)}
 
 
+class WebhookBlocked(Exception):
+    pass
+
+
+def _assert_public_webhook_url(url):
+    """SSRF guard (this handler's `target`/webhook_url ultimately reaches
+    urllib.request.urlopen with a fully caller-supplied URL): reject anything
+    that isn't a plain https(s) call to a public host. Without this, a
+    customer-configured webhook — or the test_channel action's `target`,
+    which is nothing but this — could point at this Lambda's own container
+    credentials endpoint (169.254.170.2) or the EC2/Lambda metadata address
+    (169.254.169.254) and exfiltrate its real IAM credentials, or reach any
+    other internal/private address this Lambda's network can otherwise see.
+    Honesty note: this validates the resolved IP(s) once, up front, then
+    connects by hostname as normal — it does not pin the connection to the
+    validated IP, so it does not close a DNS-rebinding race where the name
+    resolves differently a moment later. That residual gap is real."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise WebhookBlocked("webhook URL must be http:// or https://")
+    host = parsed.hostname
+    if not host:
+        raise WebhookBlocked("webhook URL has no host")
+    try:
+        addrs = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except socket.gaierror as e:
+        raise WebhookBlocked(f"could not resolve webhook host: {e}")
+    for addr in addrs:
+        ip = ipaddress.ip_address(addr)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise WebhookBlocked("webhook URL resolves to a private/internal address, which is not allowed")
+
+
 def _post_webhook(url, payload):
     try:
+        _assert_public_webhook_url(url)
         req = urllib.request.Request(
             url, data=json.dumps(payload, default=str).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST",
         )
         with urllib.request.urlopen(req, timeout=8) as resp:
             return {"sent": True, "status": resp.status}
+    except WebhookBlocked as e:
+        logger.warning("webhook blocked by SSRF guard: %s", e)
+        return {"sent": False, "reason": str(e)}
     except Exception as e:
         logger.exception("notification webhook failed")
         return {"sent": False, "reason": _friendly_reason(e)}

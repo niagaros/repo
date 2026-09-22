@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 
-from conftest import ACCOUNT_B_ID, TEST_PREFIX
+from conftest import ACCOUNT_B_ID, ACCOUNT_ID, TEST_PREFIX
 
 pytestmark = [pytest.mark.live, pytest.mark.needs_two_tenants, pytest.mark.flow("E2E-PERM-001"), pytest.mark.severity("P0")]
 JSON = {"Content-Type": "application/json"}
@@ -30,6 +30,10 @@ def b(api_b):
     undo.append(lambda: api_b.post("tprm", {"action": "delete_vendor", "cloud_account_id": ACCOUNT_B_ID, "vendor_id": v, "actor_name": "e2e"}, headers=JSON))
     ids["vendor_task"] = post("tprm", {"action": "create_remediation_task", "vendor_id": v, "title": "e2e task", "actor_name": "e2e"})["id"]
     ids["assessment"] = post("tprm", {"action": "create_assessment", "vendor_id": v, "actor_name": "e2e"})["id"]
+    import base64 as _b64
+    ids["certification"] = post("tprm", {"action": "upload_certification", "vendor_id": v, "certification_type": "ISO27001",
+                                          "filename": "cert.pdf", "file_base64": _b64.b64encode(b"e2e certificate").decode(),
+                                          "actor_name": "e2e"})["id"]
 
     a = post("audit-management", {"action": "create_audit", "title": _tag(), "audit_type": "internal"})["id"]
     ids["audit"] = a
@@ -54,12 +58,18 @@ def b(api_b):
 
     ids["scenario"] = post("calculators", {"action": "save_scenario", "calculator_type": "compliance_effort", "title": _tag()})["id"]
     yield ids
+    cleanup_failures = []
     for fn in reversed(undo):
         try:
             fn()
-        except Exception:
-            pass
+        except Exception as e:
+            cleanup_failures.append(str(e))
     api_b.post("calculators", {"action": "delete_scenario", "cloud_account_id": ACCOUNT_B_ID, "scenario_id": ids["scenario"]}, headers=JSON)
+    # A swallowed cleanup failure here leaves a real record behind in tenant B under a
+    # test fixture nobody is watching — it must be visible, not silent, even though the
+    # test itself already yielded and can't turn this into a failed assertion.
+    if cleanup_failures:
+        print(f"WARNING: {len(cleanup_failures)} teardown cleanup call(s) failed for fixture 'b': {cleanup_failures}")
 
 
 def _cases(ids):
@@ -98,11 +108,24 @@ def _cases(ids):
         ("custom_frameworks.delete_control", "delete", "custom-frameworks", {"control_id": ids["control"]}, None),
         ("custom_frameworks.delete_framework", "delete", "custom-frameworks", {"framework_id": ids["framework"]}, None),
         ("calculators.delete_scenario", "post", "calculators", None, {"action": "delete_scenario", "scenario_id": ids["scenario"]}),
+        # Alias query-param IDOR paths (found in the pre-livegang review, C01/T01): these
+        # carry the real id under the action's own name instead of cloud_account_id/
+        # vendor_id. Tenant A's OWN real, owned account_id is deliberately included
+        # alongside the alias — without the fix, guard() only ever checked that
+        # (correctly owned) account and let the request through regardless of whose
+        # record the alias actually named; that's the exact shape of the real bug.
+        ("calculators.gap_data_alias", "get", "calculators", {"cloud_account_id": ACCOUNT_ID, "gap_data": ACCOUNT_B_ID, "framework": "ISO27001"}, None),
+        ("calculators.list_scenarios_alias", "get", "calculators", {"cloud_account_id": ACCOUNT_ID, "list_scenarios": ACCOUNT_B_ID}, None),
+        ("tprm.download_certification_alias", "get", "tprm", {"cloud_account_id": ACCOUNT_ID, "download_certification": ids["certification"]}, None),
+        ("tprm.download_contract_alias", "get", "tprm", {"cloud_account_id": ACCOUNT_ID, "download_contract": ids["vendor"]}, None),
+        ("tprm.assessment_items_alias", "get", "tprm", {"cloud_account_id": ACCOUNT_ID, "assessment_items": ids["assessment"]}, None),
+        ("tprm.evidence_package_alias", "get", "tprm", {"cloud_account_id": ACCOUNT_ID, "evidence_package": ids["vendor"]}, None),
     ]
 
 
 CASE_IDS = [c[0] for c in _cases({k: "00000000-0000-4000-8000-000000000000" for k in
-            ("vendor", "vendor_task", "assessment", "audit", "finding", "audit_task", "evidence", "auditor_access", "questionnaire", "q_item", "framework", "control", "scenario")})]
+            ("vendor", "vendor_task", "assessment", "audit", "finding", "audit_task", "evidence", "auditor_access",
+             "questionnaire", "q_item", "framework", "control", "scenario", "certification")})]
 
 
 @pytest.mark.parametrize("case_id", CASE_IDS)

@@ -114,7 +114,7 @@
   var scroll = document.getElementById("niagaros-ai-scroll");
   var input = document.getElementById("niagaros-ai-input");
   var sendBtn = document.getElementById("niagaros-ai-send");
-  var historyLoaded = false;
+  var historyLoadedForAccount = null;
   // Tracks the last question asked in this chat so a short, contextless
   // follow-up ("which one is newest?") can be resolved server-side against
   // what was actually being discussed, instead of being rejected as
@@ -124,8 +124,12 @@
   bubble.addEventListener("click", function () {
     var willOpen = !panel.classList.contains("open");
     panel.classList.toggle("open");
-    if (willOpen && !historyLoaded) {
-      historyLoaded = true;
+    // Reload history whenever the visible account has changed since it was last
+    // loaded (e.g. the page's own account switcher, no full reload) — not just once
+    // per page load, or the chat silently keeps showing a different account's history.
+    var acct = getAccountId();
+    if (willOpen && historyLoadedForAccount !== acct) {
+      historyLoadedForAccount = acct;
       loadHistory();
     }
   });
@@ -162,14 +166,20 @@
   function loadHistory() {
     var accountId = getAccountId();
     if (!accountId) return;
+    lastQuestion = "";
     fetch(AGENT_API + "?cloud_account_id=" + encodeURIComponent(accountId))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var raw = d.history || [];
+        // Reloading (a switched account) must replace what's shown, not append to
+        // it — otherwise a previous account's chat bubbles stay mixed in with the
+        // new one's. Re-add the empty placeholder when the new account has no
+        // history, instead of leaving a blank panel.
+        scroll.innerHTML = raw.length
+          ? "" : '<div class="empty">Ask anything about your risks, compliance, vendors, or audits — type your own question below.</div>';
         if (!raw.length) return;
         lastQuestion = raw[0].question || ""; // raw is newest-first
         var history = raw.slice().reverse();
-        clearEmpty();
         history.forEach(function (h) {
           scroll.appendChild(bubbleEl("user", esc(h.question)));
           scroll.appendChild(bubbleEl("bot", esc(h.answer)));

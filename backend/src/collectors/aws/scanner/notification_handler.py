@@ -133,11 +133,28 @@ CREATE TABLE IF NOT EXISTS notification_recipients (
 );
 CREATE INDEX IF NOT EXISTS notification_recipients_account_idx ON notification_recipients(cloud_account_id);
 
+-- notifications.delivery is one JSONB field that every delivery/retry/escalation
+-- attempt overwrites in place — there was no way to see what happened on an
+-- earlier attempt once a later one replaced it. This is the real, append-only
+-- history: one row per attempt, never updated or deleted.
+CREATE TABLE IF NOT EXISTS notification_delivery_attempts (
+    id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    notification_id  UUID         NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+    channel          VARCHAR(20)  NOT NULL,
+    recipient_id     UUID,
+    sent             BOOLEAN      NOT NULL,
+    reason           TEXT,
+    attempt_kind     VARCHAR(20)  NOT NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS notification_delivery_attempts_notif_idx ON notification_delivery_attempts(notification_id, created_at);
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON notifications TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_preferences TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_channels TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_escalations TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON notification_recipients TO cspm_lambda;
+GRANT SELECT, INSERT, UPDATE, DELETE ON notification_delivery_attempts TO cspm_lambda;
 
 CREATE TABLE IF NOT EXISTS security_audit_log (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -199,7 +216,7 @@ def _list_notifications(cur, account_id, domain_filter, severity_filter, unread_
     } for r in cur.fetchall()]
 
 
-from collectors.aws.scanner.tenant_auth import guard
+from collectors.aws.scanner.tenant_auth import guard, authenticate, account_allowed
 
 REFS = {
     "notification_id": (
@@ -320,6 +337,24 @@ def handler(event, context):
                         "teams_webhook_url": r[6], "discord_webhook_url": r[7], "webhook_url": r[8],
                         "created_at": r[9].isoformat(),
                     } for r in cur.fetchall()]
+
+                # A webhook URL (Slack/Teams/Discord/generic) IS the credential — anyone
+                # who has it can post into that channel directly, bypassing Niagaros
+                # entirely. A read-only viewer being able to see it (this is a GET,
+                # which guard() lets any account member read) is a real secret leak, not
+                # just a settings read. Only an account owner/org_admin/bu_admin — the
+                # roles that can actually change these settings — get the real values.
+                caller_email = authenticate(event)
+                with conn.cursor() as cur:
+                    can_see_secrets = bool(caller_email) and account_allowed(cur, caller_email, account_id, write=True)
+                if not can_see_secrets:
+                    secret_fields = ("webhook_url", "slack_webhook_url", "teams_webhook_url",
+                                      "discord_webhook_url", "sms_number", "escalation_email")
+                    for f in secret_fields:
+                        channels[f] = "(configured)" if channels.get(f) else None
+                    for r in recipients:
+                        for f in ("webhook_url", "slack_webhook_url", "teams_webhook_url", "discord_webhook_url", "sms_number"):
+                            r[f] = "(configured)" if r.get(f) else None
 
                 return _resp(200, {"preferences": preferences, "channels": channels, "recipients": recipients})
 

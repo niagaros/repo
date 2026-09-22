@@ -519,11 +519,15 @@ def _q_accounts_compliance(cur, owner_email):
         return {"error": "No AWS accounts found for this user."}
     results = []
     for acct in accounts:
+        # Same raw-only scope as _q_executive_summary (and the dashboard's headline
+        # gauge) — excluding framework-mapped copies of the same real finding. Without
+        # this filter, an account with several mapped compliance frameworks reports a
+        # different score here than in its own executive summary, for no real reason.
         cur.execute("""
             SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS')
             FROM findings f JOIN resources r ON f.resource_id = r.id
-            WHERE r.cloud_account_id = %s
-        """, (acct["id"],))
+            WHERE r.cloud_account_id = %s AND (f.framework IS NULL OR f.framework NOT IN %s)
+        """, (acct["id"], MAPPED_FRAMEWORK_NAMES))
         total, passed = cur.fetchone()
         score = round(passed * 100.0 / total, 1) if total else None
         results.append({"account_name": acct["name"], "compliance_score": score})
@@ -815,7 +819,7 @@ def _phrase_answer(question, intent, evidence):
                 f"but couldn't reach the AI service to phrase it in words ({e}).")
 
 
-from collectors.aws.scanner.tenant_auth import guard
+from collectors.aws.scanner.tenant_auth import guard, account_allowed
 
 REFS = {
     "query_id": (
@@ -950,6 +954,25 @@ def handler(event, context):
                         if not row:
                             return _resp(404, {"error": "That finding no longer exists in Audit Management."})
                         finding_account_id = row[1]
+                        # tenant_auth's guard() already ran, but its REFS for this handler
+                        # resolves finding_id against the CSPM scan findings table (findings/
+                        # resources), not audit_findings/audits above — a different table this
+                        # action actually uses. guard() can't see a table its REFS never
+                        # declared, so this id must be checked explicitly, here, against the
+                        # authenticated caller (see tenant_auth.account_allowed docstring).
+                        if not account_allowed(cur, caller_email, finding_account_id, write=True):
+                            logger.warning("tenant isolation: %s denied create_remediation_task on finding %s",
+                                           caller_email, finding_id)
+                            return _resp(403, {"error": "Forbidden"})
+                        # Idempotency: a repeated confirmation for the same AI query must not
+                        # create a second task (e.g. a double click, or a retried request after
+                        # a slow/lost response). action_details already carries the task_id
+                        # from the first, real INSERT — no schema change needed to check it.
+                        cur.execute("SELECT action_details->>'task_id' FROM ai_agent_queries WHERE id = %s AND action_taken = 'create_remediation_task'",
+                                    (query_id,))
+                        already = cur.fetchone()
+                        if already and already[0]:
+                            return _resp(200, {"task_id": already[0], "already_created": True})
                         cur.execute("""
                             INSERT INTO audit_remediation_tasks (audit_finding_id, title, owner_email, due_date)
                             VALUES (%s, %s, %s, %s) RETURNING id

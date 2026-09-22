@@ -1,6 +1,15 @@
 // Deployment gate (issue #279): P0 checks that must hold before a build is allowed to ship.
 // Runs inside the Amplify build (frontend/amplify.yml preBuild) and in CI. Exit code 1 blocks the deploy.
 // No dependencies — Node 18+ (global fetch). Set GATE_API_BASE to point it elsewhere (used to prove it fails).
+//
+// Known, real scope limit (from the pre-livegang review, F04) — not fixed here because fixing it needs
+// infrastructure this product doesn't have yet, not a code change: GATE_API_BASE defaults to the one,
+// already-live backend. Lambda handlers deploy straight to that live backend via deploy_handlers.py, outside
+// Amplify and outside this PR's own build — there is no per-PR/per-commit candidate backend this gate could
+// point at instead. So this gate proves the checks hold against whatever backend is live RIGHT NOW, not that
+// the specific backend code in this commit passes them. It still catches a live regression before the
+// FRONTEND half of a release ships on top of it — it does not prove the release commit's backend was tested.
+// A real fix needs a per-PR backend deployment (e.g. a second Lambda alias/stage per branch) to point this at.
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

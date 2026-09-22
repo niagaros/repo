@@ -217,6 +217,10 @@ const DASH_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default
 const CALC_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/calculators';
 const AUDIT_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/audit-management';
 let currentAccountId=new URLSearchParams(location.search).get('account_id')||null;
+// A top-level `let` is not a property of `window` — the AI Agent widget (loaded on
+// this and other pages) reads window.currentAccountId to know which account the
+// visible page is on, so every place this variable changes must mirror it there too.
+window.currentAccountId=currentAccountId;
 let allAccounts=[], frameworkOptions=[], scenarios=[], currentGap=null, mode='effort';
 let benchmarks=null, rawSeverityTotals=null;
 
@@ -224,7 +228,7 @@ function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);}
 function dashTo(hash){location.href='niagaros-dashboard.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')+'#'+hash;}
 function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('open');}
-function switchAccount(id){if(id===currentAccountId)return;currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
+function switchAccount(id){if(id===currentAccountId)return;currentAccountId=id;window.currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
 function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(a=>`<div class="acct-item" onclick="switchAccount('${a.id}')">🏢 ${esc(a.name)}</div>`).join('');}
 
 async function loadAll(){
@@ -235,7 +239,7 @@ async function loadAll(){
   const dr=await fetch(durl,{headers:token?{Authorization:'Bearer '+token}:{}});
   if(dr.status===401){location.href='/';return;}
   const dd=await dr.json();
-  if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId)currentAccountId=dd.accounts[0].id;renderAcctList();}
+  if(dd.accounts&&dd.accounts.length){allAccounts=dd.accounts;if(!currentAccountId){currentAccountId=dd.accounts[0].id;window.currentAccountId=currentAccountId;}renderAcctList();}
   if(dd.account_name) document.getElementById('chip-account').textContent='🏢 '+dd.account_name+' ▾';
   document.getElementById('last-scan').textContent = dd.last_scan_at ? 'Last scan: '+dd.last_scan_at.substring(0,16) : 'No scan yet';
   if(!currentAccountId){
@@ -362,15 +366,23 @@ function switchTab(m){
   recalc();
 }
 
+let gapRequestGen=0;
 async function onFrameworkChange(){
   const fw=document.getElementById('fw-select').value;
+  const myGen=++gapRequestGen;
   if(!fw){currentGap={total:0,by_severity:{}};renderGap();recalc();return;}
-  const r=await fetch(CALC_API+'?gap_data='+encodeURIComponent(currentAccountId)+'&framework='+encodeURIComponent(fw));
-  const data=await r.json();
-  // Defensive fallback: never let a failed/unexpected API response (wrong
-  // shape, an {error:...} body) crash the page — degrade to an empty,
-  // honestly-zero gap instead of a blank, stuck screen.
-  currentGap = (data && data.by_severity) ? data : {total:0, by_severity:{}};
+  let ok=true, data=null;
+  try{
+    const r=await fetch(CALC_API+'?gap_data='+encodeURIComponent(currentAccountId)+'&framework='+encodeURIComponent(fw));
+    ok=r.ok;
+    data=await r.json();
+  }catch(e){ok=false;}
+  // A slower, now-stale response for a framework the user already switched
+  // away from must never overwrite what's currently selected.
+  if(myGen!==gapRequestGen)return;
+  // A real API error must show as an error, never a silent, indistinguishable "0
+  // open findings" — that would misrepresent a compliant-looking gap that isn't real.
+  currentGap = (ok && data && data.by_severity) ? data : {total:0, by_severity:{}, error:!ok};
   renderGap();
   recalc();
   if(benchmarks) renderBenchmarkCard();
@@ -378,6 +390,11 @@ async function onFrameworkChange(){
 
 function renderGap(){
   const colors={CRITICAL:'#ef4444',HIGH:'#f97316',MEDIUM:'#f59e0b',LOW:'#3b82f6'};
+  if(currentGap&&currentGap.error){
+    document.getElementById('gap-display').innerHTML=`<div class="empty">Could not load the current gap. Please try again.</div>`;
+    document.getElementById('start-remediation-btn').disabled=true;
+    return;
+  }
   const bySev=(currentGap&&currentGap.by_severity)||{};
   const rows=['CRITICAL','HIGH','MEDIUM','LOW'].map(s=>`
     <div class="gap-row"><div class="gap-dot" style="background:${colors[s]}"></div>${s.charAt(0)+s.slice(1).toLowerCase()} findings open<span class="gap-n" style="color:${colors[s]}">${bySev[s]||0}</span></div>
@@ -442,16 +459,22 @@ async function startRemediation(){
   const r=window._lastResult||{};
   const btn=document.getElementById('start-remediation-btn');
   btn.disabled=true; btn.textContent='Creating audit…';
-  const resp=await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-    action:'create_audit', cloud_account_id:currentAccountId,
-    title:`${fwLabel} remediation (from Compliance Calculator)`,
-    audit_type:'internal', framework:fw,
-    scope_description:`Auto-created from the Compliance Calculator on ${new Date().toLocaleDateString()}. `
-      +`Real gap at creation time: ${currentGap.total} open finding(s). `
-      +`Estimated ${Math.round(r.total_hours||0)}h`+(r.total_cost?` / $${Math.round(r.total_cost).toLocaleString()}`:'')
-      +` to close, based on the assumptions entered in the calculator (not a verified benchmark for the effort figure).`,
-  })});
-  const d=await resp.json();
+  let resp, d;
+  try{
+    resp=await fetch(AUDIT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      action:'create_audit', cloud_account_id:currentAccountId,
+      title:`${fwLabel} remediation (from Compliance Calculator)`,
+      audit_type:'internal', framework:fw,
+      scope_description:`Auto-created from the Compliance Calculator on ${new Date().toLocaleDateString()}. `
+        +`Real gap at creation time: ${currentGap.total} open finding(s). `
+        +`Estimated ${Math.round(r.total_hours||0)}h`+(r.total_cost?` / $${Math.round(r.total_cost).toLocaleString()}`:'')
+        +` to close, based on the assumptions entered in the calculator (not a verified benchmark for the effort figure).`,
+    })});
+    d=await resp.json();
+  }catch(e){
+    showToast('Could not reach the server. Please check your connection and try again.');
+    btn.disabled=false;btn.textContent='▶ Start remediation — create an audit from these findings';return;
+  }
   if(!resp.ok){showToast(d.error||'Failed to create audit');btn.disabled=false;btn.textContent='▶ Start remediation — create an audit from these findings';return;}
   showToast(`Audit created with ${d.findings_seeded||0} real finding(s) — opening…`);
   location.href='audit_management.html?account_id='+encodeURIComponent(currentAccountId)+'&open_audit='+encodeURIComponent(d.id);
@@ -462,13 +485,14 @@ function renderScenarios(){
     <div class="scenario-row">
       <div style="flex:1">
         <strong>${esc(s.title)}</strong> — ${esc(s.framework_label||'')}
-        <div style="color:#9ca3af;font-size:11px;margin-top:2px">${s.results.total_hours}h · $${(s.results.total_cost||0).toLocaleString()} · ${new Date(s.created_at).toLocaleDateString()}</div>
+        <div style="color:#9ca3af;font-size:11px;margin-top:2px">${esc(String(Math.round(Number(s.results.total_hours)||0)))}h · $${esc((Number(s.results.total_cost)||0).toLocaleString())} · ${esc(new Date(s.created_at).toLocaleDateString())}</div>
       </div>
       <button class="btn-ghost btn-sm" onclick="deleteScenario('${s.id}')">Delete</button>
     </div>`).join('') : '<div class="empty">No saved scenarios yet. Calculate above, then click "Save".</div>';
 }
 async function deleteScenario(id){
-  await fetch(CALC_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete_scenario',scenario_id:id})});
+  const r=await fetch(CALC_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete_scenario',scenario_id:id})});
+  if(!r.ok){showToast('Failed to delete the scenario. Please try again.');return;}
   scenarios=scenarios.filter(s=>s.id!==id);
   renderScenarios();
   showToast('Scenario deleted');

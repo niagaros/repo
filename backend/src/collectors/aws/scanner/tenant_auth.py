@@ -122,6 +122,19 @@ def _record_denial(conn, email, accounts, event, qs, body):
             pass
 
 
+def account_allowed(cur, email, account_id, write=False):
+    """Explicit single-account check for a call site where the id being acted on is only
+    known AFTER guard() already ran — e.g. resolved via a lookup inside the action itself,
+    against a table REFS (declared once, at request entry) cannot see. guard()'s own
+    REFS-based check only protects ids present in qs/body under a name REFS declares; when a
+    handler has more than one code path that reaches the same kind of id through a different
+    table, each of those paths must call this directly instead of trusting REFS covered it."""
+    if not _is_uuid(account_id):
+        return False
+    cur.execute(ACCESS_SQL, {"ids": [str(account_id).lower()], "email": email, "write": write})
+    return len(cur.fetchall()) == 1
+
+
 def guard(event, conn, qs, body, refs=None, public=None):
     """None when allowed, else (status_code, message)."""
     if os.environ.get("TENANT_AUTH_ENFORCE", "1") == "0":
