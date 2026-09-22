@@ -165,10 +165,10 @@
     {
       "id": "E2E-INFRA-001",
       "domain": "Infrastructure",
-      "name": "Connect AWS -> validate permissions -> discover resources -> scan -> findings -> display",
+      "name": "Connect AWS -> validate permissions -> discover resources -> scan -> findings -> display (real account, account-scoped)",
       "severity": "P1",
       "exists": true,
-      "environment": "needs a scannable AWS test account",
+      "environment": "real Niagaros AWS account, read-only",
       "owner": "Platform Engineering",
       "frequency": "Every deployment",
       "dependencies": [
@@ -176,11 +176,11 @@
         "Lambda",
         "PostgreSQL"
       ],
-      "gap_reason": "The code exists and is deployed (scan-handler: validate_connection + account-scoped scan; orchestrator scoped per account) but its E2E test needs a dedicated test tenant linked to the Niagaros AWS account; creating that tenant was blocked by the safety policy (it would reuse the production account's scanner role), so it is not exercised yet.",
       "paths": [
         "backend/src/collectors/aws/scanner/scan_handler.py",
         "backend/src/orchestrator/",
-        "backend/src/onboarding/"
+        "backend/src/onboarding/",
+        "get-dashboard-data/"
       ]
     },
     {
