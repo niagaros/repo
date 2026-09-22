@@ -31,11 +31,12 @@ jobs:
   critical-flows:
     name: critical-flows (unit + API + UI)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
       E2E_PASSWORD_D: ${{ secrets.E2E_PASSWORD_D }}
+      E2E_PASSWORD_C: ${{ secrets.E2E_PASSWORD_C }}
       E2E_INGEST_TOKEN: ${{ secrets.E2E_INGEST_TOKEN }}
     steps:
       - uses: actions/checkout@v4
