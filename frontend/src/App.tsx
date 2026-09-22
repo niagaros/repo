@@ -262,12 +262,20 @@ function OnboardingWizard({ email, onComplete }: { email: string; onComplete: ()
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState("");
   const [copied, setCopied]             = useState("");
+  const [verifying, setVerifying]       = useState(false);
+  const [verifyError, setVerifyError]   = useState("");
 
   const copy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopied(key);
     setTimeout(() => setCopied(""), 2000);
   };
+
+  // Bumped on every submit/back-navigation so a response from an abandoned request can recognise
+  // itself as stale and refuse to move the wizard forward (fix #4: back-navigation race condition).
+  // A ref, not state: an async closure only ever sees the state value from when it started, so
+  // state could never detect a change made later by a Back click while this request is in flight.
+  const requestGen = React.useRef(0);
 
   const handleSubmit = async () => {
     setError("");
@@ -276,24 +284,86 @@ function OnboardingWizard({ email, onComplete }: { email: string; onComplete: ()
       setError("AWS Account ID must be exactly 12 digits.");
       return;
     }
+    const myRequestId = ++requestGen.current;
     setLoading(true);
     try {
+      // Fix #5: always use a fresh, non-expired access token, not whatever localStorage happened
+      // to hold last — Amplify silently refreshes it here if a valid refresh token is available.
+      let token = "";
+      try {
+        const session = await fetchAuthSession();
+        token = session.tokens?.accessToken?.toString() || "";
+      } catch {
+        token = "";
+      }
+      if (!token) {
+        setError("Your session has expired. Please sign in again.");
+        return;
+      }
+      localStorage.setItem("niagaros_token", token);
+
       const resp = await fetch(`${getApiBase()}/onboard`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("niagaros_token") || ""}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email, company_name: companyName.trim(), aws_account_id: awsAccountId.trim(), region }),
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || "Onboarding failed");
+      // Fix #3: never advance on an incomplete response — a broken account_id/external_id would
+      // silently produce a broken IAM-role template on the next step.
+      if (!data || typeof data.account_id !== "string" || !data.account_id || typeof data.external_id !== "string" || !data.external_id) {
+        throw new Error("Onboarding returned an incomplete response. Please try again.");
+      }
+      // Fix #4: if the user has already navigated away from this request (Back, or submitted again),
+      // this response is stale — apply nothing.
+      if (myRequestId !== requestGen.current) return;
       setResult(data);
       setStep(2);
     } catch (e: any) {
-      setError(e.message);
+      if (myRequestId === requestGen.current) setError(e.message);
     } finally {
-      setLoading(false);
+      if (myRequestId === requestGen.current) setLoading(false);
+    }
+  };
+
+  const goToStep = (target: number) => {
+    requestGen.current++; // invalidate any in-flight request from the step we're leaving
+    setLoading(false);
+    setError("");
+    setStep(target);
+  };
+
+  // Fix #2: "Done, role is created" must actually verify the role before claiming success — it
+  // reuses the same validate_connection check the dashboard's "Test connection" button uses.
+  const confirmAwsConnection = async () => {
+    if (!result) return;
+    setVerifyError("");
+    setVerifying(true);
+    try {
+      let token = "";
+      try {
+        const session = await fetchAuthSession();
+        token = session.tokens?.accessToken?.toString() || "";
+      } catch {
+        token = "";
+      }
+      if (!token) { setVerifyError("Your session has expired. Please sign in again."); return; }
+      const resp = await fetch(`${getApiBase()}/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "validate_connection", cloud_account_id: result.account_id }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.error || "Could not verify the connection.");
+      if (!data.connected) {
+        const failed = (data.checks || []).filter((c: any) => !c.ok).map((c: any) => c.permission);
+        throw new Error(data.error || (failed.length ? `Missing permissions: ${failed.join(", ")}.` : "The role could not be verified yet.") + " Make sure the CloudFormation stack finished with CREATE_COMPLETE, then try again.");
+      }
+      setStep(3);
+    } catch (e: any) {
+      setVerifyError(e.message);
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -353,11 +423,11 @@ Resources:
         <p style={S.sub}>Enter your company name and AWS Account ID so we can create the connection.</p>
         {error && <div style={S.error}>{error}</div>}
         <label style={S.label}>Company name</label>
-        <input style={S.input} placeholder="e.g. Acme Corp" value={companyName} onChange={e => setCompanyName(e.target.value)} />
+        <input style={S.input} placeholder="e.g. Acme Corp" value={companyName} onChange={e => setCompanyName(e.target.value)} disabled={loading} />
         <label style={S.label}>AWS Account ID</label>
-        <input style={S.input} placeholder="123456789012" value={awsAccountId} onChange={e => setAwsAccountId(e.target.value)} maxLength={12} />
+        <input style={S.input} placeholder="123456789012" value={awsAccountId} onChange={e => setAwsAccountId(e.target.value)} maxLength={12} disabled={loading} />
         <label style={S.label}>Primary AWS Region</label>
-        <select style={S.input} value={region} onChange={e => setRegion(e.target.value)}>
+        <select style={S.input} value={region} onChange={e => setRegion(e.target.value)} disabled={loading}>
           <option value="eu-west-1">Europe (Ireland) — eu-west-1</option>
           <option value="eu-north-1">Europe (Stockholm) — eu-north-1</option>
           <option value="eu-central-1">Europe (Frankfurt) — eu-central-1</option>
@@ -371,7 +441,7 @@ Resources:
           <code style={{ color: "#ef4444" }}>aws sts get-caller-identity --query Account --output text</code>
         </div>
         <button style={S.btn} onClick={handleSubmit} disabled={loading}>{loading ? "Processing..." : "Continue →"}</button>
-        <button style={S.btnGhost} onClick={() => setStep(0)}>← Back</button>
+        <button style={S.btnGhost} onClick={() => goToStep(0)} disabled={loading}>← Back</button>
       </div>
     </div>
   );
@@ -446,8 +516,9 @@ Resources:
           </div>
         </div>
 
-        <button style={S.btn} onClick={() => setStep(3)}>Done, role is created →</button>
-        <button style={S.btnGhost} onClick={() => setStep(1)}>← Back</button>
+        {verifyError && <div style={S.error}>{verifyError}</div>}
+        <button style={S.btn} onClick={confirmAwsConnection} disabled={verifying}>{verifying ? "Verifying…" : "Done, role is created →"}</button>
+        <button style={S.btnGhost} onClick={() => goToStep(1)} disabled={verifying}>← Back</button>
       </div>
     </div>
   );
@@ -498,11 +569,16 @@ function AppContent() {
         cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
+      // Fix #1: an error response must never be mistaken for "no account yet" or "here is a
+      // dashboard" — both branches below used to run for ANY response, including a 401/500 whose
+      // body just doesn't happen to set needs_onboarding, landing on the dashboard with no account id.
+      if (!resp.ok) throw new Error(data.error || `Could not load your account (HTTP ${resp.status}).`);
       if (data.needs_onboarding) {
         setAppState({ kind: "onboarding" });
       } else {
         const accountId = data.accounts?.[0]?.id || "";
+        if (!accountId) throw new Error("No account was found for this session.");
         setAppState({ kind: "dashboard", accountId });
       }
     } catch (e: any) {
