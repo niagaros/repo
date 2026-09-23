@@ -847,3 +847,15 @@ class TestLambdaHandlerRouting:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = th.lambda_handler(self._event("GET", "/team/audit-log"), None)
         assert resp["statusCode"] == 501
+
+    def test_unhandled_error_does_not_leak_exception_details(self):
+        """An unhandled exception must not return its raw message to the
+        caller — that could leak internal details (e.g. database error
+        text containing connection info or constraint names). The full
+        detail still goes to the logs; the response body is generic."""
+        import api.team_handler as th
+        with patch.object(th, "Database", side_effect=RuntimeError("password=hunter2 host=internal-db.local")):
+            resp = th.lambda_handler(self._event("GET", "/team"), None)
+        assert resp["statusCode"] == 500
+        assert "hunter2" not in resp["body"]
+        assert json.loads(resp["body"]) == {"error": "internal server error"}

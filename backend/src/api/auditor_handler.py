@@ -316,8 +316,11 @@ def lambda_handler(event, context):
         logger.error(f"auditor_handler: {e}")
         return _response(501, {"error": str(e)})
     except Exception as e:
+        # Full detail goes to the logs only — returning str(e) to the
+        # caller risks leaking internal details (e.g. database error
+        # messages can include column/constraint names).
         logger.error(f"auditor_handler: unhandled error — {e}", exc_info=True)
-        return _response(500, {"error": str(e)})
+        return _response(500, {"error": "internal server error"})
     finally:
         if db:
             db.close()

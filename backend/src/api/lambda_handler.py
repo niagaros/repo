@@ -99,5 +99,8 @@ def lambda_handler(event, context):
         return {"statusCode": 400, "body": json.dumps({"error": f"Missing field: {e}"})}
 
     except Exception as e:
+        # Full detail goes to the logs only — returning str(e) to the
+        # caller risks leaking internal details (e.g. database error
+        # messages can include column/constraint names).
         logger.error(f"Lambda: scan failed — {e}", exc_info=True)
-        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+        return {"statusCode": 500, "body": json.dumps({"error": "internal server error"})}

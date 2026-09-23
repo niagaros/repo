@@ -154,9 +154,13 @@ class TestApiLambdaHandlerCredentialFailure:
             MockScanner.return_value.run.side_effect = _client_error("Throttling", "slow down")
             response = mod.lambda_handler(event, None)
 
-        # Falls through to the generic exception handler -> 500, not 401
+        # Falls through to the generic exception handler -> 500, not 401.
+        # The response body is deliberately generic (not the raw
+        # exception text, which could leak internal details) — the exact
+        # error is logged server-side instead.
         assert response["statusCode"] == 500
-        assert "Throttling" in response["body"] or "slow down" in response["body"]
+        assert "Throttling" not in response["body"]
+        assert json.loads(response["body"]) == {"error": "internal server error"}
 
     def test_successful_scan_is_unaffected(self):
         mod = self._import_handler()

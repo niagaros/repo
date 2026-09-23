@@ -573,3 +573,13 @@ class TestLambdaHandlerRouting:
                 self._event("GET", "/auditor/evidence/acct-1", path_params={"cloud_account_id": "acct-1"}), None,
             )
         assert resp["statusCode"] == 501
+
+    def test_unhandled_error_does_not_leak_exception_details(self):
+        """Same regression test as team_handler's — an unhandled
+        exception must not return its raw message to the caller."""
+        import api.auditor_handler as ah
+        with patch.object(ah, "Database", side_effect=RuntimeError("password=hunter2 host=internal-db.local")):
+            resp = ah.lambda_handler(self._event("GET", "/auditors/engagements"), None)
+        assert resp["statusCode"] == 500
+        assert "hunter2" not in resp["body"]
+        assert json.loads(resp["body"]) == {"error": "internal server error"}
