@@ -91,6 +91,15 @@ class SqliteAuditorDb(SqliteTeamDb):
         self.conn.commit()
         return engagement_id
 
+    def get_engagement(self, engagement_id, organization_id):
+        row = self.conn.execute(
+            "SELECT id, name, end_date FROM audit_engagements WHERE id = ? AND organization_id = ?",
+            (engagement_id, organization_id),
+        ).fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "name": row[1], "end_date": row[2]}
+
     def list_organization_engagements(self, organization_id):
         rows = self.conn.execute(
             "SELECT id, name, end_date FROM audit_engagements WHERE organization_id = ?",

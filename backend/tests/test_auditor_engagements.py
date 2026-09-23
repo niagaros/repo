@@ -49,6 +49,24 @@ class TestDatabaseEngagementMethods:
         assert insert_calls[-1][0][1] == ("engagement-1", "auditor@firm.com")
         mock_conn.commit.assert_called_once()
 
+    def test_get_engagement_found_and_scoped(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = ("e1", "Q4 Audit", "2026-12-31")
+
+        engagement = db.get_engagement("e1", "org1")
+
+        assert engagement == {"id": "e1", "name": "Q4 Audit", "end_date": "2026-12-31"}
+        sql, params = cur.execute.call_args[0]
+        assert params == ("e1", "org1")
+
+    def test_get_engagement_none_when_wrong_organization(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = None
+
+        assert db.get_engagement("e1", "some-other-org") is None
+
     def test_list_organization_engagements_maps_active_flag(self):
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
@@ -343,6 +361,44 @@ class TestHandleRequestEvidence:
         )
 
 
+class TestHandleListEvidenceRequests:
+    def test_only_admin_can_view(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = ah.handle_list_evidence_requests({}, db, "e1")
+        assert resp["statusCode"] == 403
+
+    def test_rejects_engagement_from_another_organization(self):
+        """The IDOR this guards against: list_evidence_requests itself
+        has no organization scoping, so without this check an admin from
+        org A could pass org B's engagement_id and read its requests."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = None
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_list_evidence_requests({}, db, "someone-elses-engagement")
+        assert resp["statusCode"] == 404
+        db.list_evidence_requests.assert_not_called()
+
+    def test_successful_list(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = ACTIVE_ENGAGEMENT
+        db.list_evidence_requests.return_value = [{"id": "req-1", "status": "pending"}]
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_list_evidence_requests({}, db, "e1")
+        assert resp["statusCode"] == 200
+        db.get_engagement.assert_called_once_with("e1", "org1")
+        assert json.loads(resp["body"])["requests"] == [{"id": "req-1", "status": "pending"}]
+
+
 class TestHandleResolveEvidenceRequest:
     def _event(self, approve=True):
         return {"body": json.dumps({"approve": approve})}
@@ -356,11 +412,23 @@ class TestHandleResolveEvidenceRequest:
             resp = ah.handle_resolve_evidence_request(self._event(), db, "e1", "req-1")
         assert resp["statusCode"] == 403
 
+    def test_rejects_engagement_from_another_organization(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = None
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_resolve_evidence_request(self._event(), db, "someone-elses-engagement", "req-1")
+        assert resp["statusCode"] == 404
+        db.resolve_evidence_request.assert_not_called()
+
     def test_not_found_returns_404(self):
         import api.auditor_handler as ah
         import api.team_handler as th
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = ACTIVE_ENGAGEMENT
         db.resolve_evidence_request.return_value = False
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = ah.handle_resolve_evidence_request(self._event(), db, "e1", "req-1")
@@ -371,6 +439,7 @@ class TestHandleResolveEvidenceRequest:
         import api.team_handler as th
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = ACTIVE_ENGAGEMENT
         db.resolve_evidence_request.return_value = True
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = ah.handle_resolve_evidence_request(self._event(approve=True), db, "e1", "req-1")
@@ -432,11 +501,26 @@ class TestHandleViewEngagementActivity:
             resp = ah.handle_view_engagement_activity({}, db, "e1")
         assert resp["statusCode"] == 403
 
+    def test_rejects_engagement_from_another_organization(self):
+        """Without this, get_engagement_activity's lack of organization
+        scoping would let an admin from a different organization read
+        another organization's full login/download/request history."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = None
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_view_engagement_activity({}, db, "someone-elses-engagement")
+        assert resp["statusCode"] == 404
+        db.get_engagement_activity.assert_not_called()
+
     def test_admin_gets_the_engagements_entries(self):
         import api.auditor_handler as ah
         import api.team_handler as th
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = ACTIVE_ENGAGEMENT
         db.get_engagement_activity.return_value = [
             {"auditor_email": "auditor@firm.com", "action": "evidence_downloaded",
              "details": {"cloud_account_id": "acct-1"}, "created_at": "2026-01-01T00:00:00"},

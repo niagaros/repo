@@ -182,6 +182,12 @@ def handle_list_evidence_requests(event: dict, db: Database, engagement_id: str)
     if caller["role"] != "admin":
         return _response(403, {"error": "only admins can view evidence requests"})
 
+    # Without this, an admin from a different organization could pass
+    # this organization's engagement_id and read its evidence requests —
+    # list_evidence_requests itself has no organization scoping.
+    if not db.get_engagement(engagement_id, caller["organization_id"]):
+        return _response(404, {"error": "engagement not found in your organization"})
+
     requests = db.list_evidence_requests(engagement_id)
     return _response(200, {"requests": requests})
 
@@ -197,6 +203,12 @@ def handle_resolve_evidence_request(event: dict, db: Database, engagement_id: st
         return _response(401, {"error": "unauthorized"})
     if caller["role"] != "admin":
         return _response(403, {"error": "only admins can resolve evidence requests"})
+
+    # Same guard as handle_list_evidence_requests — without it, an admin
+    # from a different organization could approve or deny another
+    # organization's evidence request outright.
+    if not db.get_engagement(engagement_id, caller["organization_id"]):
+        return _response(404, {"error": "engagement not found in your organization"})
 
     try:
         body = json.loads(event.get("body") or "{}")
@@ -246,6 +258,13 @@ def handle_view_engagement_activity(event: dict, db: Database, engagement_id: st
         return _response(401, {"error": "unauthorized"})
     if caller["role"] != "admin":
         return _response(403, {"error": "only admins can view auditor activity"})
+
+    # Same guard as the evidence-request handlers — get_engagement_activity
+    # has no organization scoping of its own, so without this an admin
+    # from a different organization could read another organization's
+    # full login/download/request history by guessing its engagement_id.
+    if not db.get_engagement(engagement_id, caller["organization_id"]):
+        return _response(404, {"error": "engagement not found in your organization"})
 
     entries = db.get_engagement_activity(engagement_id)
     return _response(200, {"entries": entries})

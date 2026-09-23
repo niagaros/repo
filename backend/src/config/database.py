@@ -579,6 +579,26 @@ class Database:
         self.conn.commit()
         return str(engagement_id)
 
+    def get_engagement(self, engagement_id: str, organization_id: str) -> dict | None:
+        """
+        Ownership check reused by every admin-facing engagement
+        sub-resource endpoint (evidence requests, activity log). Without
+        this, an admin from one organization could pass another
+        organization's engagement_id straight through to
+        list_evidence_requests / resolve_evidence_request /
+        get_engagement_activity — none of which filter by organization_id
+        themselves — and read or mutate that organization's data.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, name, end_date FROM audit_engagements WHERE id = %s AND organization_id = %s",
+                (engagement_id, organization_id),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": str(row[0]), "name": row[1], "end_date": str(row[2])}
+
     def list_organization_engagements(self, organization_id: str) -> list:
         with self.conn.cursor() as cur:
             cur.execute("""
