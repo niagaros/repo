@@ -19,3 +19,7 @@ __pycache__/
 # Throwaway local test databases (local_team_demo.py, local_team_server.py)
 *.sqlite
 *.sqlite3
+
+# Local scratch space (one-off scripts, generated documents, never commit —
+# this is also where short-lived credentials end up during manual testing)
+scratch/
