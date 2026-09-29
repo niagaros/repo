@@ -18,10 +18,20 @@
 -- single-person organization, so nothing that already works breaks.
 
 -- ── organizations ────────────────────────────────────────────────────
+-- LET OP: deze tabel bestaat al op de productiedatabase — hij is niet door
+-- deze migratie aangemaakt. Het platform had al een (nog ongebruikt, 0 rijen)
+-- organisatiebegrip met een bijbehorende `org_members`-tabel. Door de
+-- IF NOT EXISTS slaat dit statement daar stilzwijgend overheen, dus de
+-- definitie hieronder moet exact overeenkomen met wat er al staat — anders
+-- werkt deze migratie lokaal wel en in productie niet.
+--
+-- Het verschil dat ertoe doet is `owner_email`: verplicht en zonder
+-- standaardwaarde. Elke INSERT in deze tabel moet die kolom dus meegeven.
 CREATE TABLE IF NOT EXISTS organizations (
-    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    name       TEXT        NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT        NOT NULL,
+    owner_email TEXT        NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- IMPORTANT: the existing Cognito post-confirmation trigger that creates a
@@ -41,8 +51,9 @@ DECLARE
     new_org_id UUID;
 BEGIN
     IF NEW.organization_id IS NULL THEN
-        INSERT INTO organizations (name)
-        VALUES (COALESCE(NULLIF(NEW.full_name, ''), NEW.email, 'New organization'))
+        INSERT INTO organizations (name, owner_email)
+        VALUES (COALESCE(NULLIF(NEW.full_name, ''), NEW.email, 'New organization'),
+                NEW.email)
         RETURNING id INTO new_org_id;
         NEW.organization_id := new_org_id;
     END IF;
@@ -80,8 +91,8 @@ DECLARE
     new_org_id UUID;
 BEGIN
     FOR u IN SELECT id, email, full_name FROM users WHERE organization_id IS NULL LOOP
-        INSERT INTO organizations (name)
-        VALUES (COALESCE(NULLIF(u.full_name, ''), u.email))
+        INSERT INTO organizations (name, owner_email)
+        VALUES (COALESCE(NULLIF(u.full_name, ''), u.email), u.email)
         RETURNING id INTO new_org_id;
 
         UPDATE users SET organization_id = new_org_id WHERE id = u.id;
@@ -91,20 +102,25 @@ END $$;
 ALTER TABLE users ALTER COLUMN organization_id SET NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_organization ON users(organization_id);
 
--- ── cloud_accounts: which organization owns this connected AWS account ──
-ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id);
-
-UPDATE cloud_accounts ca
-SET organization_id = u.organization_id
-FROM users u
-WHERE ca.owner_email = u.email
-  AND ca.organization_id IS NULL;
-
--- Left nullable on purpose: if owner_email doesn't match any users row
--- (e.g. a stale/orphaned account), backfill can't resolve an organization
--- for it. Forcing NOT NULL here would fail the whole migration on data we
--- can't safely fix automatically. Investigate any NULLs after running this.
-CREATE INDEX IF NOT EXISTS idx_cloud_accounts_organization ON cloud_accounts(organization_id);
+-- ── cloud_accounts: deliberately NOT given an organization_id ─────────
+-- An earlier version of this migration added `cloud_accounts.organization_id`
+-- and backfilled it. That column has been removed again, because nothing
+-- reads it: every caller goes through
+-- Database.list_organization_cloud_accounts(), which resolves ownership as
+--     cloud_accounts.owner_email -> users.email -> users.organization_id
+-- and never touches a column on cloud_accounts itself.
+--
+-- A column that is never read is not harmless. Against the real production
+-- data the backfill resolved 0 of 6 rows (all six accounts carry an
+-- owner_email belonging to someone who never registered), so the column
+-- would sit there permanently empty while looking authoritative. Two
+-- competing answers to "which organization owns this account" in one schema
+-- is how someone later trusts the wrong one — silently, with no error and
+-- no failing test, because no code exercises it.
+--
+-- If a direct link is ever genuinely needed — an account managed by several
+-- people, or an owner moving between organizations — it should be added
+-- together with the code that reads it.
 
 -- ── team_invites ──────────────────────────────────────────────────────
 -- One row per invitation. The invited person signs up completely

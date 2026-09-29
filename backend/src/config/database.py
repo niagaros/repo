@@ -451,11 +451,14 @@ class Database:
 
     def list_organization_cloud_accounts(self, organization_id: str) -> list:
         """
-        cloud_accounts has no organization_id of its own (see the note on
-        get_account_contact) — it's linked by owner_email to a user, so
-        organization scoping has to go through users. Only 'active'
-        accounts are offered for sharing; a disconnected account has no
-        working dashboard to share.
+        cloud_accounts has no organization_id of its own, so scoping goes
+        through the owner: owner_email -> users -> organization_id (see
+        also get_account_contact, which reads the same column). That is a
+        deliberate choice rather than a gap — migration 002 carries the
+        reasoning for why no direct column was added.
+
+        Only 'active' accounts are offered for sharing; a disconnected
+        account has no working dashboard to share.
         """
         with self.conn.cursor() as cur:
             cur.execute("""
