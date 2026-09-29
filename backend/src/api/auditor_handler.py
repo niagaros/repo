@@ -18,8 +18,7 @@ _get_authenticated_email from team_handler), but are recognized purely
 by email against engagement_auditors, never joining an organization.
 
 Not yet registered on API Gateway — same deployment gap as
-team_handler.py, and blocked on the same unresolved
-_get_authenticated_email() implementation.
+team_handler.py.
 """
 import json
 import logging
@@ -312,9 +311,6 @@ def lambda_handler(event, context):
 
         return _response(404, {"error": f"no route for {method} {path}"})
 
-    except NotImplementedError as e:
-        logger.error(f"auditor_handler: {e}")
-        return _response(501, {"error": str(e)})
     except Exception as e:
         # Full detail goes to the logs only — returning str(e) to the
         # caller risks leaking internal details (e.g. database error

@@ -2,9 +2,9 @@
 Tests for issue #266 ("Invite Auditors") — audit_engagements schema
 (Database methods) and api/auditor_handler.py business logic.
 
-Same deliberately-unsolved _get_authenticated_email() as
-test_team_invite.py — mocked out here so the rest of the logic can be
-verified independently of it.
+Same _get_authenticated_email() as test_team_invite.py — now really
+implemented (see team_handler.py), still mocked out in most tests here
+so the rest of the logic can be verified independently of it.
 
 Run from the repo root:
     .venv-test/Scripts/python.exe -I -m pytest backend/tests -v
@@ -548,22 +548,25 @@ class TestLambdaHandlerRouting:
             resp = ah.lambda_handler(self._event("GET", "/nonsense"), None)
         assert resp["statusCode"] == 404
 
-    def test_auth_not_implemented_surfaces_as_501_not_a_crash(self):
+    def test_missing_auth_header_is_401_not_a_crash(self):
+        """No Authorization header -> _get_authenticated_email's real
+        implementation returns None (short-circuits before ever touching
+        boto3/Cognito) -> 401, not a 500."""
         import api.auditor_handler as ah
         with patch.object(ah, "Database") as MockDatabase:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = ah.lambda_handler(self._event("GET", "/auditors/engagements"), None)
-        assert resp["statusCode"] == 501
+        assert resp["statusCode"] == 401
 
     def test_auditor_scope_route_dispatches_correctly(self):
         """Not a 404 confirms it hit handle_auditor_view_scope, not the
-        catch-all — the 501 comes from the same unimplemented auth check
-        as every other route, not from a routing mistake."""
+        catch-all — the 401 comes from the same real auth check as every
+        other route, not from a routing mistake."""
         import api.auditor_handler as ah
         with patch.object(ah, "Database") as MockDatabase:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = ah.lambda_handler(self._event("GET", "/auditor/scope"), None)
-        assert resp["statusCode"] == 501
+        assert resp["statusCode"] == 401
 
     def test_download_evidence_route_dispatches_with_path_param(self):
         import api.auditor_handler as ah
@@ -572,7 +575,7 @@ class TestLambdaHandlerRouting:
             resp = ah.lambda_handler(
                 self._event("GET", "/auditor/evidence/acct-1", path_params={"cloud_account_id": "acct-1"}), None,
             )
-        assert resp["statusCode"] == 501
+        assert resp["statusCode"] == 401
 
     def test_unhandled_error_does_not_leak_exception_details(self):
         """Same regression test as team_handler's — an unhandled

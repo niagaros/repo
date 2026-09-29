@@ -1,6 +1,8 @@
 import json
 import logging
 
+import boto3
+
 from config.database import Database
 from auth.cognito_admin import terminate_all_sessions
 
@@ -19,26 +21,44 @@ def _response(status: int, body: dict) -> dict:
 
 def _get_authenticated_email(event: dict) -> str | None:
     """
-    KNOWN GAP — do not treat this as solved: every route on this API
-    (see docs/internal/architecture/aws/api_inventory.md) has
-    AuthorizationType "NONE" at the API Gateway level, meaning whatever
-    validates the "Authorization: Bearer <token>" header the frontend
-    sends (see frontend/src/settings/*.tsx) happens *inside* each existing
-    Lambda (profile-handler, github-oauth-handler, ...) — but none of that
-    code lives in this repository, so the exact mechanism (Cognito JWT
-    signature verification against the user pool's JWKS, presumably) is
-    unverified here.
+    Every route on this API (see docs/internal/architecture/aws/
+    api_inventory.md) has AuthorizationType "NONE" at the API Gateway
+    level, so validation happens here instead, the same way the existing
+    profile-handler / github-oauth-handler Lambdas do it (confirmed with
+    Daniil Sokolov, who built those): no JWKS, no shared auth module —
+    each Lambda hands the caller's access token straight to Cognito's own
+    GetUser API and lets Cognito verify the signature, expiry, and
+    revocation status itself. Only boto3 is needed; nothing to bundle.
 
-    This function is a placeholder that must be reconciled with whatever
-    the real, already-deployed handlers do, before this handler is wired
-    up to a real API Gateway route. Isolated behind this one function on
-    purpose so that reconciliation is a one-line change, not a rewrite.
+    Deliberately uses the *access* token, not the ID token — GetUser only
+    accepts access tokens, and the frontend already sends
+    session.tokens.accessToken (see useRequireAuth.ts), matching what the
+    other settings pages send today.
+
+    Returns None on absolutely any failure (missing header, malformed
+    token, expired/revoked/invalid token, Cognito unreachable) — the
+    caller always turns that into a 401, never a crash. No extra IAM
+    permissions needed on this Lambda's role: GetUser authorizes itself
+    with the token it's given, not with the caller's identity.
     """
-    raise NotImplementedError(
-        "Wire this up to the same Cognito token verification the existing "
-        "profile-handler / github-oauth-handler Lambdas use — that code "
-        "isn't in this repo, so it can't be copied here yet."
-    )
+    headers = event.get("headers") or {}
+    auth_header = headers.get("Authorization") or headers.get("authorization") or ""
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[len("Bearer "):].strip()
+    if not token:
+        return None
+
+    try:
+        cognito = boto3.client("cognito-idp")
+        resp = cognito.get_user(AccessToken=token)
+        for attr in resp["UserAttributes"]:
+            if attr["Name"] == "email":
+                return attr["Value"]
+        return None
+    except Exception as e:
+        logger.warning(f"team_handler: token validation failed — {e}")
+        return None
 
 
 def _get_caller(event: dict, db: Database) -> dict | None:
@@ -419,9 +439,6 @@ def lambda_handler(event, context):
 
         return _response(404, {"error": f"no route for {method} {path}"})
 
-    except NotImplementedError as e:
-        logger.error(f"team_handler: {e}")
-        return _response(501, {"error": str(e)})
     except Exception as e:
         # Full detail goes to the logs only — returning str(e) to the
         # caller risks leaking internal details (e.g. database error

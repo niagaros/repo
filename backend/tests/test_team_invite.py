@@ -2,10 +2,13 @@
 Tests for issue #265 ("Invite Team") — the new organizations/team_invites
 schema (Database methods) and api/team_handler.py business logic.
 
-The one deliberately-unsolved piece, _get_authenticated_email(), is mocked
-out here so the rest of the logic (role checks, validation, routing) can be
-verified independently of it — see the NotImplementedError docstring in
-team_handler.py for why it's unsolved rather than guessed at.
+_get_authenticated_email() now has a real implementation (Cognito's
+GetUser via boto3, provided by Daniil Sokolov) instead of the earlier
+NotImplementedError stub — see its docstring in team_handler.py. It's
+still mocked out in most tests below so the rest of the logic (role
+checks, validation, routing) can be verified independently of it;
+TestLambdaHandlerRouting's "missing auth header" tests exercise the real
+function directly.
 
 Run from the repo root:
     .venv-test/Scripts/python.exe -I -m pytest backend/tests -v
@@ -274,6 +277,70 @@ class TestDatabaseTeamMethods:
 
 ADMIN = {"id": "u1", "email": "admin@x.com", "organization_id": "org1", "role": "admin", "status": "active"}
 VIEWER = {"id": "u2", "email": "viewer@x.com", "organization_id": "org1", "role": "viewer", "status": "active"}
+
+
+class TestGetAuthenticatedEmail:
+    """
+    The real implementation, provided by Daniil Sokolov: no JWKS, no
+    shared auth module — hand the caller's access token straight to
+    Cognito's own GetUser API and let Cognito verify signature, expiry,
+    and revocation itself. These tests exercise that function directly
+    (unlike everywhere else in this file, which mocks it out) by patching
+    boto3 instead, the same way TestDatabaseTeamMethods patches psycopg2.
+    """
+
+    def _event(self, auth_header=None):
+        headers = {"Authorization": auth_header} if auth_header is not None else {}
+        return {"headers": headers}
+
+    def test_no_authorization_header_returns_none_without_calling_cognito(self):
+        import api.team_handler as th
+        with patch.object(th, "boto3") as mock_boto3:
+            assert th._get_authenticated_email(self._event()) is None
+        mock_boto3.client.assert_not_called()
+
+    def test_header_without_bearer_prefix_returns_none(self):
+        import api.team_handler as th
+        with patch.object(th, "boto3") as mock_boto3:
+            assert th._get_authenticated_email(self._event("Basic abc123")) is None
+        mock_boto3.client.assert_not_called()
+
+    def test_empty_bearer_token_returns_none(self):
+        import api.team_handler as th
+        with patch.object(th, "boto3") as mock_boto3:
+            assert th._get_authenticated_email(self._event("Bearer ")) is None
+        mock_boto3.client.assert_not_called()
+
+    def test_valid_token_returns_email_from_get_user(self):
+        import api.team_handler as th
+        mock_cognito = MagicMock()
+        mock_cognito.get_user.return_value = {
+            "UserAttributes": [{"Name": "sub", "Value": "abc-123"}, {"Name": "email", "Value": "real@acme.com"}]
+        }
+        with patch.object(th, "boto3") as mock_boto3:
+            mock_boto3.client.return_value = mock_cognito
+            result = th._get_authenticated_email(self._event("Bearer real-access-token"))
+        assert result == "real@acme.com"
+        mock_boto3.client.assert_called_once_with("cognito-idp")
+        mock_cognito.get_user.assert_called_once_with(AccessToken="real-access-token")
+
+    def test_get_user_without_email_attribute_returns_none(self):
+        import api.team_handler as th
+        mock_cognito = MagicMock()
+        mock_cognito.get_user.return_value = {"UserAttributes": [{"Name": "sub", "Value": "abc-123"}]}
+        with patch.object(th, "boto3") as mock_boto3:
+            mock_boto3.client.return_value = mock_cognito
+            assert th._get_authenticated_email(self._event("Bearer real-access-token")) is None
+
+    def test_invalid_expired_or_revoked_token_returns_none_not_a_crash(self):
+        """Cognito raises (NotAuthorizedException etc.) for a bad token —
+        this must fail closed (None -> 401 upstream), never propagate."""
+        import api.team_handler as th
+        mock_cognito = MagicMock()
+        mock_cognito.get_user.side_effect = Exception("NotAuthorizedException: Access Token has expired")
+        with patch.object(th, "boto3") as mock_boto3:
+            mock_boto3.client.return_value = mock_cognito
+            assert th._get_authenticated_email(self._event("Bearer expired-token")) is None
 
 
 class TestHandleListTeam:
@@ -827,26 +894,30 @@ class TestLambdaHandlerRouting:
             resp = th.lambda_handler(self._event("PATCH", "/team/nonsense"), None)
         assert resp["statusCode"] == 404
 
-    def test_auth_not_implemented_surfaces_as_501_not_a_crash(self):
+    def test_missing_auth_header_is_401_not_a_crash(self):
+        """No Authorization header -> _get_authenticated_email's real
+        implementation returns None (short-circuits before ever touching
+        boto3/Cognito) -> 401, not a 500. Confirms the real auth check is
+        wired in and fails closed rather than crashing."""
         import importlib
         import api.team_handler as th
         importlib.reload(th)
         with patch.object(th, "Database") as MockDatabase:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = th.lambda_handler(self._event("GET", "/team"), None)
-        assert resp["statusCode"] == 501
+        assert resp["statusCode"] == 401
 
     def test_audit_log_route_dispatches_correctly(self):
         """Not a 404 confirms it hit handle_view_audit_log, not the
-        catch-all — the 501 comes from the same unimplemented auth check
-        as every other route, not from a routing mistake."""
+        catch-all — the 401 comes from the same real auth check as every
+        other route, not from a routing mistake."""
         import importlib
         import api.team_handler as th
         importlib.reload(th)
         with patch.object(th, "Database") as MockDatabase:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = th.lambda_handler(self._event("GET", "/team/audit-log"), None)
-        assert resp["statusCode"] == 501
+        assert resp["statusCode"] == 401
 
     def test_unhandled_error_does_not_leak_exception_details(self):
         """An unhandled exception must not return its raw message to the

@@ -33,6 +33,18 @@ export function useRequireAuth() {
           window.location.href = "/";
           return;
         }
+
+        // Every settings page reads its bearer token from this one
+        // localStorage key, but until now only App.tsx's checkAccount()
+        // ever wrote it. Landing directly on a settings page (bookmark,
+        // refresh, a shared link, an auditor going straight to /auditor)
+        // therefore sent either nothing or a stale token from an earlier
+        // session — and Cognito access tokens expire after about an hour,
+        // so even a correct login went stale while Amplify itself already
+        // held a fresh, auto-refreshed one. Writing it here, on every
+        // authenticated page load, keeps all of those pages working.
+        localStorage.setItem("niagaros_token", accessToken);
+
         const user = await getCurrentUser();
         setEmail(user.signInDetails?.loginId || user.username || "");
         tryAcceptPendingInvite(accessToken);
