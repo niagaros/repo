@@ -1763,7 +1763,7 @@ function goCheck(checkId){
 function fmtDuration(sec){
   if(sec==null)return '—';
   const m=Math.floor(sec/60), s=sec%60;
-  return m>0?`${m}m ${s}s`:`${s}s`;
+  return m>0?(s?`${m}m ${s}s`:`${m}m`):`${s}s`;
 }
 const DR_RPO_TARGET_SECONDS=300;    // ≤ 5 min, see disaster_recovery.md
 const DR_RTO_TARGET_SECONDS=1800;   // ≤ 30 min, see disaster_recovery.md
