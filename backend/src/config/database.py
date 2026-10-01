@@ -58,14 +58,14 @@ class Database:
             rows = execute_values(cur, """
                 INSERT INTO resources
                     (cloud_account_id, resource_type, resource_id,
-                     resource_name, region, config)
+                     resource_name, region, config, last_scanned_at)
                 VALUES %s
                 ON CONFLICT (cloud_account_id, resource_id)
                 DO UPDATE SET
                     resource_name   = EXCLUDED.resource_name,
                     region          = EXCLUDED.region,
                     config          = EXCLUDED.config,
-                    last_scanned_at = NOW()
+                    last_scanned_at = clock_timestamp()
                 RETURNING resource_id, id
             """, [(
                 cloud_account_id,
@@ -74,11 +74,53 @@ class Database:
                 r.get("resource_name"),
                 r.get("region"),
                 json.dumps(r.get("config", {})),
-            ) for r in resources], fetch=True)
+            ) for r in resources],
+            template="(%s, %s, %s, %s, %s, %s, clock_timestamp())", fetch=True)
 
         self.conn.commit()
         logger.info(f"Database: upserted {len(rows)} resources")
         return {row[0]: row[1] for row in rows}
+
+    def current_timestamp(self):
+        """Database clock (UTC, timestamp without time zone, like resources.last_scanned_at)."""
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT clock_timestamp()::timestamp")
+            now = cur.fetchone()[0]
+        self.conn.rollback()  # end the read-only transaction; it must not stay open during the scan
+        return now
+
+    def prune_resources(self, cloud_account_id: str, resource_type: str, existing_ids, regions=None,
+                        scan_started_at=None) -> list:
+        """Deletes this account's resources of one type that AWS no longer lists.
+        Findings go with them (findings.resource_id ON DELETE CASCADE). Only called by
+        Scanner.run for a collector whose listing was complete and non-empty.
+        regions: the regions that listing covered (None = global listing). A stored region
+        may also be an availability zone of a covered region (older RDS rows: 'eu-west-1a').
+        scan_started_at: only rows last seen BEFORE this scan began are pruned, so a resource
+        that an overlapping scan inserted or refreshed meanwhile is never deleted."""
+        if scan_started_at is None:
+            raise ValueError("scan_started_at is required for pruning")
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM resources
+                WHERE cloud_account_id = %s AND resource_type = %s
+                  AND NOT (resource_id = ANY(%s))
+                  AND (%s::text[] IS NULL
+                       OR region = ANY(%s::text[])
+                       OR (region ~ '^[a-z]{2}(-[a-z]+)+-[0-9][a-z]$'
+                           AND left(region, length(region) - 1) = ANY(%s::text[])))
+                  AND last_scanned_at IS NOT NULL AND last_scanned_at < %s
+                RETURNING resource_id, resource_name
+            """, (cloud_account_id, resource_type, list(existing_ids),
+                  None if regions is None else sorted(regions),
+                  None if regions is None else sorted(regions),
+                  None if regions is None else sorted(regions),
+                  scan_started_at))
+            rows = cur.fetchall()
+        self.conn.commit()
+        for resource_id, name in rows:
+            logger.info(f"Database: pruned {resource_type} {name} ({resource_id}) — no longer listed by AWS")
+        return [{"resource_id": r[0], "resource_name": r[1]} for r in rows]
 
     # ── findings ──────────────────────────────────────────────────
 

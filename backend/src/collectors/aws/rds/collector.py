@@ -26,6 +26,12 @@ class RDSCollector(BaseCollector):
             # against this, not against the (later) moment the rule runs.
             observed_at = datetime.now(timezone.utc).isoformat()
             instances.extend((db, observed_at) for db in page.get("DBInstances", []))
+        # The paginator raises on failure, so reaching this line means the listing is complete.
+        # Stored rows are keyed by DBInstanceArn: without it for every instance, prune nothing.
+        self.listed_regions = {region}
+        self.existing_ids = {db["DBInstanceArn"] for db, _ in instances if db.get("DBInstanceArn")}
+        if len(self.existing_ids) != len(instances):
+            self.listing_complete = False
 
         logger.info(f"RDSCollector: found {len(instances)} instances")
 
