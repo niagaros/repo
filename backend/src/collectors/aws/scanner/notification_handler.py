@@ -20,7 +20,7 @@ import boto3
 import psycopg2
 
 from collectors.aws.scanner.notification_lib import (
-    run_escalation_check, run_retry_check, is_admin_caller, RESTRICTED_DOMAINS_FOR_NON_ADMIN,
+    run_escalation_check, run_retry_check, run_dr_evidence_check, is_admin_caller, RESTRICTED_DOMAINS_FOR_NON_ADMIN,
     deliver_queued_notification, dispatch_to_channel,
 )
 
@@ -259,7 +259,18 @@ def handler(event, context):
         try:
             escalated = run_escalation_check(conn)
             retried = run_retry_check(conn)
-            return {"statusCode": 200, "body": json.dumps({"escalated": escalated, "retried": retried}, default=str)}
+            # Separate try: a DR-evidence problem must never block escalations/retries.
+            try:
+                dr_notified = run_dr_evidence_check(conn)
+            except Exception as e:
+                print(f"[notification_handler] dr evidence check failed: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                dr_notified = {"error": "dr evidence check failed"}
+            return {"statusCode": 200, "body": json.dumps(
+                {"escalated": escalated, "retried": retried, "dr_notified": dr_notified}, default=str)}
         finally:
             conn.close()
 

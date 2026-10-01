@@ -217,8 +217,14 @@ def lambda_handler(event, context):
                         "body": json.dumps({"error": "Access denied"}),
                     }
             except Exception as e:
-                data["_debug"]["ownership"] = str(e)
-                conn.rollback()
+                # Fail closed: if ownership cannot be verified, no account data is returned.
+                print(f"[get-dashboard-data] ownership check failed: {e}")
+                conn.close()
+                return {
+                    "statusCode": 503,
+                    "headers": {**CORS, "Content-Type": "application/json"},
+                    "body": json.dumps({"error": "Could not verify account access, please retry"}),
+                }
 
             # ── 2. Current account metadata ─────────────────────────
             try:
@@ -629,7 +635,7 @@ def lambda_handler(event, context):
                         "rpo_seconds":          row[2],
                         "rto_seconds":          row[3],
                         "data_integrity_match": row[4],
-                        "tested_at":            str(row[5]) if row[5] else None,
+                        "tested_at":            row[5].isoformat() if row[5] else None,
                     }
                     for row in cur.fetchall()
                 ]

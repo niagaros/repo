@@ -21,6 +21,7 @@ channel configured AND (the event is mandatory OR the account's
 per-domain preference for that channel is enabled).
 """
 
+import hashlib
 import ipaddress
 import json
 import logging
@@ -648,3 +649,84 @@ def _post_discord(url, title, description, severity, domain):
         "footer": {"text": f"Niagaros · {domain}"},
     }
     return _post_webhook(url, {"embeds": [embed]})
+
+
+# ── Disaster-recovery evidence ────────────────────────────────────────────
+# Runs on the same EventBridge schedule as run_escalation_check (see
+# notification_handler.py "run_escalations"). Looks only at the most recent
+# restore test per resource in dr_test_results and notifies when that evidence
+# is failed, misses the published targets, is incomplete or has gone stale.
+# Targets match docs/public/security/data_protection/disaster_recovery.md and
+# the dashboard's drTestStatus(). Resources that were never tested are shown on
+# the dashboard but not notified about, so onboarding a customer does not
+# trigger a notification for every table.
+DR_RPO_TARGET_SECONDS = 300
+DR_RTO_TARGET_SECONDS = 1800
+DR_TEST_MAX_AGE_DAYS = 90
+# The schedule runs often; one reminder per resource and problem per week is enough.
+DR_RENOTIFY_DAYS = 7
+
+
+def _dr_problem(rpo, rto, integrity, age_days):
+    """Returns (event_type, severity, reason) for the worst problem, or None."""
+    if integrity is False:
+        return "dr_test_failed", "P1", "the restored data did not match the source"
+    missed = []
+    if rpo is not None and rpo > DR_RPO_TARGET_SECONDS:
+        missed.append(f"RPO {rpo}s > {DR_RPO_TARGET_SECONDS}s")
+    if rto is not None and rto > DR_RTO_TARGET_SECONDS:
+        missed.append(f"RTO {rto}s > {DR_RTO_TARGET_SECONDS}s")
+    if missed:
+        return "dr_target_missed", "P2", "target missed: " + ", ".join(missed)
+    if rpo is None or rto is None or integrity is None:
+        return "dr_test_incomplete", "P3", "not every value (RPO, RTO, data integrity) was measured"
+    if age_days > DR_TEST_MAX_AGE_DAYS:
+        return "dr_test_overdue", "P3", f"last restore test was {int(age_days)} days ago (max {DR_TEST_MAX_AGE_DAYS})"
+    return None
+
+
+def run_dr_evidence_check(conn):
+    created = []
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT ON (cloud_account_id, resource_type, resource_name)
+                       cloud_account_id, resource_type, resource_name, rpo_seconds, rto_seconds,
+                       data_integrity_match, EXTRACT(EPOCH FROM (NOW() - tested_at)) / 86400
+                FROM dr_test_results
+                ORDER BY cloud_account_id, resource_type, resource_name, tested_at DESC
+            """)
+            latest = cur.fetchall()
+
+    for account_id, rtype, rname, rpo, rto, integrity, age_days in latest:
+        problem = _dr_problem(rpo, rto, integrity, float(age_days))
+        if not problem:
+            continue
+        event_type, severity, reason = problem
+        # A short, stable hash keeps the link (also the dedup key) within the
+        # VARCHAR(255) column, however long the resource name is.
+        resource_key = hashlib.sha256(f"{rtype}:{rname}".encode()).hexdigest()[:16]
+        link = ("niagaros-dashboard.html?account_id=" + urllib.parse.quote(str(account_id))
+                + "&dr_resource=" + resource_key + "#issues")
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 1 FROM notifications
+                    WHERE cloud_account_id = %s AND event_type = %s AND resource_link = %s
+                      AND created_at > NOW() - make_interval(days => %s)
+                    LIMIT 1
+                """, (account_id, event_type, link, DR_RENOTIFY_DAYS))
+                if cur.fetchone():
+                    continue
+        try:
+            result = create_notification(
+                conn, str(account_id), domain="risk", event_type=event_type, severity=severity,
+                title=f"Disaster recovery: {rname} ({rtype})"[:255],
+                description=f"Latest restore test for {rname}: {reason}.",
+                resource_link=link, actor="dr-evidence-check",
+            )
+            created.append({"account": str(account_id), "resource": rname, "event_type": event_type,
+                            "id": result.get("id")})
+        except Exception as e:
+            logger.error(f"run_dr_evidence_check: notification for {rname} failed — {e}")
+    return created

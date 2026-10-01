@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from collectors.base_collector import BaseCollector
 from standards.enums import ResourceType
 
@@ -32,6 +33,7 @@ class DynamoDBCollector(BaseCollector):
                 try:
                     table = ddb.describe_table(TableName=name)["Table"]
                     pitr = ddb.describe_continuous_backups(TableName=name)["ContinuousBackupsDescription"]
+                    observed_at = datetime.now(timezone.utc).isoformat()
                     pitr_desc = pitr.get("PointInTimeRecoveryDescription", {})
                     pitr_status = pitr_desc.get("PointInTimeRecoveryStatus")
                     latest_restorable = pitr_desc.get("LatestRestorableDateTime")
@@ -43,6 +45,7 @@ class DynamoDBCollector(BaseCollector):
                         "billing_mode":                  table.get("BillingModeSummary", {}).get("BillingMode"),
                         "item_count":                    table.get("ItemCount", 0),
                         "latest_restorable_time":        latest_restorable.isoformat() if latest_restorable else None,
+                        "observed_at":                   observed_at,
                     }
                     resources.append(self._resource(
                         resource_id = table.get("TableArn", name),

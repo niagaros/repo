@@ -866,7 +866,9 @@ async function testConnection(){
   alert((d.connected?'Connected to AWS account '+d.aws_account_id+'\n':'NOT fully connected\n')+(d.error?d.error+'\n':'')+(d.checks||[]).map(c=>(c.ok?'OK   ':'FAIL ')+c.permission).join('\n'));
 }
 let allF=[], filtF=[], pg=1, svcF='', drResults=[];
-let currentAccountId=null, allAccounts=[];
+// ?account_id=... (set by navTo() on other pages and by notification links) selects the
+// account; the API still enforces access and answers 403 for an account that is not yours.
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[];
 let lastCrossCompliance=null, hmShowPct=false, hmBiF='all';
 
 // ── Account switcher ─────────────────────────────────
@@ -1006,6 +1008,9 @@ async function triggerScan(){
         const url = currentAccountId ? API+'?account_id='+encodeURIComponent(currentAccountId) : API;
         const r = await fetch(url, { headers: _tok ? {Authorization:'Bearer '+_tok} : {} });
         if (r.status === 401) { location.href = '/'; return; }
+        // A 403/503 body is an error, not dashboard data: never render it. Keep the last
+        // good data; if there is none, loadData() below shows the error after the loop.
+        if (!r.ok) continue;
         const d = await r.json();
         lastData = d;
         const count = (d.total && d.total.total) || 0;
@@ -1206,9 +1211,13 @@ async function loadData(){
     const token=localStorage.getItem('niagaros_token')||'';
     const r=await fetch(url,{headers:token?{Authorization:'Bearer '+token}:{}}), d=await r.json();
     if(r.status===401){location.href='/';return;}
+    if(!r.ok){
+      // 403 = no access to this account, 503 = access could not be verified (fail closed).
+      throw new Error(d.error||('Dashboard data unavailable (HTTP '+r.status+')'));
+    }
     render(d);
   }catch(e){
-    document.getElementById('v-load').innerHTML='<div class="err-box">'+e.message+'</div>';
+    document.getElementById('v-load').innerHTML='<div class="err-box">'+esc(e.message)+'</div>';
   }
 }
 
@@ -1583,6 +1592,16 @@ function render(d){
   document.getElementById('v-load').style.display='none';
   const view = getHashView();
   show(view, document.getElementById('ni-'+view));
+
+  // Deep link from a disaster-recovery notification (?dr_resource=...): open the
+  // database issues with the backup & recovery evidence, once.
+  const params=new URLSearchParams(location.search);
+  if(params.has('dr_resource')){
+    params.delete('dr_resource');
+    const qs=params.toString();
+    history.replaceState(null,'',location.pathname+(qs?'?'+qs:'')+location.hash);
+    goSvc('rds');
+  }
 }
 
 // ── Cross-Compliance Heatmap ─────────────────────────────────────────────────
@@ -1746,29 +1765,52 @@ function fmtDuration(sec){
   const m=Math.floor(sec/60), s=sec%60;
   return m>0?`${m}m ${s}s`:`${s}s`;
 }
+const DR_RPO_TARGET_SECONDS=300;    // ≤ 5 min, see disaster_recovery.md
+const DR_RTO_TARGET_SECONDS=1800;   // ≤ 30 min, see disaster_recovery.md
+const DR_TEST_MAX_AGE_DAYS=90;      // a restore test older than this no longer counts as current evidence
+function drTestStatus(t,isLatest){
+  const red={color:'#b91c1c',bg:'#fef2f2',border:'#fecaca'};
+  const amber={color:'#b45309',bg:'#fffbeb',border:'#fde68a'};
+  const green={color:'#15803d',bg:'#f0fdf4',border:'#bbf7d0'};
+  if(t.data_integrity_match===false) return {...red,label:'Integrity mismatch',detail:''};
+  const missed=[];
+  if(t.rpo_seconds!=null&&t.rpo_seconds>DR_RPO_TARGET_SECONDS)missed.push('RPO');
+  if(t.rto_seconds!=null&&t.rto_seconds>DR_RTO_TARGET_SECONDS)missed.push('RTO');
+  if(missed.length) return {...red,label:'Target missed',detail:`${missed.join(' and ')} above target`};
+  if(t.rpo_seconds==null||t.rto_seconds==null||t.data_integrity_match==null)
+    return {...amber,label:'Incomplete',detail:'not every value was measured'};
+  const ageDays=t.tested_at?(Date.now()-new Date(t.tested_at).getTime())/86400000:NaN;
+  if(isLatest&&!(ageDays<=DR_TEST_MAX_AGE_DAYS))
+    return {...amber,label:'Test overdue',detail:isNaN(ageDays)?'test date unknown':`last test ${Math.floor(ageDays)} days ago (max ${DR_TEST_MAX_AGE_DAYS})`};
+  return {...green,label:'Within target',detail:''};
+}
 function renderDrEvidence(){
   const testedSection=document.getElementById('dr-tested-section');
   const testedGrid=document.getElementById('dr-tested-grid');
   const checksGrid=document.getElementById('dr-checks-grid');
   if(!testedGrid||!checksGrid)return;
 
-  // Full history, newest first (API already orders by tested_at DESC).
-  // Mark the first occurrence per resource_name as "Most recent".
+  // Full history, newest first. A test is judged against the published targets
+  // (docs/public/security/data_protection/disaster_recovery.md); the most recent
+  // test per resource is additionally flagged when it is older than DR_TEST_MAX_AGE_DAYS.
   const seenResource={};
   const sortedTests=[...(drResults||[])].sort((a,b)=>new Date(b.tested_at)-new Date(a.tested_at));
 
   if(sortedTests.length){
     testedSection.hidden=false;
     testedGrid.innerHTML=sortedTests.map(t=>{
-      const isLatest=!seenResource[t.resource_name];
-      seenResource[t.resource_name]=true;
-      return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-        <div style="font-size:11.5px;font-weight:700;color:#15803d;word-break:break-word">${t.resource_name}</div>
-        ${isLatest?'<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#15803d;color:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0">Most recent</span>':''}
+      const key=(t.resource_type||'')+'|'+(t.resource_name||'');
+      const isLatest=!seenResource[key];
+      seenResource[key]=true;
+      const st=drTestStatus(t,isLatest);
+      return `<div style="background:${st.bg};border:1px solid ${st.border};border-radius:8px;padding:12px 14px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <div style="font-size:11.5px;font-weight:700;color:${st.color};word-break:break-word">${esc(t.resource_name)}</div>
+        ${isLatest?`<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:${st.color};color:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0">Most recent</span>`:''}
+        <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${st.color};border:1px solid ${st.border};padding:1px 6px;border-radius:4px;flex-shrink:0">${st.label}</span>
       </div>
-      <div style="font-size:12.5px;color:#374151;line-height:1.7">RPO <strong>${fmtDuration(t.rpo_seconds)}</strong> &middot; RTO <strong>${fmtDuration(t.rto_seconds)}</strong> &middot; ${t.data_integrity_match?'✓ integrity confirmed':'✗ integrity mismatch'}</div>
-      <div style="font-size:11px;color:#9ca3af;margin-top:4px">Tested ${t.tested_at?new Date(t.tested_at).toLocaleString():''}</div>
+      <div style="font-size:12.5px;color:#374151;line-height:1.7">RPO <strong>${fmtDuration(t.rpo_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(DR_RPO_TARGET_SECONDS)} target</span> &middot; RTO <strong>${fmtDuration(t.rto_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(DR_RTO_TARGET_SECONDS)} target</span> &middot; ${t.data_integrity_match===true?'✓ integrity confirmed':t.data_integrity_match===false?'✗ integrity mismatch':'? integrity not verified'}</div>
+      <div style="font-size:11px;color:#9ca3af;margin-top:4px">Tested ${t.tested_at?esc(new Date(t.tested_at).toLocaleString()):'— (date unknown)'}${st.detail?` &middot; ${st.detail}`:''}</div>
     </div>`;
     }).join('');
   } else {

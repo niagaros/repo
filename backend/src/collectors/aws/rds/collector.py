@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from collectors.base_collector import BaseCollector
 from standards.enums import ResourceType
 
@@ -14,17 +15,21 @@ class RDSCollector(BaseCollector):
         # a per-account region into collectors, so this is pinned to eu-west-1 to
         # match every account onboarded so far — a real limitation, not a full
         # multi-region scan, until region is threaded through Scanner.
-        rds = self.aws.get_client("rds", region="eu-west-1")
+        region = "eu-west-1"
+        rds = self.aws.get_client("rds", region=region)
         resources = []
 
         paginator = rds.get_paginator("describe_db_instances")
         instances = []
         for page in paginator.paginate():
-            instances.extend(page.get("DBInstances", []))
+            # Moment of the API answer: the RPO rule measures restore-point lag
+            # against this, not against the (later) moment the rule runs.
+            observed_at = datetime.now(timezone.utc).isoformat()
+            instances.extend((db, observed_at) for db in page.get("DBInstances", []))
 
         logger.info(f"RDSCollector: found {len(instances)} instances")
 
-        for db in instances:
+        for db, observed_at in instances:
             identifier = db.get("DBInstanceIdentifier")
             try:
                 config = {
@@ -35,11 +40,13 @@ class RDSCollector(BaseCollector):
                     "deletion_protection":     db.get("DeletionProtection", False),
                     "engine":                  db.get("Engine"),
                     "latest_restorable_time":  db["LatestRestorableTime"].isoformat() if db.get("LatestRestorableTime") else None,
+                    "observed_at":             observed_at,
+                    "availability_zone":       db.get("AvailabilityZone"),
                 }
                 resources.append(self._resource(
                     resource_id = db.get("DBInstanceArn", identifier),
                     name        = identifier,
-                    region      = db.get("AvailabilityZone", "unknown"),
+                    region      = region,
                     config      = config,
                 ))
                 logger.info(f"RDSCollector: collected {identifier}")
