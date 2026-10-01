@@ -13,12 +13,12 @@ These are ordinary `BaseCheck` classes, auto-discovered by `engine/scanner.py` e
 | `RDS.DR.1` | RDS instance | Automated backups enabled, retention ≥ 7 days |
 | `RDS.DR.2` | RDS instance | Multi-AZ enabled (automatic failover) |
 | `RDS.DR.3` | RDS instance | Deletion protection enabled |
-| `RDS.DR.4` | RDS instance | Point-in-time-recovery lag ≤ 5 minutes ("backup freshness") |
+| `RDS.DR.4` | RDS instance | Point-in-time-recovery lag ≤ 15 minutes ("backup freshness"; RDS uploads the log every 5 min, so the normal lag is ~3–9 min) |
 | `DynamoDB.DR.1` | DynamoDB table | Point-in-time recovery enabled |
 | `DynamoDB.DR.2` | DynamoDB table | Deletion protection enabled |
 | `DynamoDB.DR.3` | DynamoDB table | Point-in-time-recovery lag ≤ 5 minutes ("backup freshness") |
 
-`RDS.DR.4` / `DynamoDB.DR.3` are the important ones for ongoing assurance: they read `LatestRestorableTime` (RDS) / `LatestRestorableDateTime` (DynamoDB) and compare it to "now". A healthy, continuously-streaming backup keeps this gap in the range of seconds to a few minutes. If the underlying backup mechanism ever actually stops working, this gap grows to hours or days and the check fails persistently — that is the signal that something is broken, without ever needing to perform a real restore. This is safe to show customers on every scan.
+`RDS.DR.4` / `DynamoDB.DR.3` are the important ones for ongoing assurance: they read `LatestRestorableTime` (RDS) / `LatestRestorableDateTime` (DynamoDB) and compare it to "now". A healthy backup keeps this gap at a few minutes: for RDS the transaction log is uploaded every 5 minutes, so the gap saw-tooths between ~3 and ~9 minutes (measured on cspm-db, 2026-10-01). If the underlying backup mechanism ever actually stops working, this gap grows to hours or days and the check fails persistently — that is the signal that something is broken, without ever needing to perform a real restore. This is safe to show customers on every scan.
 
 Collector source: `backend/src/collectors/aws/rds/collector.py`, `backend/src/collectors/aws/dynamoDB/collector.py` (folder is capitalized `dynamoDB` to match a pre-existing placeholder directory — Windows treats that as identical to `dynamodb`, Python's import system and Linux in production do not, so keep the casing consistent if touching this).
 

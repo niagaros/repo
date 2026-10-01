@@ -8,7 +8,7 @@ This page exists to close a specific gap identified in an external review of Nia
 
 | Objective | Target | Basis |
 |---|---|---|
-| **RPO** (Recovery Point Objective) | ≤ 5 minutes | RDS automated backups continuously ship the transaction log, enabling point-in-time recovery to any second within the retention window. 5 minutes is AWS's documented typical replication lag for this mechanism — no additional infrastructure is required to meet it. |
+| **RPO** (Recovery Point Objective) | ≤ 15 minutes | RDS uploads the transaction log to S3 every five minutes ([AWS documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PIT.html)), and the latest restorable time moves forward only after an upload has been published. Measured on `cspm-db` on 1 October 2026 (40 samples, every 30 s): the gap between "now" and the latest restorable point ranged from **3m 20s to 8m 57s** (mean 6m 6s) under normal operation. 15 minutes is that normal worst case plus one full missed upload cycle. |
 | **RTO** (Recovery Time Objective) | ≤ 30 minutes | Set from the measured restore below (28m 34s), rounded up with headroom. |
 
 ## Backup configuration (as deployed today)
@@ -21,7 +21,7 @@ This page exists to close a specific gap identified in an external review of Nia
 
 **Test date:** 31 August 2026
 
-**RPO — live-measured, not estimated:** at the moment of this test, the gap between "now" and RDS's `LatestRestorableTime` on `cspm-db` was **3 minutes 12 seconds**. This is the real, observed point-in-time-recovery lag, confirming the ≤5-minute target above is realistic under normal load.
+**RPO — live-measured, not estimated:** at the moment of this test, the gap between "now" and RDS's `LatestRestorableTime` on `cspm-db` was **3 minutes 12 seconds**. This is a single observation: because the transaction log is uploaded every five minutes, the gap rises and falls between roughly 3 and 9 minutes (see the RPO row above), which is why the target is ≤ 15 minutes rather than ≤ 5.
 
 **Command used** (no proprietary tooling — reproducible by anyone with equivalent RDS access):
 ```
@@ -54,7 +54,7 @@ The restored instance was a temporary, isolated resource used only for this test
 
 ## What this does not yet cover
 
-- `cspm-db` currently runs single-AZ (no Multi-AZ automatic failover). A regional/AZ outage would require a manual restore rather than an automatic failover. Enabling Multi-AZ is a recommended follow-up — it changes the live production instance and is a separate decision from this test.
+- `cspm-db` runs Multi-AZ since 1 October 2026 (primary in `eu-west-1a`, synchronous standby in `eu-west-1c`), so the loss of one availability zone fails over automatically. A failover has not been tested yet, so no failover time is claimed here. A full regional outage would still require a restore in another region.
 - This page covers the database only. It does not cover a full application-level DR runbook (DNS, API Gateway, Lambda redeploy) since those are serverless/stateless and are not the gap this page addresses.
 
 ## The same check runs against the environments we scan

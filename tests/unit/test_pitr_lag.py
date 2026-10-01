@@ -25,13 +25,25 @@ def _resource(lag_seconds=None, observed=True, naive=False):
     return {"config": config}
 
 
+TARGETS = {"RDS.DR.4": 900, "DynamoDB.DR.3": 300}
+
+
 @pytest.mark.parametrize("rule", RULES, ids=lambda r: r.get_metadata()["check_id"])
-@pytest.mark.parametrize("lag,expected", [(0, "PASS"), (192, "PASS"), (300, "PASS"), (301, "FAIL"), (3600, "FAIL")])
-def test_lag_is_measured_against_api_response(rule, lag, expected):
+@pytest.mark.parametrize("offset,expected", [(None, "PASS"), (-1, "PASS"), (0, "PASS"), (1, "FAIL"), (3000, "FAIL")])
+def test_lag_is_measured_against_api_response(rule, offset, expected):
+    target = TARGETS[rule.get_metadata()["check_id"]]
+    lag = 0 if offset is None else target + offset
     result = rule.run(_resource(lag))
     assert result.status == expected
     assert result.details["measured_rpo_seconds"] == lag
+    assert result.details["target_seconds"] == target
     assert result.details["measured_from"] == "api_response"
+
+
+@pytest.mark.parametrize("lag", [200, 366, 537])
+def test_normal_rds_log_shipping_sawtooth_passes(lag):
+    # Real lags measured on cspm-db on 2026-10-01 (min, mean, max of 40 samples).
+    assert RDS_DR_4().run(_resource(lag)).status == "PASS"
 
 
 @pytest.mark.parametrize("rule", RULES, ids=lambda r: r.get_metadata()["check_id"])

@@ -660,20 +660,24 @@ def _post_discord(url, title, description, severity, domain):
 # the dashboard's drTestStatus(). Resources that were never tested are shown on
 # the dashboard but not notified about, so onboarding a customer does not
 # trigger a notification for every table.
-DR_RPO_TARGET_SECONDS = 300
+# RPO target per resource type, the same values as the scanner rules RDS.DR.4 and
+# DynamoDB.DR.3 (see rds_dr_4.py for why RDS is 15 minutes). Unknown types use the stricter one.
+DR_RPO_TARGET_SECONDS = {"rds-instance": 900, "dynamodb-table": 300}
+DR_RPO_TARGET_DEFAULT_SECONDS = 300
 DR_RTO_TARGET_SECONDS = 1800
 DR_TEST_MAX_AGE_DAYS = 90
 # The schedule runs often; one reminder per resource and problem per week is enough.
 DR_RENOTIFY_DAYS = 7
 
 
-def _dr_problem(rpo, rto, integrity, age_days):
+def _dr_problem(rpo, rto, integrity, age_days, resource_type=None):
     """Returns (event_type, severity, reason) for the worst problem, or None."""
+    rpo_target = DR_RPO_TARGET_SECONDS.get(resource_type, DR_RPO_TARGET_DEFAULT_SECONDS)
     if integrity is False:
         return "dr_test_failed", "P1", "the restored data did not match the source"
     missed = []
-    if rpo is not None and rpo > DR_RPO_TARGET_SECONDS:
-        missed.append(f"RPO {rpo}s > {DR_RPO_TARGET_SECONDS}s")
+    if rpo is not None and rpo > rpo_target:
+        missed.append(f"RPO {rpo}s > {rpo_target}s")
     if rto is not None and rto > DR_RTO_TARGET_SECONDS:
         missed.append(f"RTO {rto}s > {DR_RTO_TARGET_SECONDS}s")
     if missed:
@@ -699,7 +703,7 @@ def run_dr_evidence_check(conn):
             latest = cur.fetchall()
 
     for account_id, rtype, rname, rpo, rto, integrity, age_days in latest:
-        problem = _dr_problem(rpo, rto, integrity, float(age_days))
+        problem = _dr_problem(rpo, rto, integrity, float(age_days), rtype)
         if not problem:
             continue
         event_type, severity, reason = problem

@@ -1765,7 +1765,10 @@ function fmtDuration(sec){
   const m=Math.floor(sec/60), s=sec%60;
   return m>0?(s?`${m}m ${s}s`:`${m}m`):`${s}s`;
 }
-const DR_RPO_TARGET_SECONDS=300;    // ≤ 5 min, see disaster_recovery.md
+// RPO target per resource type, same as the scanner rules RDS.DR.4 (15 min, see rds_dr_4.py)
+// and DynamoDB.DR.3 (5 min). Unknown types use the stricter value.
+const DR_RPO_TARGETS={'rds-instance':900,'dynamodb-table':300};
+function drRpoTarget(t){return DR_RPO_TARGETS[t.resource_type]||300;}
 const DR_RTO_TARGET_SECONDS=1800;   // ≤ 30 min, see disaster_recovery.md
 const DR_TEST_MAX_AGE_DAYS=90;      // a restore test older than this no longer counts as current evidence
 function drTestStatus(t,isLatest){
@@ -1774,7 +1777,7 @@ function drTestStatus(t,isLatest){
   const green={color:'#15803d',bg:'#f0fdf4',border:'#bbf7d0'};
   if(t.data_integrity_match===false) return {...red,label:'Integrity mismatch',detail:''};
   const missed=[];
-  if(t.rpo_seconds!=null&&t.rpo_seconds>DR_RPO_TARGET_SECONDS)missed.push('RPO');
+  if(t.rpo_seconds!=null&&t.rpo_seconds>drRpoTarget(t))missed.push('RPO');
   if(t.rto_seconds!=null&&t.rto_seconds>DR_RTO_TARGET_SECONDS)missed.push('RTO');
   if(missed.length) return {...red,label:'Target missed',detail:`${missed.join(' and ')} above target`};
   if(t.rpo_seconds==null||t.rto_seconds==null||t.data_integrity_match==null)
@@ -1809,7 +1812,7 @@ function renderDrEvidence(){
         ${isLatest?`<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:${st.color};color:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0">Most recent</span>`:''}
         <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${st.color};border:1px solid ${st.border};padding:1px 6px;border-radius:4px;flex-shrink:0">${st.label}</span>
       </div>
-      <div style="font-size:12.5px;color:#374151;line-height:1.7">RPO <strong>${fmtDuration(t.rpo_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(DR_RPO_TARGET_SECONDS)} target</span> &middot; RTO <strong>${fmtDuration(t.rto_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(DR_RTO_TARGET_SECONDS)} target</span> &middot; ${t.data_integrity_match===true?'✓ integrity confirmed':t.data_integrity_match===false?'✗ integrity mismatch':'? integrity not verified'}</div>
+      <div style="font-size:12.5px;color:#374151;line-height:1.7">RPO <strong>${fmtDuration(t.rpo_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(drRpoTarget(t))} target</span> &middot; RTO <strong>${fmtDuration(t.rto_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(DR_RTO_TARGET_SECONDS)} target</span> &middot; ${t.data_integrity_match===true?'✓ integrity confirmed':t.data_integrity_match===false?'✗ integrity mismatch':'? integrity not verified'}</div>
       <div style="font-size:11px;color:#9ca3af;margin-top:4px">Tested ${t.tested_at?esc(new Date(t.tested_at).toLocaleString()):'— (date unknown)'}${st.detail?` &middot; ${st.detail}`:''}</div>
     </div>`;
     }).join('');
@@ -1823,7 +1826,7 @@ function renderDrEvidence(){
     {id:'RDS.DR.1',      label:'RDS automated backups'},
     {id:'RDS.DR.2',      label:'RDS Multi-AZ failover'},
     {id:'RDS.DR.3',      label:'RDS deletion protection'},
-    {id:'RDS.DR.4',      label:'RDS RPO target (5 min)'},
+    {id:'RDS.DR.4',      label:'RDS RPO target (15 min)'},
     {id:'DynamoDB.DR.1', label:'DynamoDB point-in-time recovery'},
     {id:'DynamoDB.DR.2', label:'DynamoDB deletion protection'},
     {id:'DynamoDB.DR.3', label:'DynamoDB RPO target (5 min)'},

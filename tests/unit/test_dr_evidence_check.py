@@ -8,19 +8,23 @@ from collectors.aws.scanner import notification_lib as nl
 pytestmark = [pytest.mark.flow("E2E-NOT-002"), pytest.mark.severity("P2")]
 
 
-@pytest.mark.parametrize("rpo,rto,integrity,age,expected", [
-    (192, 1714, True, 10, None),                       # within every target, recent
-    (300, 1800, True, 90, None),                       # exactly on the limits
-    (192, 1714, False, 10, ("dr_test_failed", "P1")),  # integrity mismatch beats everything
-    (400, 1714, True, 10, ("dr_target_missed", "P2")),
-    (192, 2400, True, 10, ("dr_target_missed", "P2")),
-    (None, 1714, True, 10, ("dr_test_incomplete", "P3")),
-    (192, 1714, None, 10, ("dr_test_incomplete", "P3")),
-    (192, 1714, True, 91, ("dr_test_overdue", "P3")),
-    (400, 1714, True, 400, ("dr_target_missed", "P2")),  # worst problem wins over staleness
+@pytest.mark.parametrize("rtype,rpo,rto,integrity,age,expected", [
+    ("rds-instance", 192, 1714, True, 10, None),                       # within every target, recent
+    ("rds-instance", 900, 1800, True, 90, None),                       # exactly on the RDS limits
+    ("rds-instance", 537, 1714, True, 10, None),                       # normal RDS log-shipping lag (measured max)
+    ("rds-instance", 901, 1714, True, 10, ("dr_target_missed", "P2")),
+    ("dynamodb-table", 300, 1714, True, 10, None),                     # exactly on the DynamoDB limit
+    ("dynamodb-table", 301, 1714, True, 10, ("dr_target_missed", "P2")),  # DynamoDB keeps 5 minutes
+    ("unknown-type", 301, 1714, True, 10, ("dr_target_missed", "P2")),    # unknown type: stricter target
+    ("rds-instance", 192, 1714, False, 10, ("dr_test_failed", "P1")),  # integrity mismatch beats everything
+    ("rds-instance", 192, 2400, True, 10, ("dr_target_missed", "P2")),
+    ("rds-instance", None, 1714, True, 10, ("dr_test_incomplete", "P3")),
+    ("rds-instance", 192, 1714, None, 10, ("dr_test_incomplete", "P3")),
+    ("rds-instance", 192, 1714, True, 91, ("dr_test_overdue", "P3")),
+    ("rds-instance", 1200, 1714, True, 400, ("dr_target_missed", "P2")),  # worst problem wins over staleness
 ])
-def test_dr_problem_classification(rpo, rto, integrity, age, expected):
-    problem = nl._dr_problem(rpo, rto, integrity, age)
+def test_dr_problem_classification(rtype, rpo, rto, integrity, age, expected):
+    problem = nl._dr_problem(rpo, rto, integrity, age, rtype)
     assert (problem[:2] if problem else None) == expected
 
 
