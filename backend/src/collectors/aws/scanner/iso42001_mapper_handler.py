@@ -1,28 +1,25 @@
 """
 iso42001_mapper_handler.py
 
-Maps existing CIS findings in the DB to ISO/IEC 42001:2023 (AI Management
-System) Annex A controls.
+ISO/IEC 42001:2023 (AI Management System) Annex A — every control is manual
+evidence. This mapper deliberately scores nothing automatically.
 
-Same read-existing-findings-and-roll-up approach as every other mapper in
-this codebase (hipaa_mapper_handler.py, gdpr_mapper_handler.py, ...).
+All 38 Annex A controls (A.2-A.10) ask the organisation to define, document or
+run a process for its AI systems: an AI policy, roles, impact assessments,
+data-management, provenance and data-preparation processes, supplier and
+customer responsibilities. Nothing in an AWS API response proves that such a
+process exists. On top of that, this scanner cannot tell which resources belong
+to an AI system at all (there is no SageMaker/Bedrock collector and no "AI data"
+tag), so even a control that touches data or logs cannot be scoped to the right
+resources. Prowler (https://github.com/prowler-cloud/prowler) ships no ISO 42001
+AWS mapping for the same reason.
 
-IMPORTANT — this is deliberately incomplete, on purpose:
-ISO 42001 Annex A has 38 controls across 9 domains (A.2-A.10). Prowler
-(https://github.com/prowler-cloud/prowler), the reference open-source CSPM
-tool, does not ship an ISO 42001 AWS compliance mapping at all — because
-most of Annex A is organisational/process ("is there a documented AI
-policy", "has an impact assessment been performed", "are responsibilities
-allocated to suppliers") and simply cannot be verified by inspecting AWS API
-responses. No CSPM tool can automate a policy document review.
-
-Only the ~8 controls below have a genuine, defensible technical proxy in
-existing checks. The other 30 are NOT mapped here — faking a PASS/FAIL for
-"AI Policy Documented" off of an unrelated AWS setting would be exactly the
-kind of scanner dishonesty this project has spent this whole engagement
-removing, not reintroducing under a new framework name. Those 30 need real
-manual/organisational evidence (a policy document, a signed-off impact
-assessment, etc.), tracked outside this scanner.
+Until 2026-10 this file mapped 11 controls onto unrelated CIS checks — e.g.
+A.7.2 "Data for development and enhancement of AI system" (CRITICAL) onto S3
+Block Public Access for *every* bucket, A.7.5 "Data provenance" onto S3
+versioning. That produced pass/fail results for AI controls on buckets that hold
+no AI data, which is fabricated compliance data. Those rows are now removed on
+each run (see run_mapping), and the controls are listed below as manual evidence.
 """
 
 import json
@@ -41,239 +38,63 @@ CLOUD_ACCOUNT_ID = os.environ.get(
 )
 
 # ---------------------------------------------------------------------------
-# ISO/IEC 42001:2023 Annex A → CIS check mapping
-# Only controls with a real, defensible technical proxy are included.
+# No ISO 42001 control has a defensible technical proxy in this scanner (see the
+# module docstring). Kept as a dict so the mapping loop and the stale-row cleanup
+# in run_mapping work unchanged if a real, AI-scoped check is ever added.
 # ---------------------------------------------------------------------------
-ISO42001_MAPPING = {
+ISO42001_MAPPING = {}
 
-    "A.4.3": {
-        "title": "Data Resources",
-        "severity": "HIGH",
-        "section": "A.4 — Resources for AI Systems",
-        "description": (
-            "The organization shall determine and document the data resources "
-            "used by the AI system, including their protection."
-        ),
-        "remediation": (
-            "Enable S3 default encryption on buckets storing AI training/model "
-            "data. Enable KMS key rotation for keys protecting that data."
-        ),
-        "checks": ["S3.3.5", "KMS.1"],
-    },
+NO_TECHNICAL_PROXY_REASON = (
+    "Every ISO 42001 Annex A control requires a documented process or decision for an AI "
+    "system, and the scanner cannot identify which AWS resources belong to an AI system."
+)
 
-    "A.4.5": {
-        "title": "System and Computing Resources",
-        "severity": "HIGH",
-        "section": "A.4 — Resources for AI Systems",
-        "description": (
-            "The organization shall determine and document the system and "
-            "computing resources needed for the AI system, and control access "
-            "to them appropriately."
-        ),
-        "remediation": (
-            "Attach IAM policies to groups/roles only, not individual users. "
-            "Remove any policy granting unrestricted '*' administrative access."
-        ),
-        "checks": ["IAM.1", "IAM.2"],
-    },
+_PROCESS = "Organisational process — not AWS-config verifiable"
+_DOC = "Documentation obligation — not AWS-config verifiable"
+_AI_SCOPE = ("Process control scoped to AI-system data/resources — the scanner cannot identify "
+             "which resources belong to an AI system")
 
-    "A.6.2.6": {
-        "title": "AI-System Operation and Monitoring",
-        "severity": "HIGH",
-        "section": "A.6 — AI System Life Cycle",
-        "description": (
-            "The organization shall define and apply measures for continuous "
-            "monitoring of the AI system's performance and behaviour throughout "
-            "its operation."
-        ),
-        "remediation": (
-            "Enable CloudWatch alarms for all CIS-required security-relevant "
-            "events, with an active, confirmed SNS subscription so alerts "
-            "actually reach someone."
-        ),
-        "checks": [
-            "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4",
-            "CloudWatch.5", "CloudWatch.6", "CloudWatch.7", "CloudWatch.8",
-            "CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12",
-            "CloudWatch.13", "CloudWatch.14",
-        ],
-    },
-
-    "A.6.2.8": {
-        "title": "AI-System Recording of Event Logs",
-        "severity": "HIGH",
-        "section": "A.6 — AI System Life Cycle",
-        "description": (
-            "The organization shall ensure that event logs are recorded for "
-            "the AI system to enable identification, investigation, and "
-            "reproduction of behaviour and incidents."
-        ),
-        "remediation": (
-            "Ensure CloudTrail is enabled, multi-region, log-file-validated, "
-            "and that root-usage and CloudTrail-configuration-change alarms "
-            "are active."
-        ),
-        "checks": ["CloudWatch.1", "CloudWatch.5"],
-    },
-
-    "A.7.2": {
-        "title": "Data for Development and Enhancement of AI Systems",
-        "severity": "CRITICAL",
-        "section": "A.7 — Data for AI Systems",
-        "description": (
-            "The organization shall determine, document, and implement data "
-            "management processes related to the development of AI systems, "
-            "including protecting that data from unauthorized access."
-        ),
-        "remediation": (
-            "Enable S3 Block Public Access on all buckets storing training, "
-            "evaluation, or fine-tuning data."
-        ),
-        "checks": ["S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4"],
-    },
-
-    "A.7.5": {
-        "title": "Data Provenance",
-        "severity": "MEDIUM",
-        "section": "A.7 — Data for AI Systems",
-        "description": (
-            "The organization shall establish processes to record the "
-            "provenance of data used by AI systems, including its origin and "
-            "history of changes."
-        ),
-        "remediation": (
-            "Enable S3 versioning on buckets storing AI training/model data "
-            "so its change history is retained and reconstructable."
-        ),
-        "checks": ["S3.3.3"],
-    },
-
-    "A.7.6": {
-        "title": "Data Preparation",
-        "severity": "HIGH",
-        "section": "A.7 — Data for AI Systems",
-        "description": (
-            "The organization shall define and document data preparation "
-            "activities, including protection of data during preparation."
-        ),
-        "remediation": (
-            "Enable S3 default encryption and enforce HTTPS-only bucket "
-            "policies on buckets used during data preparation pipelines."
-        ),
-        "checks": ["S3.3.5", "S3.3.2"],
-    },
-
-    "A.10.2": {
-        "title": "Allocating Responsibilities",
-        "severity": "MEDIUM",
-        "section": "A.10 — Third-Party and Customer Relationships",
-        "description": (
-            "The organization shall allocate responsibilities between itself "
-            "and third parties involved in the AI system life cycle, "
-            "including identifying which parties have access to its resources."
-        ),
-        "remediation": (
-            "Enable IAM Access Analyzer to identify and review any resources "
-            "shared with external (third-party) entities."
-        ),
-        "checks": ["IAM.28"],
-    },
-
-    "A.3.2": {
-        "title": "AI Roles and Responsibilities",
-        "severity": "MEDIUM",
-        "section": "A.3 — Internal Organization",
-        "description": (
-            "The organization shall define and document roles and "
-            "responsibilities related to AI, and communicate them across the "
-            "organization."
-        ),
-        "remediation": (
-            "Attach IAM policies to groups/roles that reflect defined "
-            "responsibilities, rather than granting permissions to individual "
-            "users ad hoc."
-        ),
-        "checks": ["IAM.2"],
-    },
-
-    "ISO42001.A.8.4": {
-        "title": "Communication of Incidents",
-        "severity": "HIGH",
-        "section": "A.8 — Information for Interested Parties",
-        "description": (
-            "The organization shall establish a process for communicating "
-            "incidents associated with the AI system to relevant interested "
-            "parties."
-        ),
-        "remediation": (
-            "Ensure CloudWatch alarms are active for all CIS-required "
-            "security-relevant events, with a confirmed SNS subscription so "
-            "incident notifications actually reach someone — an alarm nobody "
-            "receives cannot communicate an incident to anyone."
-        ),
-        "checks": [
-            "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4",
-            "CloudWatch.5", "CloudWatch.6", "CloudWatch.7", "CloudWatch.8",
-            "CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12",
-            "CloudWatch.13", "CloudWatch.14",
-        ],
-    },
-
-    "A.10.3": {
-        "title": "Suppliers",
-        "severity": "MEDIUM",
-        "section": "A.10 — Third-Party and Customer Relationships",
-        "description": (
-            "The organization shall identify and document suppliers involved "
-            "in the AI system life cycle and the resources they can access."
-        ),
-        "remediation": (
-            "Enable IAM Access Analyzer to identify and review any resources "
-            "shared with external supplier accounts or roles."
-        ),
-        "checks": ["IAM.28"],
-    },
-}
-
-# ---------------------------------------------------------------------------
-# The remaining 27 Annex A controls (A.2.2-A.2.4, A.3.3, A.4.2, A.4.4, A.4.6,
-# A.5.2-A.5.5, A.6.1.2-A.6.1.3, A.6.2.2-A.6.2.5, A.6.2.7, A.7.3, A.7.4,
-# A.8.2, A.8.3, A.8.5, A.9.2-A.9.4, A.10.4) genuinely cannot be verified from
-# AWS API responses — they require a policy document, a signed-off impact
-# assessment, or an organizational process to exist. They are listed on the
-# frontend as "manual evidence required," not scanned or scored here, so a
-# viewer sees the full 38-control structure without a fake PASS/FAIL being
-# invented for something no CSPM tool can check.
+# (control_id, title, reason) — same shape as every other mapper's manual list.
 MANUAL_EVIDENCE_CONTROLS = [
-    ("A.2.2", "AI Policy", "A.2 — Policies Related to AI"),
-    ("A.2.3", "Alignment With Other Organisational Policies", "A.2 — Policies Related to AI"),
-    ("A.2.4", "Review of the AI Policy", "A.2 — Policies Related to AI"),
-    ("A.3.3", "Reporting of Concerns", "A.3 — Internal Organization"),
-    ("A.4.2", "Resource Documentation", "A.4 — Resources for AI Systems"),
-    ("A.4.4", "Tooling Resources", "A.4 — Resources for AI Systems"),
-    ("A.4.6", "Human Resources", "A.4 — Resources for AI Systems"),
-    ("A.5.2", "AI-System Impact-Assessment Process", "A.5 — Assessing Impacts of AI Systems"),
-    ("A.5.3", "Documentation of AI-System Impact Assessments", "A.5 — Assessing Impacts of AI Systems"),
-    ("A.5.4", "Assessing AI-System Impact on Individuals or Groups", "A.5 — Assessing Impacts of AI Systems"),
-    ("A.5.5", "Assessing Societal Impacts of AI Systems", "A.5 — Assessing Impacts of AI Systems"),
-    ("A.6.1.2", "Objectives for Responsible Development of AI Systems", "A.6 — AI System Life Cycle"),
-    ("A.6.1.3", "Processes for Responsible AI-System Design and Development", "A.6 — AI System Life Cycle"),
-    ("A.6.2.2", "AI-System Requirements and Specification", "A.6 — AI System Life Cycle"),
-    ("A.6.2.3", "Documentation of AI-System Design and Development", "A.6 — AI System Life Cycle"),
-    ("A.6.2.4", "AI-System Verification and Validation", "A.6 — AI System Life Cycle"),
-    ("A.6.2.5", "AI-System Deployment", "A.6 — AI System Life Cycle"),
-    ("A.6.2.7", "AI-System Technical Documentation", "A.6 — AI System Life Cycle"),
-    ("A.7.3", "Acquisition of Data", "A.7 — Data for AI Systems"),
-    ("A.7.4", "Quality of Data for AI Systems", "A.7 — Data for AI Systems"),
-    ("A.8.2", "System Documentation and Information for Users", "A.8 — Information for Interested Parties"),
-    ("A.8.3", "External Reporting", "A.8 — Information for Interested Parties"),
-    ("A.8.5", "Information for Interested Parties", "A.8 — Information for Interested Parties"),
-    ("A.9.2", "Processes for Responsible Use of AI Systems", "A.9 — Use of AI Systems"),
-    ("A.9.3", "Objectives for Responsible Use of AI Systems", "A.9 — Use of AI Systems"),
-    ("A.9.4", "Intended Use of the AI System", "A.9 — Use of AI Systems"),
-    ("A.10.4", "Customers", "A.10 — Third-Party and Customer Relationships"),
+    ("A.2.2", "AI Policy", _DOC),
+    ("A.2.3", "Alignment With Other Organisational Policies", _PROCESS),
+    ("A.2.4", "Review of the AI Policy", _PROCESS),
+    ("A.3.2", "AI Roles and Responsibilities", _PROCESS),
+    ("A.3.3", "Reporting of Concerns", _PROCESS),
+    ("A.4.2", "Resource Documentation", _DOC),
+    ("A.4.3", "Data Resources", _AI_SCOPE),
+    ("A.4.4", "Tooling Resources", _DOC),
+    ("A.4.5", "System and Computing Resources", _AI_SCOPE),
+    ("A.4.6", "Human Resources", _DOC),
+    ("A.5.2", "AI-System Impact-Assessment Process", _PROCESS),
+    ("A.5.3", "Documentation of AI-System Impact Assessments", _DOC),
+    ("A.5.4", "Assessing AI-System Impact on Individuals or Groups", _PROCESS),
+    ("A.5.5", "Assessing Societal Impacts of AI Systems", _PROCESS),
+    ("A.6.1.2", "Objectives for Responsible Development of AI Systems", _PROCESS),
+    ("A.6.1.3", "Processes for Responsible AI-System Design and Development", _PROCESS),
+    ("A.6.2.2", "AI-System Requirements and Specification", _DOC),
+    ("A.6.2.3", "Documentation of AI-System Design and Development", _DOC),
+    ("A.6.2.4", "AI-System Verification and Validation", _PROCESS),
+    ("A.6.2.5", "AI-System Deployment", _PROCESS),
+    ("A.6.2.6", "AI-System Operation and Monitoring", _AI_SCOPE),
+    ("A.6.2.7", "AI-System Technical Documentation", _DOC),
+    ("A.6.2.8", "AI-System Recording of Event Logs", _AI_SCOPE),
+    ("A.7.2", "Data for Development and Enhancement of AI Systems", _AI_SCOPE),
+    ("A.7.3", "Acquisition of Data", _PROCESS),
+    ("A.7.4", "Quality of Data for AI Systems", _PROCESS),
+    ("A.7.5", "Data Provenance", _AI_SCOPE),
+    ("A.7.6", "Data Preparation", _AI_SCOPE),
+    ("A.8.2", "System Documentation and Information for Users", _DOC),
+    ("A.8.3", "External Reporting", _PROCESS),
+    ("A.8.4", "Communication of Incidents", _PROCESS),
+    ("A.8.5", "Information for Interested Parties", _PROCESS),
+    ("A.9.2", "Processes for Responsible Use of AI Systems", _PROCESS),
+    ("A.9.3", "Objectives for Responsible Use of AI Systems", _PROCESS),
+    ("A.9.4", "Intended Use of the AI System", _PROCESS),
+    ("A.10.2", "Allocating Responsibilities", _AI_SCOPE),
+    ("A.10.3", "Suppliers", _PROCESS),
+    ("A.10.4", "Customers", _PROCESS),
 ]
-
 
 def _get_connection():
     secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -298,6 +119,23 @@ def run_mapping(cloud_account_id: str) -> dict:
     try:
         with conn:
             with conn.cursor() as cur:
+
+                # Remove this account's ISO 42001 rows for controls that are no longer
+                # mapped (all of them, today), so earlier proxy results don't linger
+                # on the dashboard. Only rows this mapper wrote: framework 'ISO 42001'.
+                cur.execute("""
+                    DELETE FROM findings f
+                    USING resources r
+                    WHERE r.id = f.resource_id
+                      AND r.cloud_account_id = %s
+                      AND f.framework = 'ISO 42001'
+                      AND NOT (f.check_id = ANY(%s::text[]))
+                """, (cloud_account_id, list(ISO42001_MAPPING)))
+                if cur.rowcount:
+                    logger.info("ISO42001: removed %d findings for unmapped controls", cur.rowcount)
+
+                if not ISO42001_MAPPING:
+                    return {"findings_upserted": 0, "findings_removed": cur.rowcount}
 
                 cur.execute("""
                     SELECT f.check_id, f.result, f.resource_id, r.resource_name, r.resource_type

@@ -110,6 +110,12 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 .cc-status{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;flex-shrink:0;padding:3px 9px;border-radius:5px}
 .cs-fail{background:#fef2f2;color:#ef4444}
 .cs-pass{background:#ecfeff;color:#06b6d4}
+.ctrl-card.manual{border-left:4px solid #f59e0b;cursor:default}
+.ctrl-card.manual:hover{transform:none}
+.cs-manual{background:#fffbeb;color:#b45309}
+.cc-desc.cc-why{-webkit-line-clamp:unset;display:block}
+@media (max-width:900px){.ctrl-grid{grid-template-columns:repeat(2,1fr)}.sum-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:600px){.ctrl-grid{grid-template-columns:1fr}}
 .cc-title{font-size:13px;font-weight:700;color:#111827;margin-bottom:5px}
 .cc-desc{font-size:11px;color:#9ca3af;line-height:1.5;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cc-bar{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-bottom:10px}
@@ -332,72 +338,21 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
       <div class="notice-banner">
         <div class="notice-ico">ℹ</div>
         <div class="notice-text">
-          ISO/IEC 42001 Annex A has <b>38 controls</b> across 9 domains. <b>11</b> have a genuine, technical AWS proxy and are scanned automatically below. The other <b>27</b> are organisational/process controls (policy documents, impact assessments, supplier reviews) that no CSPM tool — including Prowler, which does not cover ISO 42001 at all — can verify from API responses. Those require manual evidence tracked outside this scanner, and are intentionally not shown here as automated pass/fail.
+          ISO/IEC 42001 Annex A has <b>38 controls</b> across 9 domains. <b>None of them can be verified automatically</b> from AWS configuration. Every control asks for a documented process or decision for an AI system (an AI policy, impact assessments, data provenance, supplier responsibilities), and the scanner cannot tell which AWS resources belong to an AI system. So this page shows no pass/fail score. Each control needs manual evidence, such as a policy document or a signed-off assessment.
         </div>
       </div>
 
-      <!-- Summary -->
       <div class="sum-grid" id="sum-grid"></div>
 
-      <!-- Filter bar -->
       <div class="filter-bar">
-        <div class="fb-title">Controls</div>
+        <div class="fb-title">Annex A controls</div>
         <div class="fb-search">
           <span style="color:#9ca3af">🔍</span>
-          <input type="text" id="f-q" placeholder="Search controls…" oninput="applyFilter()">
+          <input type="text" id="f-q" placeholder="Search controls…" oninput="renderControls()">
         </div>
-        <button class="fb-btn on" id="btn-all" onclick="setFilter('all',this)">All</button>
-        <button class="fb-btn" id="btn-fail" onclick="setFilter('fail',this)">Failing</button>
-        <button class="fb-btn" id="btn-pass" onclick="setFilter('pass',this)">Passing</button>
-        <button class="fb-btn" id="btn-a6" onclick="setFilter('A.6',this)">A.6 AI Life Cycle</button>
-        <button class="fb-btn" id="btn-a7" onclick="setFilter('A.7',this)">A.7 Data</button>
       </div>
 
-      <!-- Controls grid -->
       <div class="ctrl-grid" id="ctrl-grid"></div>
-
-      <!-- Findings table -->
-      <div class="section-hdr">
-        <div class="section-title">All Findings <span id="f-count" style="font-size:13px;font-weight:600;color:#9ca3af;margin-left:6px"></span></div>
-      </div>
-      <div class="find-table">
-        <div class="f-thead">
-          <div>Control</div><div>Title & Resource</div><div>Resource Name</div>
-          <div>Severity</div><div>Status</div>
-        </div>
-        <div id="f-body"><div class="no-data">Loading…</div></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL -->
-<div class="overlay" id="overlay" onclick="closeModal(event)">
-  <div class="modal" id="modal">
-    <div class="modal-hdr">
-      <div>
-        <div class="modal-title" id="m-title">—</div>
-        <div class="modal-sub" id="m-sub">—</div>
-      </div>
-      <button class="modal-close" onclick="closeModalDirect()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="m-row"><div class="m-lbl">Control ID</div><div class="m-val" id="m-id" style="font-family:monospace;color:#06b6d4;font-weight:700">—</div></div>
-      <div class="m-row"><div class="m-lbl">Resource</div><div class="m-val" id="m-res" style="font-family:monospace;font-size:12px;word-break:break-all">—</div></div>
-      <div class="m-row"><div class="m-lbl">Severity</div><div class="m-val" id="m-sev">—</div></div>
-      <div class="m-row"><div class="m-lbl">Status</div><div class="m-val" id="m-st">—</div></div>
-      <div class="m-section">
-        <div class="m-section-title">Description</div>
-        <div class="m-section-text" id="m-desc">—</div>
-      </div>
-      <div class="m-section">
-        <div class="m-section-title">Remediation</div>
-        <div class="m-section-text" id="m-rem">—</div>
-      </div>
-      <div class="m-section">
-        <div class="m-section-title">Mapped CIS Checks</div>
-        <div class="checks-wrap" id="m-checks"></div>
-      </div>
     </div>
   </div>
 </div>
@@ -413,21 +368,37 @@ function switchAccount(id){if(id===currentAccountId){document.getElementById('ac
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(function(a){var sel=a.id===currentAccountId;return '<div class="acct-item'+(sel?' sel':'')+'" onclick="switchAccount(\''+a.id+'\')">'+'<div class="acct-dot" style="background:'+(sel?'#06b6d4':'#06b6d4')+'"></div>'+'<div class="acct-item-name">'+esc(a.name)+'</div>'+'<div class="acct-item-id">'+esc(a.aws_account_id||a.id.substring(0,8)+'…')+'</div></div>';}).join('');}
 
-const ISO_CONTROLS = {
-  'A.4.3': { title:'Data Resources',                          section:'A.4 Resources for AI Systems',    desc:'The organization shall determine and document the data resources used by the AI system, including their protection.' },
-  'A.4.5': { title:'System and Computing Resources',          section:'A.4 Resources for AI Systems',    desc:'The organization shall determine and document the system and computing resources needed for the AI system, and control access to them appropriately.' },
-  'A.6.2.6':{ title:'AI-System Operation and Monitoring',      section:'A.6 AI System Life Cycle',        desc:'The organization shall define and apply measures for continuous monitoring of the AI system\'s performance and behaviour throughout its operation.' },
-  'A.6.2.8':{ title:'AI-System Recording of Event Logs',       section:'A.6 AI System Life Cycle',        desc:'The organization shall ensure that event logs are recorded for the AI system to enable identification, investigation, and reproduction of behaviour and incidents.' },
-  'A.7.2': { title:'Data for Development and Enhancement of AI Systems', section:'A.7 Data for AI Systems', desc:'The organization shall determine, document, and implement data management processes related to the development of AI systems, including protecting that data from unauthorized access.' },
-  'A.7.5': { title:'Data Provenance',                          section:'A.7 Data for AI Systems',         desc:'The organization shall establish processes to record the provenance of data used by AI systems, including its origin and history of changes.' },
-  'A.7.6': { title:'Data Preparation',                         section:'A.7 Data for AI Systems',         desc:'The organization shall define and document data preparation activities, including protection of data during preparation.' },
-  'A.10.2':{ title:'Allocating Responsibilities',              section:'A.10 Third-Party and Customer Relationships', desc:'The organization shall allocate responsibilities between itself and third parties involved in the AI system life cycle, including identifying which parties have access to its resources.' },
-  'A.3.2': { title:'AI Roles and Responsibilities',            section:'A.3 Internal Organization',       desc:'The organization shall define and document roles and responsibilities related to AI, and communicate them across the organization.' },
-  'ISO42001.A.8.4': { title:'Communication of Incidents',       section:'A.8 Information for Interested Parties', desc:'The organization shall establish a process for communicating incidents associated with the AI system to relevant interested parties.' },
-  'A.10.3':{ title:'Suppliers',                                section:'A.10 Third-Party and Customer Relationships', desc:'The organization shall identify and document suppliers involved in the AI system life cycle and the resources they can access.' },
+const SECTIONS = {
+  'A.2':'A.2 Policies Related to AI', 'A.3':'A.3 Internal Organization', 'A.4':'A.4 Resources for AI Systems',
+  'A.5':'A.5 Assessing Impacts of AI Systems', 'A.6':'A.6 AI System Life Cycle', 'A.7':'A.7 Data for AI Systems',
+  'A.8':'A.8 Information for Interested Parties', 'A.9':'A.9 Use of AI Systems',
+  'A.10':'A.10 Third-Party and Customer Relationships',
 };
-
-let allF=[], filtF=[], activeFilter='all', activeQ='';
+const PROCESS='Organisational process. Evidence: the documented process and records that it is followed.';
+const DOC='Documentation obligation. Evidence: the current, approved document.';
+const AI_SCOPE='Concerns the data or resources of an AI system. The scanner cannot identify which AWS resources belong to an AI system, so AWS settings are not evidence here.';
+// Same 38 controls and reasons as MANUAL_EVIDENCE_CONTROLS in iso42001_mapper_handler.py.
+const ISO_CONTROLS = [
+  ['A.2.2','AI Policy',DOC], ['A.2.3','Alignment With Other Organisational Policies',PROCESS], ['A.2.4','Review of the AI Policy',PROCESS],
+  ['A.3.2','AI Roles and Responsibilities',PROCESS], ['A.3.3','Reporting of Concerns',PROCESS],
+  ['A.4.2','Resource Documentation',DOC], ['A.4.3','Data Resources',AI_SCOPE], ['A.4.4','Tooling Resources',DOC],
+  ['A.4.5','System and Computing Resources',AI_SCOPE], ['A.4.6','Human Resources',DOC],
+  ['A.5.2','AI-System Impact-Assessment Process',PROCESS], ['A.5.3','Documentation of AI-System Impact Assessments',DOC],
+  ['A.5.4','Assessing AI-System Impact on Individuals or Groups',PROCESS], ['A.5.5','Assessing Societal Impacts of AI Systems',PROCESS],
+  ['A.6.1.2','Objectives for Responsible Development of AI Systems',PROCESS], ['A.6.1.3','Processes for Responsible AI-System Design and Development',PROCESS],
+  ['A.6.2.2','AI-System Requirements and Specification',DOC], ['A.6.2.3','Documentation of AI-System Design and Development',DOC],
+  ['A.6.2.4','AI-System Verification and Validation',PROCESS], ['A.6.2.5','AI-System Deployment',PROCESS],
+  ['A.6.2.6','AI-System Operation and Monitoring',AI_SCOPE], ['A.6.2.7','AI-System Technical Documentation',DOC],
+  ['A.6.2.8','AI-System Recording of Event Logs',AI_SCOPE],
+  ['A.7.2','Data for Development and Enhancement of AI Systems',AI_SCOPE], ['A.7.3','Acquisition of Data',PROCESS],
+  ['A.7.4','Quality of Data for AI Systems',PROCESS], ['A.7.5','Data Provenance',AI_SCOPE], ['A.7.6','Data Preparation',AI_SCOPE],
+  ['A.8.2','System Documentation and Information for Users',DOC], ['A.8.3','External Reporting',PROCESS],
+  ['A.8.4','Communication of Incidents',PROCESS], ['A.8.5','Information for Interested Parties',PROCESS],
+  ['A.9.2','Processes for Responsible Use of AI Systems',PROCESS], ['A.9.3','Objectives for Responsible Use of AI Systems',PROCESS],
+  ['A.9.4','Intended Use of the AI System',PROCESS],
+  ['A.10.2','Allocating Responsibilities',AI_SCOPE], ['A.10.3','Suppliers',PROCESS], ['A.10.4','Customers',PROCESS],
+];
+function sectionOf(id){return SECTIONS[id.split('.').slice(0,2).join('.')]||'';}
 
 function toggleDrop(){
   const d=document.getElementById('drop-items'),a=document.getElementById('drop-arrow');
@@ -438,35 +409,29 @@ async function loadData(){
   document.getElementById('v-load').style.display='flex';
   document.getElementById('v-content').hidden=true;
   try{
+    // Only the account switcher and last-scan line need the API; the control list is static.
     const url=currentAccountId?API+'?account_id='+encodeURIComponent(currentAccountId):API;
     const token=localStorage.getItem('niagaros_token')||'';
-    const r=await fetch(url,{headers:token?{Authorization:'Bearer '+token}:{}}), d=await r.json();
+    const r=await fetch(url,{headers:token?{Authorization:'Bearer '+token}:{}});
     if(r.status===401){location.href='/';return;}
+    if(!r.ok) throw new Error(r.status===403?'You do not have access to this account.':'Account data could not be loaded right now. Please try again.');
+    const d=await r.json();
     if(d.accounts&&d.accounts.length){allAccounts=d.accounts;if(!currentAccountId)currentAccountId=d.accounts[0].id;renderAcctList();}
     if(d.account_name) document.getElementById('chip-account').textContent='🏢 '+d.account_name+' ▾';
-    if(d.last_scan_at) document.getElementById('last-scan').innerHTML='Last scan: '+d.last_scan_at.substring(0,16)+(d.is_stale?' <span style="color:#f59e0b;font-weight:700">⚠ stale (>'+d.stale_threshold_days+'d)</span>':'');
-    allF=(d.findings||[]).filter(f => {
-      const svc=(f.service||'').toString().toUpperCase();
-      const fw=(f.framework||'').toString().toUpperCase();
-      return fw==='ISO 42001' || svc==='ISO42001';
-    });
-    filtF=[...allF];
+    if(d.last_scan_at) document.getElementById('last-scan').textContent='Last scan: '+d.last_scan_at.substring(0,16);
     render();
   }catch(e){
-    document.getElementById('v-load').innerHTML=`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px;color:#ef4444;font-size:13px">⚠ ${e.message}</div>`;
+    document.getElementById('v-load').innerHTML='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px;color:#ef4444;font-size:13px">⚠ '+esc(e.message||'Something went wrong.')+'</div>';
   }
 }
 
 function render(){
-  // Summary
-  const total=allF.length, failed=allF.filter(f=>f.result==='FAIL').length;
-  const passed=total-failed, score=total?Math.round(passed/total*100):0;
-  const controls=new Set(allF.map(f=>f.check_id)).size;
+  const docs=ISO_CONTROLS.filter(c=>c[2]===DOC).length;
   const sum=[
-    {n:controls,l:'Automated Controls',ic:'🤖',cls:'sc-cyan',nc:'n-cyan'},
-    {n:passed,  l:'Passing',           ic:'✓', cls:'sc-blue', nc:'n-blue'},
-    {n:failed,  l:'Failing',           ic:'✗', cls:'sc-red',  nc:'n-red'},
-    {n:score+'%',l:'Compliance Score', ic:'📊',cls:'sc-yellow',nc:'n-yellow'},
+    {n:ISO_CONTROLS.length,l:'Annex A Controls',  ic:'📋',cls:'sc-cyan',  nc:'n-cyan'},
+    {n:0,                  l:'Automated Controls',ic:'🤖',cls:'sc-blue',  nc:'n-blue'},
+    {n:ISO_CONTROLS.length,l:'Manual Evidence',   ic:'✍',cls:'sc-yellow',nc:'n-yellow'},
+    {n:docs,               l:'Documents Required',ic:'📄',cls:'sc-cyan',  nc:'n-cyan'},
   ];
   document.getElementById('sum-grid').innerHTML=sum.map((s,i)=>`
     <div class="sum-card" style="animation-delay:${i*.05}s">
@@ -474,105 +439,26 @@ function render(){
       <div class="sum-n ${s.nc}">${s.n}</div>
       <div class="sum-l">${s.l}</div>
     </div>`).join('');
-
-  applyFilter();
+  renderControls();
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-content').hidden=false;
 }
 
-function setFilter(f, el){
-  activeFilter=f;
-  document.querySelectorAll('.fb-btn').forEach(b=>b.classList.remove('on'));
-  el.classList.add('on');
-  applyFilter();
-}
-
-function applyFilter(){
-  const q=(document.getElementById('f-q').value||'').toLowerCase();
-  activeQ=q;
-  filtF=allF.filter(f=>{
-    if(activeFilter==='fail'&&f.result!=='FAIL')return false;
-    if(activeFilter==='pass'&&f.result!=='PASS')return false;
-    if(activeFilter==='A.6'&&!f.check_id.startsWith('A.6'))return false;
-    if(activeFilter==='A.7'&&!f.check_id.startsWith('A.7'))return false;
-    if(q){const h=[(f.check_id||''),(f.title||''),(f.resource_name||'')].join(' ').toLowerCase();if(!h.includes(q))return false;}
-    return true;
-  });
-  renderControls(); renderFindings();
-}
-
 function renderControls(){
-  // Group by control id
-  const byCtrl={};
-  filtF.forEach(f=>{
-    if(!byCtrl[f.check_id]) byCtrl[f.check_id]={fail:0,pass:0,total:0,finding:f};
-    byCtrl[f.check_id].total++;
-    if(f.result==='FAIL') byCtrl[f.check_id].fail++;
-    else byCtrl[f.check_id].pass++;
-  });
-  const entries=Object.entries(byCtrl);
-  document.getElementById('ctrl-grid').innerHTML=entries.length?entries.map(([id,data],i)=>{
-    const ctrl=ISO_CONTROLS[id]||{title:id,section:'Unknown',desc:''};
-    const isFail=data.fail>0;
-    const score=Math.round(data.pass/data.total*100);
-    const clr=isFail?'#ef4444':'#06b6d4';
-    return `<div class="ctrl-card ${isFail?'fail':'pass'} anim" style="animation-delay:${(i%9)*.04}s" onclick="openModal('${id}')">
+  const q=(document.getElementById('f-q').value||'').toLowerCase();
+  const list=ISO_CONTROLS.filter(([id,title,why])=>!q||[id,title,why,sectionOf(id)].join(' ').toLowerCase().includes(q));
+  document.getElementById('ctrl-grid').innerHTML=list.length?list.map(([id,title,why],i)=>`
+    <div class="ctrl-card manual anim" style="animation-delay:${(i%9)*.04}s">
       <div class="cc-hdr">
-        <span class="cc-id">${id}</span>
-        <span class="cc-status ${isFail?'cs-fail':'cs-pass'}">${isFail?'✗ FAIL':'✓ PASS'}</span>
+        <span class="cc-id">${esc(id)}</span>
+        <span class="cc-status cs-manual">Manual evidence</span>
       </div>
-      <div class="cc-title">${ctrl.title}</div>
-      <div class="cc-desc">${ctrl.desc}</div>
-      <div class="cc-bar"><div class="cc-bar-f" style="background:${clr};width:${score}%"></div></div>
-      <div class="cc-foot">
-        <span class="cc-checks">${data.total} checks · ${ctrl.section}</span>
-        <span class="cc-score" style="color:${clr}">${score}%</span>
-      </div>
-    </div>`;
-  }).join(''):'<div style="grid-column:1/-1;padding:36px;text-align:center;color:#9ca3af;font-size:13px">No controls match the current filter.</div>';
+      <div class="cc-title">${esc(title)}</div>
+      <div class="cc-desc cc-why">${esc(why)}</div>
+      <div class="cc-foot"><span class="cc-checks">${esc(sectionOf(id))}</span></div>
+    </div>`).join(''):'<div style="grid-column:1/-1;padding:36px;text-align:center;color:#9ca3af;font-size:13px">No controls match your search.</div>';
 }
 
-function renderFindings(){
-  document.getElementById('f-count').textContent=filtF.length+' findings';
-  const sevK={CRITICAL:'CR',HIGH:'HI',MEDIUM:'ME',LOW:'LO'};
-  document.getElementById('f-body').innerHTML=filtF.length?filtF.map(f=>{
-    const sk=sevK[f.severity]||'LO', fail=f.result==='FAIL';
-    const ctrl=ISO_CONTROLS[f.check_id]||{title:f.check_id};
-    const res=(f.resource_name||'—').substring(0,22)+((f.resource_name||'').length>22?'…':'');
-    return `<div class="f-row" onclick="openModalFinding(${JSON.stringify(f).replace(/"/g,'&quot;')})">
-      <div><span class="ctrl-badge">${f.check_id||'—'}</span></div>
-      <div><div class="f-title">${ctrl.title}</div><div class="f-sub">${f.description||''}</div></div>
-      <div><span class="res-chip">${res}</span></div>
-      <div><span class="sev-pill p-${sk}"><span class="sd d-${sk}"></span>${(f.severity||'LOW').charAt(0)+(f.severity||'LOW').slice(1).toLowerCase()}</span></div>
-      <div>${fail?'<span class="st-fail">FAIL</span>':'<span class="st-pass">PASS</span>'}</div>
-    </div>`;
-  }).join(''):'<div class="no-data">No findings match the current filter.</div>';
-}
-
-function openModal(id){
-  const ctrl=ISO_CONTROLS[id]||{title:id,section:'',desc:''};
-  const findings=allF.filter(f=>f.check_id===id);
-  const fail=findings.filter(f=>f.result==='FAIL').length;
-  const f=findings[0]||{};
-  document.getElementById('m-title').textContent=ctrl.title;
-  document.getElementById('m-sub').textContent=ctrl.section;
-  document.getElementById('m-id').textContent=id;
-  document.getElementById('m-res').textContent=findings.map(x=>x.resource_name).filter(Boolean).slice(0,3).join(', ')||'—';
-  document.getElementById('m-sev').innerHTML=`<span class="sev-pill p-${({CRITICAL:'CR',HIGH:'HI',MEDIUM:'ME',LOW:'LO'})[f.severity||'LOW']||'LO'}"><span class="sd d-${({CRITICAL:'CR',HIGH:'HI',MEDIUM:'ME',LOW:'LO'})[f.severity||'LOW']||'LO'}"></span>${f.severity||'—'}</span>`;
-  document.getElementById('m-st').innerHTML=fail?`<span class="st-fail">FAIL (${fail}/${findings.length})</span>`:`<span class="st-pass">PASS</span>`;
-  document.getElementById('m-desc').textContent=ctrl.desc||'—';
-  document.getElementById('m-rem').textContent=f.remediation||'No remediation steps are currently available.';
-  const details=f.details||{mapped_checks:[]};
-  document.getElementById('m-checks').innerHTML=(details.mapped_checks||[]).map(c=>`<span class="chk-tag">${c}</span>`).join('')||'<span style="color:#9ca3af;font-size:12px">No check data</span>';
-  document.getElementById('overlay').classList.add('open');
-}
-
-function openModalFinding(f){
-  openModal(f.check_id);
-}
-
-function closeModal(e){if(e.target===document.getElementById('overlay'))closeModalDirect();}
-function closeModalDirect(){document.getElementById('overlay').classList.remove('open');}
 loadData();
 </script>
 <script src="notifications-widget.js"></script>

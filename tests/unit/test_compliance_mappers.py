@@ -33,7 +33,13 @@ def test_all_framework_mappers_were_discovered():
 
 @pytest.mark.parametrize("name,mod,mapping", MAPPERS, ids=IDS)
 def test_every_control_has_title_valid_severity_and_real_checks(name, mod, mapping):
-    assert mapping, f"{name} has an empty mapping"
+    if not mapping:
+        # Allowed only when the framework honestly has no technical proxy at all, says why,
+        # and lists its controls as manual evidence instead (ISO 42001).
+        reason = getattr(mod, "NO_TECHNICAL_PROXY_REASON", "")
+        assert len(reason) > 20, f"{name} has an empty mapping without a NO_TECHNICAL_PROXY_REASON"
+        assert getattr(mod, "MANUAL_EVIDENCE_CONTROLS", None), f"{name} is empty but lists no manual controls"
+        return
     for control_id, c in mapping.items():
         assert c.get("title"), f"{name}:{control_id} has no title"
         assert c.get("severity") in SEVERITIES, f"{name}:{control_id} severity {c.get('severity')!r}"
@@ -60,3 +66,10 @@ def test_manual_evidence_controls_are_honest_and_disjoint_from_automated(name, m
 @pytest.mark.parametrize("name,mod,mapping", MAPPERS, ids=IDS)
 def test_mapper_exposes_a_lambda_entrypoint(name, mod, mapping):
     assert callable(getattr(mod, "handler", None)) or callable(getattr(mod, "lambda_handler", None))
+
+
+def test_iso42001_lists_all_38_annex_a_controls_as_manual_evidence():
+    mod = importlib.import_module("collectors.aws.scanner.iso42001_mapper_handler")
+    ids = [c[0] for c in mod.MANUAL_EVIDENCE_CONTROLS]
+    assert len(ids) == 38 and len(set(ids)) == 38, f"expected 38 unique Annex A controls, got {len(ids)}"
+    assert "A.7.2" in ids and not mod.ISO42001_MAPPING
