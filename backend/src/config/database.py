@@ -136,6 +136,8 @@ class Database:
                 VALUES %s
                 ON CONFLICT (resource_id, check_id)
                 DO UPDATE SET
+                    title       = EXCLUDED.title,
+                    remediation = COALESCE(EXCLUDED.remediation, findings.remediation),
                     status      = EXCLUDED.status,
                     result      = EXCLUDED.result,
                     severity    = EXCLUDED.severity,
