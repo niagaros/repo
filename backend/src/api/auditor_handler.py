@@ -24,7 +24,7 @@ import json
 import logging
 
 from config.database import Database
-from api.team_handler import _get_authenticated_email, _get_caller
+from api.team_handler import _get_authenticated_email, _get_caller, _route_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -283,7 +283,7 @@ def lambda_handler(event, context):
         GET    /auditor/evidence/{cloud_account_id}            -> handle_download_evidence
     """
     method = event.get("requestContext", {}).get("http", {}).get("method", "")
-    path   = event.get("rawPath", "")
+    path   = _route_path(event)
     params = event.get("pathParameters") or {}
 
     db = None

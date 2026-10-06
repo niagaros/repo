@@ -930,3 +930,71 @@ class TestLambdaHandlerRouting:
         assert resp["statusCode"] == 500
         assert "hunter2" not in resp["body"]
         assert json.loads(resp["body"]) == {"error": "internal server error"}
+
+
+class TestRoutePathStripsStage:
+    """
+    Regression tests for the stage prefix in rawPath.
+
+    This API is deployed to a named stage ("default"), so the invoke URL is
+    .../default/team and API Gateway hands the Lambda a rawPath of
+    "/default/team" — even though it matched the route key "GET /team" to
+    get here. Before _route_path existed, the router compared that against
+    "/team" and returned 404 for every request made through the real
+    gateway. Nothing local could catch it: there is no stage in front of
+    the unit tests or the local test server, so this only surfaced the
+    first time the deployed routes were called.
+    """
+
+    def _event(self, path, stage=None, method="GET"):
+        ctx = {"http": {"method": method}}
+        if stage is not None:
+            ctx["stage"] = stage
+        return {"requestContext": ctx, "rawPath": path, "pathParameters": {}}
+
+    def test_named_stage_prefix_is_removed(self):
+        import api.team_handler as th
+        assert th._route_path(self._event("/default/team", "default")) == "/team"
+
+    def test_nested_path_keeps_the_rest_intact(self):
+        import api.team_handler as th
+        assert th._route_path(
+            self._event("/default/auditors/engagements/abc/requests", "default")
+        ) == "/auditors/engagements/abc/requests"
+
+    def test_bare_stage_path_becomes_root(self):
+        import api.team_handler as th
+        assert th._route_path(self._event("/default", "default")) == "/"
+
+    def test_dollar_default_stage_is_not_in_the_path(self):
+        """With the $default stage the URL carries no prefix, so there is
+        nothing to strip — stripping "/$default" would mangle the path."""
+        import api.team_handler as th
+        assert th._route_path(self._event("/team", "$default")) == "/team"
+
+    def test_no_stage_in_context_leaves_path_alone(self):
+        import api.team_handler as th
+        assert th._route_path(self._event("/team")) == "/team"
+
+    def test_only_whole_segments_are_stripped(self):
+        """A path that merely starts with the stage name as a substring
+        must not be truncated: "/defaults/..." is not the "default" stage."""
+        import api.team_handler as th
+        assert th._route_path(self._event("/defaults/team", "default")) == "/defaults/team"
+
+    def test_team_route_resolves_through_a_staged_path(self):
+        """End to end: the exact request shape the deployed gateway sends.
+        Must reach the auth check (401), not fall through to 404. Database
+        is patched out — without that this test really does open a
+        connection to the production database, which is both slow and the
+        last thing a unit test should do."""
+        import api.team_handler as th
+        with patch.object(th, "Database"):
+            resp = th.lambda_handler(self._event("/default/team", "default"), None)
+        assert resp["statusCode"] == 401
+
+    def test_auditor_route_resolves_through_a_staged_path(self):
+        import api.auditor_handler as ah
+        with patch.object(ah, "Database"):
+            resp = ah.lambda_handler(self._event("/default/auditor/scope", "default"), None)
+        assert resp["statusCode"] == 401

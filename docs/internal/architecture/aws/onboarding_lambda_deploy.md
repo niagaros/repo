@@ -69,3 +69,78 @@ De RDS-instantie `cspm-db` is publiek benaderbaar, dus de functies
 hoeven niet in een VPC. Neem de netwerkinstelling over van een
 bestaande functie die al met deze database praat, zodat de
 security group-regels kloppen.
+
+---
+
+## Wat er daadwerkelijk is uitgerold (6 oktober 2026)
+
+Hieronder staat wat er is aangemaakt, met de commando's erbij. Dat is
+geen verslag maar een recept: deze reeks bouwt de uitrol opnieuw op.
+
+### Rol
+
+Een eigen rol in plaats van de gedeelde rol van `profile-handler` en
+`github-oauth-handler` (`get-dashboard-data-role-nib9ttvx`). Die rol mag
+naast het databasewachtwoord ook de Stripe-sleutel en de GitHub-tokens van
+klanten lezen, en heeft geen Cognito-recht. Hergebruiken zou dus twee
+dingen betekenen: toegang geven tot secrets waar deze functies niets mee
+te maken hebben, én `cognito-idp:AdminUserGlobalSignOut` toevoegen aan een
+rol die vijf functies delen — waaronder `stripe-checkout`.
+
+    TeamAuditorHandlerLambdaRole
+      - AWSLambdaBasicExecutionRole (logs)
+      - secretsmanager:GetSecretValue op cspm/database/credentials*
+      - cognito-idp:AdminUserGlobalSignOut op userpool/eu-west-1_mHQf9RNTc
+
+### Functies
+
+    aws lambda create-function --function-name team-handler \
+      --runtime python3.12 --architectures x86_64 \
+      --role arn:aws:iam::225989360315:role/TeamAuditorHandlerLambdaRole \
+      --handler api.team_handler.lambda_handler \
+      --zip-file fileb://scratch/onboarding-lambda.zip \
+      --timeout 30 --memory-size 256 \
+      --environment "Variables={DB_SECRET_NAME=cspm/database/credentials,COGNITO_USER_POOL_ID=eu-west-1_mHQf9RNTc}"
+
+Idem voor `auditor-handler` met `api.auditor_handler.lambda_handler`.
+
+### Routes
+
+Twintig expliciete routes op API `hzf92ft6j7`, aangemeld met
+`scripts/routes-aanmelden.ps1`. **Geen** `{proxy+}`-route: de handlers
+lezen `{id}`, `{engagement_id}`, `{request_id}` en `{cloud_account_id}`
+uit het pad, en API Gateway geeft die namen alleen door als de route ze
+declareert.
+
+Geen `OPTIONS`-routes nodig: CORS staat op API-niveau en staat
+`authorization` en `content-type` toe.
+
+## Wat pas bij de eerste echte aanroep bleek
+
+De API staat op een stage met de naam `default` (niet `$default`). API
+Gateway routeert op het pad zónder die stagenaam — de route `GET /team`
+werd dus gewoon gevonden — maar geeft de Lambda een `rawPath` van
+`/default/team`. De router vergeleek dat letterlijk met `/team` en gaf op
+élk verzoek een 404 terug: bereikbaar, geauthenticeerd, en dan afgewezen
+door onze eigen code.
+
+Lokaal was dit niet te zien: voor de testserver en de unittests staat geen
+stage. Opgelost met `_route_path()` in `team_handler.py`, dat de stagenaam
+eraf haalt; `auditor_handler` importeert dezelfde functie. Afgedekt met
+acht regressietests.
+
+De stagenaam is bewust niet in de route-keys gezet: dan zou de stage in de
+applicatie gaan zitten en werkt dezelfde code niet meer op een tweede stage.
+
+## Rookproef na de uitrol
+
+    GET /default/team                 -> 401 unauthorized
+    GET /default/team/audit-log       -> 401 unauthorized
+    GET /default/auditor/scope        -> 401 unauthorized
+    GET /default/auditors/engagements -> 401 unauthorized
+    GET /default/team/onzin           -> 404 (API Gateway, geen route)
+
+401 is hier het goede antwoord: het bewijst dat het pakket laadt, dat de
+meegeleverde psycopg2 op deze runtime werkt, dat de rol het
+databasewachtwoord mag lezen, dat de functie de database bereikt, en dat
+een verzoek zonder geldig token wordt geweigerd.

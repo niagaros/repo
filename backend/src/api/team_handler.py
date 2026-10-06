@@ -385,6 +385,34 @@ def handle_view_audit_log(event: dict, db: Database) -> dict:
     return _response(200, {"entries": entries})
 
 
+def _route_path(event: dict) -> str:
+    """
+    The path to route on, with the stage prefix removed.
+
+    This API is deployed to a named stage ("default"), not to $default, so
+    the invoke URL is .../default/team and API Gateway hands the Lambda a
+    rawPath of "/default/team" — even though it matched the route key
+    "GET /team" to get here. Comparing rawPath directly against "/team"
+    therefore produced a 404 for every single request once the routes were
+    registered: reachable, authenticated, and then rejected by our own
+    router. Nothing local could show this, because there is no stage in
+    front of the local test server or the unit tests.
+
+    Stripping it here rather than registering "/default/..." route keys
+    keeps the stage name out of the application: deploy the same code to a
+    second stage and it keeps working.
+    """
+    path = event.get("rawPath", "")
+    stage = (event.get("requestContext") or {}).get("stage", "")
+    if stage and stage != "$default":
+        prefix = f"/{stage}"
+        if path == prefix:
+            return "/"
+        if path.startswith(prefix + "/"):
+            return path[len(prefix):]
+    return path
+
+
 def lambda_handler(event, context):
     """
     Proposed routes (payload format v2.0, matching the other Lambdas behind
@@ -405,7 +433,7 @@ def lambda_handler(event, context):
         DELETE /team/member/{id}           -> handle_deactivate_member
     """
     method = event.get("requestContext", {}).get("http", {}).get("method", "")
-    path   = event.get("rawPath", "")
+    path   = _route_path(event)
     params = event.get("pathParameters") or {}
 
     db = None
