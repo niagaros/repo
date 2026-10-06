@@ -208,6 +208,11 @@ export default function Auditors() {
             <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5 }}>End date</label>
             <input
               type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+              // The browser shows this field in the user's own locale, so the
+              // same digits mean different dates to different people. min
+              // stops a past date being picked at all, which is what a
+              // dd/mm-versus-mm/dd mix-up produces.
+              min={new Date().toISOString().slice(0, 10)}
               style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13 }}
             />
           </div>

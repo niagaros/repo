@@ -22,6 +22,7 @@ team_handler.py.
 """
 import json
 import logging
+from datetime import date
 
 from config.database import Database
 from api.team_handler import _get_authenticated_email, _get_caller, _route_path
@@ -80,6 +81,19 @@ def handle_create_engagement(event: dict, db: Database) -> dict:
         return _response(400, {"error": "name is required"})
     if not end_date:
         return _response(400, {"error": "end_date is required"})
+    # The database already refuses an end_date before the start date
+    # (CHECK end_date >= start_date in migration 007), but letting it get
+    # that far turns a mistyped date into a 500 with "internal server
+    # error" — the caller is told the server broke when in fact their
+    # input was wrong, and has no way to work out what to change. The
+    # first real use on production hit exactly this: a date entered as
+    # dd/mm in a browser running mm/dd silently became a date in the past.
+    try:
+        parsed_end_date = date.fromisoformat(end_date)
+    except ValueError:
+        return _response(400, {"error": "end_date must be a date in YYYY-MM-DD format"})
+    if parsed_end_date < date.today():
+        return _response(400, {"error": "end_date cannot be in the past"})
     if not cloud_account_ids:
         return _response(400, {"error": "at least one cloud_account_id is required"})
     if not auditor_emails:

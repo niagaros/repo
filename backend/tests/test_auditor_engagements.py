@@ -10,6 +10,7 @@ Run from the repo root:
     .venv-test/Scripts/python.exe -I -m pytest backend/tests -v
 """
 import json
+from datetime import date, timedelta
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -244,6 +245,49 @@ class TestHandleCreateEngagement:
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = ah.handle_create_engagement(self._event(auditor_emails=[]), db)
         assert resp["statusCode"] == 400
+
+    def test_rejects_end_date_in_the_past(self):
+        """Regression: the first real use on production returned a 500.
+        The database does refuse this (CHECK end_date >= start_date in
+        migration 007), but only after the insert, so the caller was told
+        the server had broken rather than that their date was wrong. The
+        date had been typed as dd/mm into a browser reading mm/dd, which
+        silently turned 7 October into 10 July."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        gisteren = (date.today() - timedelta(days=1)).isoformat()
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_create_engagement(self._event(end_date=gisteren), db)
+        assert resp["statusCode"] == 400
+        assert "past" in json.loads(resp["body"])["error"]
+        db.create_audit_engagement.assert_not_called()
+
+    def test_rejects_unparseable_end_date(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_create_engagement(self._event(end_date="07/10/2026"), db)
+        assert resp["statusCode"] == 400
+        db.create_audit_engagement.assert_not_called()
+
+    def test_accepts_end_date_of_today(self):
+        """The constraint is end_date >= start_date, and start_date
+        defaults to today — so today itself is a valid last day."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.list_organization_cloud_accounts.return_value = [ORG_ACCOUNT_1]
+        db.create_audit_engagement.return_value = "nieuw-engagement-id"
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_create_engagement(
+                self._event(end_date=date.today().isoformat(),
+                            cloud_account_ids=[ORG_ACCOUNT_1["id"]]), db)
+        assert resp["statusCode"] == 201
 
     def test_rejects_cloud_account_not_in_organization(self):
         import api.auditor_handler as ah

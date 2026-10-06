@@ -40,6 +40,107 @@ interface Evidence {
   last_scan_at: string | null;
 }
 
+// What an auditor actually does with this screen is write it down: which
+// account, measured when, retrieved when, by whom. So it is laid out as a
+// record to be cited rather than a dashboard to be skimmed — labelled rows,
+// one value each, in a fixed order.
+//
+// The score bar is deliberately NOT colour-coded by how good the number is.
+// Nobody has defined what counts as a passing score, so colouring 77 green or
+// red would be the interface inventing a verdict the data does not support.
+// It uses the same accent as the onboarding progress bar, so it reads as a
+// measurement. The number is always written out beside it, never colour alone.
+const ACCENT = "#ef4444";
+
+interface ComplianceScore {
+  score?: number;
+  total?: number;
+  passed?: number;
+  failed?: number;
+}
+
+function asScore(value: unknown): ComplianceScore | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const num = (x: unknown) => (typeof x === "number" ? x : undefined);
+  return { score: num(v.score), total: num(v.total), passed: num(v.passed), failed: num(v.failed) };
+}
+
+// The database stores last_scan_at without a timezone, so it is shown as
+// recorded rather than converted — a converted timestamp in an evidence
+// record is a claim about a timezone nobody verified.
+function tidyTimestamp(value: string | null): string {
+  if (!value) return "not recorded";
+  return value.replace("T", " ").replace(/\.\d+$/, "");
+}
+
+function RecordRow({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
+  return (
+    <div style={{ display: "flex", gap: 16, padding: "7px 0", borderTop: "1px solid #151b28" }}>
+      <span style={{ flex: "0 0 170px", color: "#6b7280", fontSize: 12 }}>{label}</span>
+      <span style={{ color: strong ? "#f1f5f9" : "#cbd5e1", fontSize: 12.5, fontWeight: strong ? 700 : 400 }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function EvidenceRecord({ account, evidence, retrievedBy, retrievedAt }: {
+  account: ScopeAccount;
+  evidence: Evidence;
+  retrievedBy: string;
+  retrievedAt: string;
+}) {
+  const s = asScore(evidence.compliance_score);
+  const pct = typeof s?.score === "number" ? Math.max(0, Math.min(100, s.score)) : null;
+
+  return (
+    <div style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "14px 16px", marginTop: 10 }}>
+      <div style={{ color: "#f1f5f9", fontSize: 12.5, fontWeight: 700, marginBottom: 12 }}>
+        Compliance evidence — {evidence.account_name || account.account_name || "unnamed account"}
+        <span style={{ color: "#4e627a", fontWeight: 400 }}> · {account.account_id}</span>
+      </div>
+
+      {pct === null ? (
+        <div style={{ color: "#6b7280", fontSize: 12.5, paddingBottom: 10 }}>
+          No compliance score has been recorded for this account yet.
+        </div>
+      ) : (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 7 }}>
+            <span style={{ color: "#f1f5f9", fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{pct}</span>
+            <span style={{ color: "#6b7280", fontSize: 12 }}>/ 100 compliance score</span>
+          </div>
+          <div
+            role="img"
+            aria-label={`Compliance score ${pct} out of 100`}
+            style={{ height: 6, background: "#1a2030", borderRadius: 3, overflow: "hidden", maxWidth: 320 }}
+          >
+            <div style={{ height: "100%", width: `${pct}%`, background: ACCENT, borderRadius: 3 }} />
+          </div>
+        </div>
+      )}
+
+      {s && (
+        <>
+          <RecordRow label="Checks performed" value={s.total ?? "—"} />
+          <RecordRow label="Passed" value={s.passed ?? "—"} />
+          <RecordRow label="Failed" value={s.failed ?? "—"} strong={!!s.failed} />
+        </>
+      )}
+
+      <div style={{ height: 10 }} />
+      <RecordRow label="Measured at" value={tidyTimestamp(evidence.last_scan_at)} />
+      <RecordRow label="Retrieved by" value={retrievedBy} />
+      <RecordRow label="Retrieved at" value={retrievedAt} />
+
+      <div style={{ color: "#4e627a", fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>
+        This retrieval has been recorded in the audited organization's activity log.
+      </div>
+    </div>
+  );
+}
+
 export default function AuditorPortal() {
   const { loading: authLoading, email } = useRequireAuth();
   const [loadState, setLoadState] = useState<"loading" | "loaded" | "no_engagement" | "error">("loading");
@@ -47,6 +148,9 @@ export default function AuditorPortal() {
   const [scope, setScope] = useState<ScopeAccount[]>([]);
   const [evidenceByAccount, setEvidenceByAccount] = useState<Record<string, Evidence>>({});
   const [downloadError, setDownloadError] = useState<Record<string, string>>({});
+  // Shown in the record itself: an auditor cites when they obtained
+  // evidence, not just when it was measured.
+  const [retrievedAt, setRetrievedAt] = useState<Record<string, string>>({});
 
   const [requestAccountId, setRequestAccountId] = useState("");
   const [requesting, setRequesting] = useState(false);
@@ -84,6 +188,7 @@ export default function AuditorPortal() {
         return;
       }
       setEvidenceByAccount(prev => ({ ...prev, [accountId]: data.compliance_score }));
+      setRetrievedAt(prev => ({ ...prev, [accountId]: new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC" }));
     } catch {
       setDownloadError(prev => ({ ...prev, [accountId]: "Could not reach the server." }));
     }
@@ -177,9 +282,12 @@ export default function AuditorPortal() {
                       <div style={{ color: "#f87171", fontSize: 12, marginTop: 6 }}>{downloadError[a.id]}</div>
                     )}
                     {evidenceByAccount[a.id] !== undefined && (
-                      <pre style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: 10, marginTop: 8, fontSize: 11.5, color: "#9ca3af", overflowX: "auto" }}>
-                        {JSON.stringify(evidenceByAccount[a.id], null, 2)}
-                      </pre>
+                      <EvidenceRecord
+                        account={a}
+                        evidence={evidenceByAccount[a.id]}
+                        retrievedBy={email}
+                        retrievedAt={retrievedAt[a.id] || ""}
+                      />
                     )}
                   </div>
                 ))

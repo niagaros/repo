@@ -57,12 +57,28 @@ const STEPS: Step[] = [
   },
   {
     n: 4, id: "workspace",
-    title: "Connect Workspace",
-    description: "Sync findings into Jira, ServiceNow or Monday.com.",
+    title: "Connect Workspaces",
+    description: "Sync findings into source control, ticketing, communication, identity, SIEM and CI/CD.",
     href: "/settings/workspace", available: false,
   },
+  // Steps 5 and 6 were added to the onboarding issue after this project's
+  // scope was agreed (#281, #282). They are listed here because the wizard
+  // has to show the journey as it actually is — leaving them out would make
+  // the progress indicator claim a completeness that does not exist.
   {
-    n: 5, id: "training",
+    n: 5, id: "compliance",
+    title: "Configure Compliance",
+    description: "Select and configure the compliance frameworks that apply to your organization.",
+    href: "/settings/compliance", available: false,
+  },
+  {
+    n: 6, id: "governance",
+    title: "Configure Governance",
+    description: "Set up policies, ownership and review cycles for your security posture.",
+    href: "/settings/governance", available: false,
+  },
+  {
+    n: 7, id: "training",
     title: "Complete Security Training",
     description: "Assign and track baseline security awareness training.",
     href: "/settings/training", available: false,
