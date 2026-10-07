@@ -88,4 +88,19 @@ class S3Collector(BaseCollector):
             c["versioning"] = False
             c["mfa_delete"] = False
 
+        # S3.3.5 — default (server-side) encryption. get_bucket_encryption raises
+        # ServerSideEncryptionConfigurationNotFoundError when no default encryption
+        # is configured — that's a real "not encrypted" result, not a fetch failure.
+        # Either way the resulting config is the same (encryption_enabled=False),
+        # so a single broad except is sufficient here.
+        try:
+            enc = s3.get_bucket_encryption(Bucket=name)
+            rules = enc.get("ServerSideEncryptionConfiguration", {}).get("Rules", [])
+            algo = rules[0].get("ApplyServerSideEncryptionByDefault", {}).get("SSEAlgorithm") if rules else None
+            c["encryption_enabled"] = bool(algo)
+            c["encryption_algorithm"] = algo
+        except Exception:
+            c["encryption_enabled"] = False
+            c["encryption_algorithm"] = None
+
         return c

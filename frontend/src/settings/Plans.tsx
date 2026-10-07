@@ -21,10 +21,16 @@ interface Plan {
 }
 
 // ── Stripe checkout functie ───────────────────────────────────────────────────
+// Deliberately NOT using REACT_APP_API_BASE_URL here: that value currently
+// points at niagaros-cspm-api (zlm0sbtl66), which only has a /health route —
+// stripe-checkout lives on the older get-dashboard-data-API (hzf92ft6j7),
+// same as trigger-orchestrator. Point straight at the endpoint that actually
+// has the route until the API consolidation is finished.
+const STRIPE_CHECKOUT_API = "https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/stripe-checkout";
+
 async function startStripeCheckout(priceId: string) {
   try {
-    const apiBase = (window as any).__config?.REACT_APP_API_BASE_URL || "https://ylcz8a4v24.execute-api.eu-north-1.amazonaws.com/default";
-    const res = await fetch(`${apiBase}/stripe-checkout`, {
+    const res = await fetch(STRIPE_CHECKOUT_API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

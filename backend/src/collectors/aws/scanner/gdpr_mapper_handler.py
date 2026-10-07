@@ -43,7 +43,7 @@ GDPR_MAPPING = {
         ),
         "checks": [
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
-            "S3.3.1", "S3.3.2", "S3.3.3", "S3.3.4",
+            "S3.3.1", "S3.3.2", "S3.3.5",
             "KMS.1", "KMS.2", "KMS.3", "KMS.4",
             "IAM.1", "IAM.2", "IAM.3", "IAM.4",
             "IAM.5", "IAM.6", "IAM.7", "IAM.8", "IAM.9",
@@ -92,7 +92,7 @@ GDPR_MAPPING = {
             "IAM.5", "IAM.6", "IAM.7", "IAM.8", "IAM.9",
             "KMS.1", "KMS.2", "KMS.3", "KMS.4",
             "S3.2.1", "S3.2.2", "S3.2.3", "S3.2.4",
-            "S3.3.1", "S3.3.2", "S3.3.3", "S3.3.4",
+            "S3.3.1", "S3.3.2", "S3.3.5",
             "CloudWatch.1", "CloudWatch.2", "CloudWatch.3", "CloudWatch.4",
             "CloudWatch.5", "CloudWatch.6", "CloudWatch.7", "CloudWatch.8",
             "CloudWatch.9", "CloudWatch.10", "CloudWatch.11", "CloudWatch.12",
