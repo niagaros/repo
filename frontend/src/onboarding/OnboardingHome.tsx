@@ -180,7 +180,7 @@ export default function OnboardingHome() {
           Get Niagaros fully set up
         </h1>
         <p style={{ fontSize: 13.5, color: "#64748b", margin: "0 0 28px", lineHeight: 1.6 }}>
-          Five steps to reach full security and compliance coverage. Come back any time —
+          Work through these steps to reach full security and compliance coverage. Come back any time —
           your progress is saved.
         </p>
 
@@ -202,7 +202,12 @@ export default function OnboardingHome() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {STEPS.map(step => {
             const state = stateFor(step);
-            const clickable = state === "not_done";
+            // A finished step stays reachable. Only steps that do not exist
+            // yet are closed off. Locking a completed step would leave no way
+            // back to it from here, and the settings sidebar has no link to
+            // this page either — so the wizard and the pages it points at
+            // would be sealed off from each other in both directions.
+            const clickable = state === "not_done" || state === "done";
             return (
               <div
                 key={step.id}
