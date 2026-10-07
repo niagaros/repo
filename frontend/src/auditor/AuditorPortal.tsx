@@ -254,7 +254,8 @@ export default function AuditorPortal() {
 
         {loadState === "error" && (
           <div style={{ ...cardStyle, borderColor: "rgba(239,68,68,0.4)", color: "#f87171", fontSize: 13 }}>
-            Couldn't load your access — the backend for this page isn't deployed yet.
+            We couldn't load your access. Please try again, or get in touch with
+            the organization that invited you.
           </div>
         )}
 

@@ -263,8 +263,9 @@ export default function Team() {
     >
       {loadState === "error" && (
         <div style={{ ...cardStyle, borderColor: "rgba(239,68,68,0.4)", color: "#f87171", fontSize: 13 }}>
-          Couldn't load the team — the backend for this page isn't deployed yet
-          (see docs/internal/architecture/aws/api_inventory.md).
+          We couldn't load your team. This usually means your account isn't
+          linked to an organization yet — ask an administrator to invite you,
+          or contact support.
         </div>
       )}
 

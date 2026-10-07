@@ -16,10 +16,11 @@ import { useRequireAuth } from "../settings/useRequireAuth";
 // connection, not the Jira/ServiceNow-style "Connect Workspace" step #268
 // describes — deliberately not reused here to avoid overstating progress.)
 //
-// Step 2's /team endpoint (api/team_handler.py) is written but not yet
-// registered on API Gateway — see api_inventory.md. Until it's deployed,
-// the fetch below fails and Step 2 correctly shows "not done" rather than
-// crashing the page.
+// Every step's state comes from a real backend signal, and every one of
+// those calls is allowed to fail: a step then reads as "not done" rather
+// than taking the page down with it. This page is the first thing a new
+// customer sees, so it has to render even when something behind it does
+// not answer.
 
 function getApiBase(): string {
   return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
@@ -136,7 +137,8 @@ export default function OnboardingHome() {
   }, [authLoading, email]);
 
   // Step 3 — "done" once at least one audit engagement has been created.
-  // Fails gracefully to "not_done" while /auditors isn't deployed yet.
+  // Fails gracefully to "not_done" if the call fails for any reason — this
+  // page must never be the thing that blocks someone from onboarding.
   useEffect(() => {
     if (authLoading || !email) return;
     (async () => {
