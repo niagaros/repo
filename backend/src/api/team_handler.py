@@ -236,7 +236,11 @@ def handle_update_role(event: dict, db: Database, user_id: str) -> dict:
         organization_id=caller["organization_id"], actor_user_id=caller["id"],
         action="role_changed", target_user_id=user_id, details={"new_role": new_role},
     )
-    logger.info(f"Role changed: {user_id} -> {new_role} by {caller['email']}")
+    # The actor is logged by id, not by email address. Who did it is already
+    # recorded in the audit log above, with far better access control around
+    # it than CloudWatch has; repeating the address here would scatter a
+    # customer's personal data across log retention as well.
+    logger.info(f"Role changed: {user_id} -> {new_role} by {caller['id']}")
     return _response(200, {"user_id": user_id, "role": new_role})
 
 

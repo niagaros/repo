@@ -209,7 +209,13 @@ def call_auditor(method, path, path_params=None, body=None):
 def main():
     import os
     import tempfile
-    db_path = tempfile.mktemp(suffix=".sqlite")
+    # mkstemp instead of mktemp: mktemp only invents a name and hands it
+    # back, so between that moment and the open() there is a window in which
+    # something else can create the file. mkstemp creates it atomically and
+    # returns an open handle, which is closed here because sqlite3 opens the
+    # path itself. Flagged by CodeQL as "insecure temporary file".
+    fd, db_path = tempfile.mkstemp(suffix=".sqlite")
+    os.close(fd)
 
     bootstrap = SqliteAuditorDb(db_path)
     org_id, admin_id = bootstrap.seed("Acme BV", "admin@acme.com")
