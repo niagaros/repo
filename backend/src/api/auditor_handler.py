@@ -127,6 +127,43 @@ def handle_list_engagements(event: dict, db: Database) -> dict:
     return _response(200, {"engagements": engagements})
 
 
+def handle_close_engagement(event: dict, db: Database, engagement_id: str) -> dict:
+    """
+    Issue #266 — end an engagement before its agreed end date.
+
+    Criterion 3 already covers access expiring on the end date. This is the
+    other direction, and it was missing: an engagement could be created but
+    never ended, so a mistake could not be undone.
+
+    The ownership check runs first, for the same reason as everywhere else
+    on this side: without it an admin of one organization could close
+    another organization's audit with a guessed id.
+    """
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can close audit engagements"})
+
+    engagement = db.get_engagement(engagement_id, caller["organization_id"])
+    if not engagement:
+        return _response(404, {"error": "engagement not found in your organization"})
+
+    if not db.close_engagement(engagement_id, caller["organization_id"]):
+        return _response(409, {"error": "this engagement is already closed"})
+
+    # Recorded in the organization's own audit log rather than the engagement
+    # activity log: that one tracks what auditors did, and this is an action
+    # by an administrator.
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="engagement_closed",
+        details={"engagement_id": engagement_id, "name": engagement["name"]},
+    )
+    logger.info(f"Engagement closed early: {engagement_id} by {caller['id']}")
+    return _response(200, {"engagement_id": engagement_id, "closed": True})
+
+
 def handle_auditor_view_scope(event: dict, db: Database) -> dict:
     """
     Issue #266, acceptance criterion #1 — the read side, from the
@@ -291,6 +328,7 @@ def lambda_handler(event, context):
         GET    /auditors/engagements                           -> handle_list_engagements
         GET    /auditors/engagements/{engagement_id}/requests  -> handle_list_evidence_requests
         PATCH  /auditors/engagements/{engagement_id}/requests/{request_id} -> handle_resolve_evidence_request
+        DELETE /auditors/engagements/{engagement_id}           -> handle_close_engagement
         GET    /auditors/engagements/{engagement_id}/activity  -> handle_view_engagement_activity
         GET    /auditor/scope                                  -> handle_auditor_view_scope
         POST   /auditor/evidence-requests                      -> handle_request_evidence
@@ -320,6 +358,8 @@ def lambda_handler(event, context):
             return handle_resolve_evidence_request(
                 event, db, params.get("engagement_id", ""), params.get("request_id", ""),
             )
+        if method == "DELETE" and path.startswith("/auditors/engagements/"):
+            return handle_close_engagement(event, db, params.get("engagement_id", ""))
         if method == "GET" and path.startswith("/auditors/engagements/") and path.endswith("/activity"):
             return handle_view_engagement_activity(event, db, params.get("engagement_id", ""))
 

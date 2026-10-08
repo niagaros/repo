@@ -72,14 +72,65 @@ class TestDatabaseEngagementMethods:
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
         cur.fetchall.return_value = [
-            ("e1", "Q4 Audit", "2026-01-01", "2026-12-31", True),
-            ("e2", "Old Audit", "2025-01-01", "2025-06-01", False),
+            ("e1", "Q4 Audit", "2026-01-01", "2026-12-31", True, None),
+            ("e2", "Old Audit", "2025-01-01", "2025-06-01", False, None),
         ]
 
         engagements = db.list_organization_engagements("org1")
 
         assert engagements[0]["active"] is True
         assert engagements[1]["active"] is False
+
+    def test_list_organization_engagements_separates_closed_from_expired(self):
+        """An engagement that ran its course and one that was ended early
+        both stop granting access, but only the second is somebody's
+        decision — and that is the one an auditor may ask about later."""
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchall.return_value = [
+            ("e1", "Ended early", "2026-01-01", "2026-12-31", False, "2026-10-08 09:00:00"),
+            ("e2", "Ran its course", "2025-01-01", "2025-06-01", False, None),
+        ]
+
+        engagements = db.list_organization_engagements("org1")
+
+        assert engagements[0]["active"] is False
+        assert engagements[0]["closed_at"] == "2026-10-08 09:00:00"
+        assert engagements[1]["active"] is False
+        assert engagements[1]["closed_at"] is None
+
+    def test_close_engagement_is_scoped_to_the_organization(self):
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 1
+
+        assert db.close_engagement("e1", "org1") is True
+
+        sql, params = cur.execute.call_args[0]
+        assert "organization_id = %s" in sql
+        assert "closed_at IS NULL" in sql
+        assert params == ("e1", "org1")
+
+    def test_close_engagement_returns_false_when_already_closed(self):
+        """Closing twice would overwrite the moment it actually ended, and
+        that moment is part of the audit trail."""
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.rowcount = 0
+
+        assert db.close_engagement("e1", "org1") is False
+
+    def test_a_closed_engagement_grants_no_access(self):
+        """The auditor lookup must exclude closed engagements, otherwise
+        closing one would change nothing for the person holding it."""
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = None
+
+        assert db.get_active_engagement_for_auditor("auditor@firm.com") is None
+
+        sql = cur.execute.call_args[0][0]
+        assert "closed_at IS NULL" in sql
 
     def test_get_active_engagement_for_auditor_found(self):
         db, mock_conn = self._make_db()
@@ -630,3 +681,88 @@ class TestLambdaHandlerRouting:
         assert resp["statusCode"] == 500
         assert "hunter2" not in resp["body"]
         assert json.loads(resp["body"]) == {"error": "internal server error"}
+
+
+class TestHandleCloseEngagement:
+    """
+    Issue #266 — ending an engagement before its agreed end date.
+
+    Criterion 3 covers access expiring on the end date, and that was built.
+    This is the other direction and it was missing: an engagement could be
+    created but never closed, so adding the wrong auditor, or an audit that
+    stopped early, could not be undone without going into the database.
+    """
+
+    def _event(self, method="DELETE"):
+        return {
+            "requestContext": {"http": {"method": method}},
+            "rawPath": "/auditors/engagements/e1",
+            "pathParameters": {"engagement_id": "e1"},
+            "body": None,
+        }
+
+    def test_only_admin_can_close(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = VIEWER
+        with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
+            resp = ah.handle_close_engagement(self._event(), db, "e1")
+        assert resp["statusCode"] == 403
+        db.close_engagement.assert_not_called()
+
+    def test_cannot_close_another_organizations_engagement(self):
+        """The ownership check runs before anything else, so a guessed id
+        from another company cannot be used to end their audit."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = None
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_close_engagement(self._event(), db, "someone-elses-engagement")
+        assert resp["statusCode"] == 404
+        db.close_engagement.assert_not_called()
+
+    def test_closing_an_already_closed_engagement_is_rejected(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = {"id": "e1", "name": "Q4 Audit", "end_date": "2026-12-31"}
+        db.close_engagement.return_value = False
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_close_engagement(self._event(), db, "e1")
+        assert resp["statusCode"] == 409
+
+    def test_closing_succeeds_and_is_recorded(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = {"id": "e1", "name": "Q4 Audit", "end_date": "2026-12-31"}
+        db.close_engagement.return_value = True
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_close_engagement(self._event(), db, "e1")
+
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"])["closed"] is True
+        db.close_engagement.assert_called_once_with("e1", ADMIN["organization_id"])
+
+        # Recorded in the organization's own audit log, not the engagement
+        # activity log: that one tracks what auditors did, and this is an
+        # administrator's decision.
+        db.log_audit_event.assert_called_once()
+        assert db.log_audit_event.call_args.kwargs["action"] == "engagement_closed"
+
+    def test_delete_route_dispatches_to_close(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = {"id": "e1", "name": "Q4 Audit", "end_date": "2026-12-31"}
+        db.close_engagement.return_value = True
+        with patch.object(ah, "Database", return_value=db), \
+             patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.lambda_handler(self._event(), None)
+        assert resp["statusCode"] == 200

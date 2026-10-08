@@ -667,7 +667,9 @@ class Database:
     def list_organization_engagements(self, organization_id: str) -> list:
         with self.conn.cursor() as cur:
             cur.execute("""
-                SELECT id, name, start_date, end_date, (end_date >= CURRENT_DATE)
+                SELECT id, name, start_date, end_date,
+                       (end_date >= CURRENT_DATE AND closed_at IS NULL),
+                       closed_at
                 FROM audit_engagements
                 WHERE organization_id = %s
                 ORDER BY created_at DESC
@@ -677,9 +679,40 @@ class Database:
             {
                 "id": str(r[0]), "name": r[1], "start_date": str(r[2]),
                 "end_date": str(r[3]), "active": bool(r[4]),
+                # Separate from `active` on purpose: an engagement that ran its
+                # course and one that was ended early both stop granting access,
+                # but only the second is somebody's decision — and that is the
+                # one an auditor may later ask about.
+                "closed_at": str(r[5]) if r[5] else None,
             }
             for r in rows
         ]
+
+    def close_engagement(self, engagement_id: str, organization_id: str) -> bool:
+        """
+        Issue #266 — ends an engagement before its end_date.
+
+        Scoped to the caller's own organization, like every other admin-side
+        engagement operation, so a guessed id cannot close another company's
+        audit. Only an engagement that is still open can be closed: closing
+        one twice would overwrite the moment it actually ended, and that
+        moment is part of the audit trail.
+
+        Access is computed per request from end_date and closed_at, so this
+        takes effect on the auditor's very next call. There is no stored
+        grant to withdraw.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                UPDATE audit_engagements
+                SET closed_at = NOW()
+                WHERE id = %s AND organization_id = %s AND closed_at IS NULL
+            """, (engagement_id, organization_id))
+            updated = cur.rowcount
+        self.conn.commit()
+        if updated:
+            logger.warning(f"Database: engagement {engagement_id} closed early")
+        return updated > 0
 
     def get_active_engagement_for_auditor(self, email: str) -> dict | None:
         """
@@ -695,7 +728,9 @@ class Database:
                 SELECT ae.id, ae.organization_id, ae.name, ae.end_date
                 FROM engagement_auditors ea
                 JOIN audit_engagements ae ON ae.id = ea.engagement_id
-                WHERE ea.email = %s AND ae.end_date >= CURRENT_DATE
+                WHERE ea.email = %s
+                  AND ae.end_date >= CURRENT_DATE
+                  AND ae.closed_at IS NULL
                 ORDER BY ae.end_date ASC
                 LIMIT 1
             """, (email,))
