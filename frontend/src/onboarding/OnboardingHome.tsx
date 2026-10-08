@@ -8,13 +8,16 @@ import { useRequireAuth } from "../settings/useRequireAuth";
 // individual settings pages together into one sequence with a visible
 // progress indicator.
 //
-// Honesty over completeness: Steps 1, 2 and 3 (Cloud Infrastructure, Team,
-// Auditors) have real backend signals to check today. Steps 4 and 5
-// (Workspace, Training) have no settings page or API behind them yet —
-// they are shown as "In progress" rather than faked as clickable/complete.
+// Honesty over completeness: steps 1, 2 and 3 (Cloud Infrastructure, Team,
+// Auditors) have real backend signals to check today. Step 4 (Workspace)
+// now has a page and one working category, ticketing, so it is clickable —
+// but completion of it is not yet derived from a backend signal the way the
+// first three are, so it does not tick itself off. Steps 5, 6 and 7 have no
+// page or API behind them at all and are shown as "In progress" rather than
+// faked as clickable or complete.
 // (Note: the existing /settings/github page is a source-code scanner
 // connection, not the Jira/ServiceNow-style "Connect Workspace" step #268
-// describes — deliberately not reused here to avoid overstating progress.)
+// describes. It is linked from the workspace hub rather than counted as it.)
 //
 // Every step's state comes from the backend, which works it out from the
 // actual state of the customer's environment rather than from anything this
@@ -77,7 +80,7 @@ const STEPS: Step[] = [
     n: 4, id: "workspace",
     title: "Connect Workspaces",
     description: "Sync findings into source control, ticketing, communication, identity, SIEM and CI/CD.",
-    href: "/settings/workspace", available: false,
+    href: "/settings/workspace", available: true,
   },
   // Steps 5 and 6 were added to the onboarding issue after this project's
   // scope was agreed (#281, #282). They are listed here because the wizard

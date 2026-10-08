@@ -126,6 +126,12 @@ export default function SettingsIndex() {
             desc="Connect your GitHub org for CIS GitHub Benchmark scanning"
             href="/settings/github"
           />
+          <SettingCard
+            icon="🔗"
+            title="Workspace"
+            desc="Sync findings into ticketing, communication, identity, SIEM and CI/CD tools"
+            href="/settings/workspace"
+          />
         </div>
       </section>
     </SettingsLayout>
