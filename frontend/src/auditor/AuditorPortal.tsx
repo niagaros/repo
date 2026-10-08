@@ -34,6 +34,17 @@ interface Engagement {
   end_date: string;
 }
 
+// Issue #265, criterion 6: role and permission changes with timestamps and
+// actor information. The admin side was built with #265; this is the
+// auditor-facing half, which had to wait until the auditor role existed.
+interface AuditLogEntry {
+  action: string;
+  created_at: string;
+  actor_email: string | null;
+  target_email: string | null;
+  details: Record<string, unknown> | null;
+}
+
 interface Evidence {
   account_name: string | null;
   compliance_score: unknown;
@@ -148,6 +159,8 @@ export default function AuditorPortal() {
   const [scope, setScope] = useState<ScopeAccount[]>([]);
   const [evidenceByAccount, setEvidenceByAccount] = useState<Record<string, Evidence>>({});
   const [downloadError, setDownloadError] = useState<Record<string, string>>({});
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[] | null>(null);
+  const [auditLogError, setAuditLogError] = useState("");
   // Shown in the record itself: an auditor cites when they obtained
   // evidence, not just when it was measured.
   const [retrievedAt, setRetrievedAt] = useState<Record<string, string>>({});
@@ -177,6 +190,25 @@ export default function AuditorPortal() {
     if (authLoading || !email) return;
     load();
   }, [authLoading, email]);
+
+  // Fetched on demand rather than on load: reading it is recorded as an
+  // auditor action, so it should happen because the auditor asked, not
+  // because the page opened.
+  const loadAuditLog = async () => {
+    setAuditLogError("");
+    try {
+      const resp = await fetch(`${getApiBase()}/auditor/audit-log`, { headers: authHeader(), cache: "no-store" });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setAuditLogError(data.error || "Could not retrieve the access log.");
+        return;
+      }
+      const data = await resp.json();
+      setAuditLog(data.entries || []);
+    } catch {
+      setAuditLogError("Could not reach the server.");
+    }
+  };
 
   const downloadEvidence = async (accountId: string) => {
     setDownloadError(prev => ({ ...prev, [accountId]: "" }));
@@ -292,6 +324,58 @@ export default function AuditorPortal() {
                     )}
                   </div>
                 ))
+              )}
+            </div>
+
+            <div style={cardStyle}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 14 }}>Access log</div>
+                  <div style={{ color: "#4e627a", fontSize: 12, marginTop: 4 }}>
+                    Every role, permission and membership change in this organization, with
+                    who made it and when.
+                  </div>
+                </div>
+                {auditLog === null && (
+                  <button
+                    onClick={loadAuditLog}
+                    style={{ background: "none", border: "1px solid #374151", color: "#9ca3af", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    View access log
+                  </button>
+                )}
+              </div>
+
+              {auditLogError && (
+                <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{auditLogError}</div>
+              )}
+
+              {auditLog !== null && (
+                auditLog.length === 0 ? (
+                  <div style={{ color: "#4e627a", fontSize: 12.5, marginTop: 10 }}>
+                    Nothing has been changed in this organization yet.
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 10 }}>
+                    {auditLog.map((e, i) => (
+                      <div key={i} style={{ display: "flex", gap: 14, padding: "7px 0", borderTop: "1px solid #151b28", fontSize: 12.5 }}>
+                        <span style={{ flex: "0 0 150px", color: "#6b7280", fontSize: 12 }}>
+                          {e.created_at.replace("T", " ").replace(/\.\d+.*$/, "")}
+                        </span>
+                        <span style={{ flex: "0 0 150px", color: "#f1f5f9", fontWeight: 500 }}>
+                          {e.action.replace(/_/g, " ")}
+                        </span>
+                        <span style={{ flex: 1, color: "#cbd5e1" }}>
+                          {e.actor_email || "unknown"}
+                          {e.target_email && <span style={{ color: "#4e627a" }}> &rarr; {e.target_email}</span>}
+                        </span>
+                      </div>
+                    ))}
+                    <div style={{ color: "#4e627a", fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>
+                      Opening this log has been recorded in the organization's activity log.
+                    </div>
+                  </div>
+                )
               )}
             </div>
 

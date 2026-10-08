@@ -199,6 +199,42 @@ def handle_auditor_view_scope(event: dict, db: Database) -> dict:
     return _response(200, {"engagement": auditor["engagement"], "scope": scope})
 
 
+def handle_auditor_view_audit_log(event: dict, db: Database) -> dict:
+    """
+    Issue #265, acceptance criterion 6 — the auditor-facing half.
+
+    The criterion asks for role and permission changes to be available with
+    timestamps and actor information. The admin side of that was built with
+    #265; the auditor side could not be, because the auditor role did not
+    exist yet. With #266 it does, and this is the route between them.
+
+    It is the most obvious piece of evidence there is for the thing an
+    auditor actually comes to assess: whether access inside an organization
+    is governed. Withholding it while handing over a compliance score would
+    be an odd division.
+
+    **A deliberate widening, and the reason for it.** Everything else an
+    auditor can reach is scoped to the cloud accounts in their engagement.
+    This is not: the log is organization-wide and names colleagues, their
+    roles and when they were deactivated. There is no sensible way to scope
+    a record of access governance to a cloud account — access is not held
+    per account. The organization invited this auditor to examine exactly
+    this, so the engagement is taken as the consent. It remains a privacy
+    judgement rather than a technical one, and is flagged as such for the
+    client.
+
+    Reading it is recorded, like every other auditor action (criterion 4).
+    """
+    auditor = _get_auditor(event, db)
+    if not auditor:
+        return _response(401, {"error": "unauthorized"})
+
+    engagement_id = auditor["engagement"]["id"]
+    entries = db.get_audit_log(auditor["engagement"]["organization_id"])
+    db.log_engagement_activity(engagement_id, auditor["email"], "audit_log_viewed")
+    return _response(200, {"entries": entries})
+
+
 def handle_request_evidence(event: dict, db: Database) -> dict:
     """Issue #266, acceptance criterion #2 — an auditor requests one more
     of the organization's cloud accounts be added to their scope."""
@@ -341,6 +377,7 @@ def lambda_handler(event, context):
         DELETE /auditors/engagements/{engagement_id}           -> handle_close_engagement
         GET    /auditors/engagements/{engagement_id}/activity  -> handle_view_engagement_activity
         GET    /auditor/scope                                  -> handle_auditor_view_scope
+        GET    /auditor/audit-log                              -> handle_auditor_view_audit_log
         POST   /auditor/evidence-requests                      -> handle_request_evidence
         GET    /auditor/evidence/{cloud_account_id}            -> handle_download_evidence
     """
@@ -358,6 +395,8 @@ def lambda_handler(event, context):
             return handle_list_engagements(event, db)
         if method == "GET" and path.rstrip("/") == "/auditor/scope":
             return handle_auditor_view_scope(event, db)
+        if method == "GET" and path.rstrip("/") == "/auditor/audit-log":
+            return handle_auditor_view_audit_log(event, db)
         if method == "POST" and path.rstrip("/") == "/auditor/evidence-requests":
             return handle_request_evidence(event, db)
         if method == "GET" and path.startswith("/auditor/evidence/"):

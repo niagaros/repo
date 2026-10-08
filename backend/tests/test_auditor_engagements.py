@@ -795,3 +795,88 @@ class TestHandleCloseEngagement:
         with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = ah.handle_close_engagement(self._event(), db, "e1")
         assert resp["statusCode"] == 200
+
+
+class TestAuditorViewsAuditLog:
+    """
+    Issue #265, criterion 6 — the auditor-facing half, which could not be
+    built at the time because the auditor role did not exist yet.
+
+    This is the one thing an auditor can reach that is not scoped to the
+    cloud accounts in their engagement: a record of access governance
+    cannot be scoped to a cloud account, because access is not held per
+    account. The engagement is taken as the organization's consent.
+    """
+
+    def _event(self):
+        return {
+            "requestContext": {"http": {"method": "GET"}},
+            "rawPath": "/auditor/audit-log",
+            "pathParameters": {},
+            "body": None,
+        }
+
+    def test_an_auditor_without_an_engagement_gets_nothing(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = None
+        with patch.object(ah, "_get_authenticated_email", return_value="stranger@firm.com"):
+            resp = ah.handle_auditor_view_audit_log(self._event(), db)
+        assert resp["statusCode"] == 401
+        db.get_audit_log.assert_not_called()
+
+    def test_the_log_comes_from_the_engagement_s_organization(self):
+        """Not from anywhere the caller might name: the organization is
+        taken from the engagement, which is resolved from their email."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = {
+            "id": "e1", "organization_id": "org-being-audited", "name": "Q4", "end_date": "2026-12-31",
+        }
+        db.get_audit_log.return_value = [{"action": "role_changed", "created_at": "2026-10-01"}]
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            resp = ah.handle_auditor_view_audit_log(self._event(), db)
+
+        assert resp["statusCode"] == 200
+        assert len(json.loads(resp["body"])["entries"]) == 1
+        db.get_audit_log.assert_called_once_with("org-being-audited")
+
+    def test_reading_the_log_is_recorded(self):
+        """Criterion 4 — every auditor action lands in the activity log,
+        and reading a record of who did what is itself such an action."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = {
+            "id": "e1", "organization_id": "org1", "name": "Q4", "end_date": "2026-12-31",
+        }
+        db.get_audit_log.return_value = []
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            ah.handle_auditor_view_audit_log(self._event(), db)
+        db.log_engagement_activity.assert_called_once_with("e1", "auditor@firm.com", "audit_log_viewed")
+
+    def test_a_closed_or_expired_engagement_closes_this_route_too(self):
+        """Access is computed per request, so this needs no separate check:
+        get_active_engagement_for_auditor already excludes both."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = None
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            resp = ah.handle_auditor_view_audit_log(self._event(), db)
+        assert resp["statusCode"] == 401
+
+    def test_route_dispatches(self):
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = {
+            "id": "e1", "organization_id": "org1", "name": "Q4", "end_date": "2026-12-31",
+        }
+        db.get_audit_log.return_value = []
+        with patch.object(ah, "Database", return_value=db), \
+             patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            resp = ah.lambda_handler(self._event(), None)
+        assert resp["statusCode"] == 200
