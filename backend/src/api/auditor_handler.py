@@ -127,6 +127,53 @@ def handle_list_engagements(event: dict, db: Database) -> dict:
     return _response(200, {"engagements": engagements})
 
 
+def handle_close_engagement(event: dict, db: Database, engagement_id: str) -> dict:
+    """
+    Issue #266 — end an engagement before its agreed end date.
+
+    Criterion 3 already covers access expiring on the end date. This is the
+    other direction, and it was missing: an engagement could be created but
+    never ended, so a mistake could not be undone.
+
+    The ownership check runs first, for the same reason as everywhere else
+    on this side: without it an admin of one organization could close
+    another organization's audit with a guessed id.
+    """
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+    if caller["role"] != "admin":
+        return _response(403, {"error": "only admins can close audit engagements"})
+
+    engagement = db.get_engagement(engagement_id, caller["organization_id"])
+    if not engagement:
+        return _response(404, {"error": "engagement not found in your organization"})
+
+    # An engagement that has run its end date is already over; recording it as
+    # "ended early" would put a decision in the audit trail that nobody made.
+    # The interface only offers the button on an active engagement, but the
+    # route has to hold that line too.
+    try:
+        if date.fromisoformat(str(engagement["end_date"])) < date.today():
+            return _response(409, {"error": "this engagement has already expired"})
+    except ValueError:
+        pass
+
+    if not db.close_engagement(engagement_id, caller["organization_id"]):
+        return _response(409, {"error": "this engagement is already closed"})
+
+    # Recorded in the organization's own audit log rather than the engagement
+    # activity log: that one tracks what auditors did, and this is an action
+    # by an administrator.
+    db.log_audit_event(
+        organization_id=caller["organization_id"], actor_user_id=caller["id"],
+        action="engagement_closed",
+        details={"engagement_id": engagement_id, "name": engagement["name"]},
+    )
+    logger.info(f"Engagement closed early: {engagement_id} by {caller['id']}")
+    return _response(200, {"engagement_id": engagement_id, "closed": True})
+
+
 def handle_auditor_view_scope(event: dict, db: Database) -> dict:
     """
     Issue #266, acceptance criterion #1 — the read side, from the
@@ -150,6 +197,42 @@ def handle_auditor_view_scope(event: dict, db: Database) -> dict:
     scope = db.list_engagement_scope(engagement_id)
     db.log_engagement_activity(engagement_id, auditor["email"], "login")
     return _response(200, {"engagement": auditor["engagement"], "scope": scope})
+
+
+def handle_auditor_view_audit_log(event: dict, db: Database) -> dict:
+    """
+    Issue #265, acceptance criterion 6 — the auditor-facing half.
+
+    The criterion asks for role and permission changes to be available with
+    timestamps and actor information. The admin side of that was built with
+    #265; the auditor side could not be, because the auditor role did not
+    exist yet. With #266 it does, and this is the route between them.
+
+    It is the most obvious piece of evidence there is for the thing an
+    auditor actually comes to assess: whether access inside an organization
+    is governed. Withholding it while handing over a compliance score would
+    be an odd division.
+
+    **A deliberate widening, and the reason for it.** Everything else an
+    auditor can reach is scoped to the cloud accounts in their engagement.
+    This is not: the log is organization-wide and names colleagues, their
+    roles and when they were deactivated. There is no sensible way to scope
+    a record of access governance to a cloud account — access is not held
+    per account. The organization invited this auditor to examine exactly
+    this, so the engagement is taken as the consent. It remains a privacy
+    judgement rather than a technical one, and is flagged as such for the
+    client.
+
+    Reading it is recorded, like every other auditor action (criterion 4).
+    """
+    auditor = _get_auditor(event, db)
+    if not auditor:
+        return _response(401, {"error": "unauthorized"})
+
+    engagement_id = auditor["engagement"]["id"]
+    entries = db.get_audit_log(auditor["engagement"]["organization_id"])
+    db.log_engagement_activity(engagement_id, auditor["email"], "audit_log_viewed")
+    return _response(200, {"entries": entries})
 
 
 def handle_request_evidence(event: dict, db: Database) -> dict:
@@ -291,8 +374,10 @@ def lambda_handler(event, context):
         GET    /auditors/engagements                           -> handle_list_engagements
         GET    /auditors/engagements/{engagement_id}/requests  -> handle_list_evidence_requests
         PATCH  /auditors/engagements/{engagement_id}/requests/{request_id} -> handle_resolve_evidence_request
+        DELETE /auditors/engagements/{engagement_id}           -> handle_close_engagement
         GET    /auditors/engagements/{engagement_id}/activity  -> handle_view_engagement_activity
         GET    /auditor/scope                                  -> handle_auditor_view_scope
+        GET    /auditor/audit-log                              -> handle_auditor_view_audit_log
         POST   /auditor/evidence-requests                      -> handle_request_evidence
         GET    /auditor/evidence/{cloud_account_id}            -> handle_download_evidence
     """
@@ -310,6 +395,8 @@ def lambda_handler(event, context):
             return handle_list_engagements(event, db)
         if method == "GET" and path.rstrip("/") == "/auditor/scope":
             return handle_auditor_view_scope(event, db)
+        if method == "GET" and path.rstrip("/") == "/auditor/audit-log":
+            return handle_auditor_view_audit_log(event, db)
         if method == "POST" and path.rstrip("/") == "/auditor/evidence-requests":
             return handle_request_evidence(event, db)
         if method == "GET" and path.startswith("/auditor/evidence/"):
@@ -320,6 +407,8 @@ def lambda_handler(event, context):
             return handle_resolve_evidence_request(
                 event, db, params.get("engagement_id", ""), params.get("request_id", ""),
             )
+        if method == "DELETE" and path.startswith("/auditors/engagements/"):
+            return handle_close_engagement(event, db, params.get("engagement_id", ""))
         if method == "GET" and path.startswith("/auditors/engagements/") and path.endswith("/activity"):
             return handle_view_engagement_activity(event, db, params.get("engagement_id", ""))
 

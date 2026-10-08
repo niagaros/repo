@@ -8,25 +8,45 @@ import { useRequireAuth } from "../settings/useRequireAuth";
 // individual settings pages together into one sequence with a visible
 // progress indicator.
 //
-// Honesty over completeness: Steps 1, 2 and 3 (Cloud Infrastructure, Team,
-// Auditors) have real backend signals to check today. Steps 4 and 5
-// (Workspace, Training) have no settings page or API behind them yet —
-// they are shown as "In progress" rather than faked as clickable/complete.
+// Honesty over completeness: steps 1, 2 and 3 (Cloud Infrastructure, Team,
+// Auditors) have real backend signals to check today. Step 4 (Workspace)
+// now has a page and one working category, ticketing, so it is clickable —
+// but completion of it is not yet derived from a backend signal the way the
+// first three are, so it does not tick itself off. Steps 5, 6 and 7 have no
+// page or API behind them at all and are shown as "In progress" rather than
+// faked as clickable or complete.
 // (Note: the existing /settings/github page is a source-code scanner
 // connection, not the Jira/ServiceNow-style "Connect Workspace" step #268
-// describes — deliberately not reused here to avoid overstating progress.)
+// describes. It is linked from the workspace hub rather than counted as it.)
 //
-// Every step's state comes from a real backend signal, and every one of
-// those calls is allowed to fail: a step then reads as "not done" rather
-// than taking the page down with it. This page is the first thing a new
-// customer sees, so it has to render even when something behind it does
-// not answer.
+// Every step's state comes from the backend, which works it out from the
+// actual state of the customer's environment rather than from anything this
+// page claims. The call is allowed to fail: steps then read as "not done"
+// rather than taking the page down with it. This is the first thing a new
+// customer sees, so it has to render even when something behind it does not
+// answer.
 
 function getApiBase(): string {
   return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
 }
 
 type StepState = "done" | "not_done" | "unavailable" | "loading";
+
+interface ProgressStep {
+  step: string;
+  done: boolean;
+  available: boolean;
+  // When this step was first completed. Kept even if the step is later
+  // undone and redone: what matters is how long this customer took to get
+  // here, not when it was last true.
+  completed_at: string | null;
+}
+
+interface ProgressResponse {
+  steps: ProgressStep[];
+  completed_count: number;
+  total_count: number;
+}
 
 interface Step {
   n: number;
@@ -60,7 +80,7 @@ const STEPS: Step[] = [
     n: 4, id: "workspace",
     title: "Connect Workspaces",
     description: "Sync findings into source control, ticketing, communication, identity, SIEM and CI/CD.",
-    href: "/settings/workspace", available: false,
+    href: "/settings/workspace", available: true,
   },
   // Steps 5 and 6 were added to the onboarding issue after this project's
   // scope was agreed (#281, #282). They are listed here because the wizard
@@ -89,82 +109,53 @@ const STEPS: Step[] = [
 export default function OnboardingHome() {
   const { loading: authLoading, email } = useRequireAuth();
   const navigate = useNavigate();
-  const [infraState, setInfraState] = useState<StepState>("loading");
-  const [teamState, setTeamState]   = useState<StepState>("loading");
-  const [auditorState, setAuditorState] = useState<StepState>("loading");
+  // One call, and the backend decides what is done — not this page.
+  //
+  // Until now the wizard worked that out itself from three separate
+  // endpoints. That is fine for drawing a bar, but the backend also records
+  // when a step was first completed, and a completion the client asserted
+  // would be a tick box by another name. The whole design rests on there
+  // being no tick box: a step counts as done because the system can see it
+  // is, not because somebody says so.
+  //
+  // The recorded moment is what the intelligence layer and the analytics
+  // dashboard need — neither can answer "how long has this customer been
+  // stuck here" without it.
+  const [progress, setProgress] = useState<ProgressResponse | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
 
-  // Step 1 — same check used by Infrastructure.tsx, kept in sync
-  // deliberately rather than introducing a second source of truth.
   useEffect(() => {
     if (authLoading || !email) return;
     (async () => {
       try {
-        const resp = await fetch(`${getApiBase()}/get-dashboard-data?email=${encodeURIComponent(email)}`, {
+        const resp = await fetch(`${getApiBase()}/onboarding/progress`, {
           cache: "no-store",
           headers: authHeader(),
         });
-        const data = await resp.json();
-        if (data.needs_onboarding || data.status === "disconnected") {
-          setInfraState("not_done");
-        } else {
-          setInfraState("done");
-        }
-      } catch {
-        setInfraState("not_done");
-      }
-    })();
-  }, [authLoading, email]);
-
-  // Step 2 — "done" once at least one other member has joined or has a
-  // pending invite. Fails gracefully to "not_done" while /team isn't
-  // deployed yet (see comment above).
-  useEffect(() => {
-    if (authLoading || !email) return;
-    (async () => {
-      try {
-        const resp = await fetch(`${getApiBase()}/team`, { cache: "no-store", headers: authHeader() });
         if (!resp.ok) throw new Error(String(resp.status));
-        const data = await resp.json();
-        const hasGrownTheTeam = (data.members?.length || 0) > 1 || (data.pending_invites?.length || 0) > 0;
-        setTeamState(hasGrownTheTeam ? "done" : "not_done");
+        setProgress(await resp.json());
       } catch {
-        setTeamState("not_done");
-      }
-    })();
-  }, [authLoading, email]);
-
-  // Step 3 — "done" once at least one audit engagement has been created.
-  // Fails gracefully to "not_done" if the call fails for any reason — this
-  // page must never be the thing that blocks someone from onboarding.
-  useEffect(() => {
-    if (authLoading || !email) return;
-    (async () => {
-      try {
-        const resp = await fetch(`${getApiBase()}/auditors/engagements`, { cache: "no-store", headers: authHeader() });
-        if (!resp.ok) throw new Error(String(resp.status));
-        const data = await resp.json();
-        setAuditorState((data.engagements?.length || 0) > 0 ? "done" : "not_done");
-      } catch {
-        setAuditorState("not_done");
+        // This is the first page a new customer sees. If something behind it
+        // does not answer, it still has to render — every step then reads as
+        // not done rather than taking the page down.
+        setLoadFailed(true);
       }
     })();
   }, [authLoading, email]);
 
   const stateFor = (step: Step): StepState => {
     if (!step.available) return "unavailable";
-    if (step.id === "infrastructure") return infraState;
-    if (step.id === "team") return teamState;
-    if (step.id === "auditor") return auditorState;
-    return "not_done";
+    const found = progress?.steps.find(s => s.step === step.id);
+    return found?.done ? "done" : "not_done";
   };
 
   const doneCount = STEPS.filter(s => stateFor(s) === "done").length;
   const progressPct = Math.round((doneCount / STEPS.length) * 100);
 
-  if (authLoading || infraState === "loading" || teamState === "loading" || auditorState === "loading") return (
+  if (authLoading || (!progress && !loadFailed)) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#080b12", color: "#64748b", fontSize: 14 }}>
       Loading…
     </div>

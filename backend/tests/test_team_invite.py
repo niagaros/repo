@@ -998,3 +998,96 @@ class TestRoutePathStripsStage:
         with patch.object(ah, "Database"):
             resp = ah.lambda_handler(self._event("/default/auditor/scope", "default"), None)
         assert resp["statusCode"] == 401
+
+
+class TestOnboardingProgress:
+    """
+    The wizard used to decide for itself which steps were done, from three
+    separate endpoints. That is fine for drawing a bar, but once completion
+    is also recorded, a caller asserting it would be a tick box by another
+    name — and the functional design rests on there being no tick box.
+
+    So every signal is read server-side here, and the first completion is
+    written as a side effect.
+    """
+
+    def _event(self):
+        return {
+            "requestContext": {"http": {"method": "GET"}},
+            "rawPath": "/onboarding/progress",
+            "pathParameters": {},
+            "body": None,
+        }
+
+    def _db(self, accounts=0, members=1, invites=0, engagements=0, completions=None):
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.list_organization_cloud_accounts.return_value = [{"id": f"a{i}"} for i in range(accounts)]
+        db.count_organization_members.return_value = members
+        db.count_pending_invites.return_value = invites
+        db.count_organization_engagements.return_value = engagements
+        db.get_step_completions.return_value = completions or {}
+        return db
+
+    def _call(self, db):
+        import api.team_handler as th
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            return th.handle_onboarding_progress(self._event(), db)
+
+    def test_a_fresh_organization_has_nothing_done(self):
+        resp = self._call(self._db())
+        body = json.loads(resp["body"])
+        assert resp["statusCode"] == 200
+        assert body["completed_count"] == 0
+        assert body["total_count"] == 7
+        assert all(s["done"] is False for s in body["steps"])
+
+    def test_a_connected_cloud_account_completes_the_first_step(self):
+        db = self._db(accounts=1)
+        body = json.loads(self._call(db)["body"])
+        assert body["steps"][0]["step"] == "infrastructure"
+        assert body["steps"][0]["done"] is True
+        db.record_step_completion.assert_any_call(ADMIN["organization_id"], "infrastructure")
+
+    def test_a_pending_invite_counts_as_a_grown_team(self):
+        """The step measures what the admin has to do, not what somebody
+        else still has to decide."""
+        body = json.loads(self._call(self._db(members=1, invites=1))["body"])
+        team = next(s for s in body["steps"] if s["step"] == "team")
+        assert team["done"] is True
+
+    def test_unbuilt_steps_are_reported_as_unavailable(self):
+        """They are listed so the wizard and this endpoint agree on what the
+        journey is — leaving them out would let the progress bar claim a
+        completeness that does not exist."""
+        body = json.loads(self._call(self._db())["body"])
+        later = [s for s in body["steps"] if s["step"] in ("workspace", "compliance", "governance", "training")]
+        assert len(later) == 4
+        assert all(s["available"] is False and s["done"] is False for s in later)
+
+    def test_nothing_is_recorded_for_a_step_that_is_not_done(self):
+        db = self._db(accounts=0, members=1, invites=0, engagements=0)
+        self._call(db)
+        db.record_step_completion.assert_not_called()
+
+    def test_the_first_completion_moment_is_returned_not_recomputed(self):
+        """A step undone and redone keeps its original moment: the question
+        is how long this customer took to get here, not when it was last
+        true."""
+        db = self._db(accounts=1, completions={"infrastructure": "2026-09-15 10:00:00"})
+        body = json.loads(self._call(db)["body"])
+        assert body["steps"][0]["completed_at"] == "2026-09-15 10:00:00"
+
+    def test_without_a_token_there_is_no_progress_to_report(self):
+        import api.team_handler as th
+        resp = th.handle_onboarding_progress(self._event(), MagicMock())
+        assert resp["statusCode"] == 401
+
+    def test_route_dispatches_to_progress(self):
+        import api.team_handler as th
+        db = self._db()
+        with patch.object(th, "Database", return_value=db), \
+             patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = th.lambda_handler(self._event(), None)
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"])["total_count"] == 7

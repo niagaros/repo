@@ -417,12 +417,77 @@ def _route_path(event: dict) -> str:
     return path
 
 
+# The seven stages of the onboarding wizard, in order. Steps beyond the
+# three that are built have no signal yet; they are listed so the wizard and
+# this endpoint agree on what the journey is, and so a stage that gets built
+# later only needs its check added here.
+ONBOARDING_STEPS = [
+    "infrastructure", "team", "auditor",
+    "workspace", "compliance", "governance", "training",
+]
+
+
+def handle_onboarding_progress(event: dict, db: Database) -> dict:
+    """
+    Which onboarding steps this organization has completed, decided here
+    rather than by the page asking.
+
+    The wizard used to work this out itself from three separate endpoints.
+    That is fine for drawing a progress bar, but the moment a step's
+    completion is also *recorded*, the caller would be asserting it — and a
+    recorded completion that the client claimed is a tick box by another
+    name, which is exactly what this design avoids (see the functional
+    design, "there is no checkbox anywhere").
+
+    So every signal is read from the database here, and a first completion is
+    written as a side effect. Calling this repeatedly is safe: the write does
+    nothing once the step is on record.
+    """
+    caller = _get_caller(event, db)
+    if not caller:
+        return _response(401, {"error": "unauthorized"})
+
+    org = caller["organization_id"]
+
+    done = {
+        # A connected cloud account that has not fallen away. This mirrors
+        # what the dashboard endpoint reports, but reads it from the same
+        # place the rest of this handler does.
+        "infrastructure": len(db.list_organization_cloud_accounts(org)) > 0,
+        # Someone besides the admin, or an invitation on its way. The step
+        # measures what the admin has to do, not what an invitee still has
+        # to decide.
+        "team": db.count_organization_members(org) > 1 or db.count_pending_invites(org) > 0,
+        "auditor": db.count_organization_engagements(org) > 0,
+    }
+
+    for step, is_done in done.items():
+        if is_done:
+            db.record_step_completion(org, step)
+
+    completions = db.get_step_completions(org)
+    return _response(200, {
+        "steps": [
+            {
+                "step": step,
+                "done": done.get(step, False),
+                "available": step in done,
+                "completed_at": completions.get(step),
+            }
+            for step in ONBOARDING_STEPS
+        ],
+        "completed_count": sum(1 for s in ONBOARDING_STEPS if done.get(s)),
+        "total_count": len(ONBOARDING_STEPS),
+    })
+
+
 def lambda_handler(event, context):
     """
     Proposed routes (payload format v2.0, matching the other Lambdas behind
     hzf92ft6j7 — see api_inventory.md). Not yet registered on API Gateway;
     that's a manual deploy step, same as everything else in this repo.
 
+        GET    /onboarding/progress        -> handle_onboarding_progress
         GET    /team                       -> handle_list_team (includes mfa_required)
         GET    /team/audit-log             -> handle_view_audit_log
         GET    /team/cloud-accounts        -> handle_list_organization_cloud_accounts
@@ -444,6 +509,8 @@ def lambda_handler(event, context):
     try:
         db = Database()
 
+        if method == "GET" and path.rstrip("/") == "/onboarding/progress":
+            return handle_onboarding_progress(event, db)
         if method == "GET" and path.rstrip("/") == "/team":
             return handle_list_team(event, db)
         if method == "GET" and path.rstrip("/") == "/team/audit-log":

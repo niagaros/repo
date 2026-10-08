@@ -12,6 +12,7 @@ import GitHub          from "./settings/GitHub";
 import Infrastructure  from "./settings/Infrastructure";
 import Team            from "./settings/Team";
 import Auditors        from "./settings/Auditors";
+import Workspace       from "./settings/Workspace";
 import AuditorPortal   from "./auditor/AuditorPortal";
 import OnboardingHome  from "./onboarding/OnboardingHome";
 import MfaSetup        from "./mfa/MfaSetup";
@@ -58,6 +59,7 @@ async function bootstrap() {
           <Route path="/settings/infrastructure" element={<Infrastructure />} />
           <Route path="/settings/team"           element={<Team           />} />
           <Route path="/settings/auditor"        element={<Auditors      />} />
+          <Route path="/settings/workspace"      element={<Workspace     />} />
           <Route path="/auditor"                 element={<AuditorPortal />} />
           <Route path="/settings/github"         element={<GitHub        />} />
 
