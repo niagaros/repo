@@ -511,6 +511,62 @@ class Database:
         logger.warning(f"Database: deactivated user {user_id} in organization {organization_id}")
         return updated > 0
 
+    # ── onboarding progress (DV2; the anchor DV4 and DV5 need) ────────
+
+    def record_step_completion(self, organization_id: str, step: str) -> None:
+        """
+        Records the moment a step was first completed. Does nothing if it is
+        already recorded — the wizard reports the same state on every page
+        load, so this has to be safe to call repeatedly.
+
+        Only the first completion is kept. A step that is undone and redone
+        keeps its original moment, because what the intelligence layer and
+        the analytics dashboard ask is how long a customer took to get here,
+        not when it was last true.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO onboarding_step_completions (organization_id, step)
+                VALUES (%s, %s)
+                ON CONFLICT (organization_id, step) DO NOTHING
+            """, (organization_id, step))
+        self.conn.commit()
+
+    def get_step_completions(self, organization_id: str) -> dict:
+        """Step -> when it was first completed, for this organization."""
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT step, completed_at
+                FROM onboarding_step_completions
+                WHERE organization_id = %s
+            """, (organization_id,))
+            rows = cur.fetchall()
+        return {r[0]: str(r[1]) for r in rows}
+
+    def count_organization_members(self, organization_id: str) -> int:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM users WHERE organization_id = %s AND status = 'active'",
+                (organization_id,),
+            )
+            return cur.fetchone()[0]
+
+    def count_pending_invites(self, organization_id: str) -> int:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM team_invites WHERE organization_id = %s AND status = 'pending'",
+                (organization_id,),
+            )
+            return cur.fetchone()[0]
+
+    def count_organization_engagements(self, organization_id: str) -> int:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM audit_engagements WHERE organization_id = %s",
+                (organization_id,),
+            )
+            return cur.fetchone()[0]
+
     def list_organization_cloud_accounts(self, organization_id: str) -> list:
         """
         cloud_accounts has no organization_id of its own, so scoping goes
