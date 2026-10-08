@@ -149,6 +149,16 @@ def handle_close_engagement(event: dict, db: Database, engagement_id: str) -> di
     if not engagement:
         return _response(404, {"error": "engagement not found in your organization"})
 
+    # An engagement that has run its end date is already over; recording it as
+    # "ended early" would put a decision in the audit trail that nobody made.
+    # The interface only offers the button on an active engagement, but the
+    # route has to hold that line too.
+    try:
+        if date.fromisoformat(str(engagement["end_date"])) < date.today():
+            return _response(409, {"error": "this engagement has already expired"})
+    except ValueError:
+        pass
+
     if not db.close_engagement(engagement_id, caller["organization_id"]):
         return _response(409, {"error": "this engagement is already closed"})
 

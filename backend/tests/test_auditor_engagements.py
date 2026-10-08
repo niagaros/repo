@@ -766,3 +766,32 @@ class TestHandleCloseEngagement:
              patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
             resp = ah.lambda_handler(self._event(), None)
         assert resp["statusCode"] == 200
+
+    def test_cannot_close_an_already_expired_engagement(self):
+        """Recording an expired engagement as "ended early" would put a
+        decision in the audit trail that nobody made — the whole point of
+        separating the two is that they are different events."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        gisteren = (date.today() - timedelta(days=1)).isoformat()
+        db.get_engagement.return_value = {"id": "e1", "name": "Old Audit", "end_date": gisteren}
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_close_engagement(self._event(), db, "e1")
+        assert resp["statusCode"] == 409
+        assert "expired" in json.loads(resp["body"])["error"]
+        db.close_engagement.assert_not_called()
+
+    def test_an_engagement_ending_today_can_still_be_closed(self):
+        """Access runs to the end of the end date, so today is still a day
+        on which ending it early means something."""
+        import api.auditor_handler as ah
+        import api.team_handler as th
+        db = MagicMock()
+        db.get_user_by_email.return_value = ADMIN
+        db.get_engagement.return_value = {"id": "e1", "name": "Ends today", "end_date": date.today().isoformat()}
+        db.close_engagement.return_value = True
+        with patch.object(th, "_get_authenticated_email", return_value=ADMIN["email"]):
+            resp = ah.handle_close_engagement(self._event(), db, "e1")
+        assert resp["statusCode"] == 200
