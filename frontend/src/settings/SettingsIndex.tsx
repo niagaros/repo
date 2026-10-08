@@ -75,7 +75,7 @@ export default function SettingsIndex() {
         <SettingCard
           icon="🚀"
           title="Onboarding"
-          desc="Track your setup progress across cloud, team, auditors, workspace and training"
+          desc="Track your setup progress across every stage, and pick up where you left off"
           href="/onboarding"
         />
       </section>
