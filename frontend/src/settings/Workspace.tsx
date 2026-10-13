@@ -78,10 +78,10 @@ interface Category {
   providers: Provider[];
 }
 
-// The six categories are the ones named in the onboarding step itself
-// ("source control, ticketing, communication, identity, SIEM and CI/CD").
-// The providers listed per category follow the issue; only the three marked
-// "ready" or "elsewhere" have anything behind them today.
+// The six categories and their eighteen providers are taken verbatim from
+// issue #268's "Proposed Solution", in the order the issue lists them, so
+// that this page and the issue can be compared line by line. Only the three
+// marked "ready" or "elsewhere" have anything behind them today.
 const CATALOGUE: Category[] = [
   {
     id: "source-control",
@@ -118,8 +118,13 @@ const CATALOGUE: Category[] = [
     name: "Identity",
     purpose: "Synchronize users and groups from the identity provider.",
     providers: [
-      { id: "entra", name: "Microsoft Entra ID", availability: "planned", note: "" },
       { id: "okta", name: "Okta", availability: "planned", note: "" },
+      { id: "entra", name: "Microsoft Entra ID", availability: "planned", note: "" },
+      { id: "google-workspace", name: "Google Workspace", availability: "planned", note: "" },
+      // Niagaros already authenticates its own users against Cognito. This
+      // entry is about connecting a customer's Cognito pool, which is a
+      // different thing, and is listed because the issue lists it.
+      { id: "cognito", name: "AWS Cognito", availability: "planned", note: "" },
     ],
   },
   {
@@ -127,8 +132,9 @@ const CATALOGUE: Category[] = [
     name: "SIEM",
     purpose: "Forward security events to the central log platform.",
     providers: [
-      { id: "splunk", name: "Splunk", availability: "planned", note: "" },
       { id: "sentinel", name: "Microsoft Sentinel", availability: "planned", note: "" },
+      { id: "splunk", name: "Splunk", availability: "planned", note: "" },
+      { id: "elastic", name: "Elastic", availability: "planned", note: "" },
     ],
   },
   {
@@ -138,7 +144,6 @@ const CATALOGUE: Category[] = [
     providers: [
       { id: "github-actions", name: "GitHub Actions", availability: "planned", note: "" },
       { id: "gitlab-ci", name: "GitLab CI", availability: "planned", note: "" },
-      { id: "jenkins", name: "Jenkins", availability: "planned", note: "" },
     ],
   },
 ];
