@@ -459,6 +459,12 @@ def handle_onboarding_progress(event: dict, db: Database) -> dict:
         # to decide.
         "team": db.count_organization_members(org) > 1 or db.count_pending_invites(org) > 0,
         "auditor": db.count_organization_engagements(org) > 0,
+        # A connected workspace integration on any of this organization's
+        # cloud accounts. One is enough: the step asks to connect a
+        # workspace, not to connect all of them — the same bar step 1 sets,
+        # where AWS completes it while five other providers are still in
+        # development.
+        "workspace": db.count_organization_integrations(org) > 0,
     }
 
     for step, is_done in done.items():

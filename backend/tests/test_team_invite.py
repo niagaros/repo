@@ -1019,13 +1019,14 @@ class TestOnboardingProgress:
             "body": None,
         }
 
-    def _db(self, accounts=0, members=1, invites=0, engagements=0, completions=None):
+    def _db(self, accounts=0, members=1, invites=0, engagements=0, integrations=0, completions=None):
         db = MagicMock()
         db.get_user_by_email.return_value = ADMIN
         db.list_organization_cloud_accounts.return_value = [{"id": f"a{i}"} for i in range(accounts)]
         db.count_organization_members.return_value = members
         db.count_pending_invites.return_value = invites
         db.count_organization_engagements.return_value = engagements
+        db.count_organization_integrations.return_value = integrations
         db.get_step_completions.return_value = completions or {}
         return db
 
@@ -1061,9 +1062,34 @@ class TestOnboardingProgress:
         journey is — leaving them out would let the progress bar claim a
         completeness that does not exist."""
         body = json.loads(self._call(self._db())["body"])
-        later = [s for s in body["steps"] if s["step"] in ("workspace", "compliance", "governance", "training")]
-        assert len(later) == 4
+        later = [s for s in body["steps"] if s["step"] in ("compliance", "governance", "training")]
+        assert len(later) == 3
         assert all(s["available"] is False and s["done"] is False for s in later)
+
+    def test_workspace_is_available_once_the_page_behind_it_exists(self):
+        """Step 4 moved from unavailable to available when the Workspace hub
+        was built. Nothing is connected here, so it reports as available but
+        not done — the distinction the three earlier steps already make."""
+        body = json.loads(self._call(self._db(integrations=0))["body"])
+        workspace = next(s for s in body["steps"] if s["step"] == "workspace")
+        assert workspace["available"] is True
+        assert workspace["done"] is False
+
+    def test_a_connected_integration_completes_the_workspace_step(self):
+        db = self._db(integrations=1)
+        body = json.loads(self._call(db)["body"])
+        workspace = next(s for s in body["steps"] if s["step"] == "workspace")
+        assert workspace["done"] is True
+        db.record_step_completion.assert_any_call(ADMIN["organization_id"], "workspace")
+
+    def test_one_integration_is_enough_for_the_workspace_step(self):
+        """The step asks to connect a workspace, not to fill every category.
+        That is the same bar step 1 sets, where AWS completes it while five
+        other providers are still in development."""
+        body = json.loads(self._call(self._db(integrations=3))["body"])
+        workspace = next(s for s in body["steps"] if s["step"] == "workspace")
+        assert workspace["done"] is True
+        assert body["completed_count"] == 1
 
     def test_nothing_is_recorded_for_a_step_that_is_not_done(self):
         db = self._db(accounts=0, members=1, invites=0, engagements=0)

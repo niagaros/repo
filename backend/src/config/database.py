@@ -567,6 +567,36 @@ class Database:
             )
             return cur.fetchone()[0]
 
+    def count_organization_integrations(self, organization_id: str) -> int:
+        """
+        Workspace integrations anywhere in this organization (issue #268,
+        step 4 of the onboarding).
+
+        workspace_integrations hangs off a cloud account rather than an
+        organization, because what an integration carries across are that
+        account's findings. Reaching the organization therefore takes the
+        same detour as list_organization_cloud_accounts: owner_email ->
+        users -> organization_id. Following the existing path rather than
+        inventing a second one keeps both answers consistent — an account
+        that counts as "connected" in step 1 is the same account whose
+        integration counts here.
+
+        Only the existence of a connection is asked for, not whether a
+        project has been selected. Selecting a project is what makes
+        tickets possible, but the step itself is "connect a workspace",
+        and the wizard should not raise a bar the issue does not set. The
+        Workspace page flags a connection without a project separately.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM workspace_integrations wi
+                JOIN cloud_accounts ca ON ca.id = wi.cloud_account_id
+                JOIN users u           ON u.email = ca.owner_email
+                WHERE u.organization_id = %s
+            """, (organization_id,))
+            return cur.fetchone()[0]
+
     def list_organization_cloud_accounts(self, organization_id: str) -> list:
         """
         cloud_accounts has no organization_id of its own, so scoping goes
