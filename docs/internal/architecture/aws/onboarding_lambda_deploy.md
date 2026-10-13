@@ -144,3 +144,52 @@ applicatie gaan zitten en werkt dezelfde code niet meer op een tweede stage.
 meegeleverde psycopg2 op deze runtime werkt, dat de rol het
 databasewachtwoord mag lezen, dat de functie de database bereikt, en dat
 een verzoek zonder geldig token wordt geweigerd.
+
+---
+
+## Het pakket opnieuw bouwen
+
+Het bovenstaande beschrijft de inhoud van het pakket, maar niet hoe je het
+maakt. Dat scheelde bij de tweede uitrol een kwartier uitzoekwerk, dus hier
+staat de reeks. Vanuit `backend/src`:
+
+    api/  auth/  config/                  uit backend/src
+    psycopg2/  psycopg2_binary.libs/      uit backend/src/psycopg2_lambda
+    zonder api/lambda_handler.py
+    zonder __pycache__ en *.pyc
+
+Die mappen samen in een zip waarvan de inhoud in de wortel staat — niet in
+een submap, anders vindt Lambda `api.team_handler` niet. Het resultaat is
+ongeveer 4,18 MB.
+
+Uitrollen, voor beide functies hetzelfde bestand:
+
+    aws lambda update-function-code --function-name team-handler \
+      --zip-file fileb://C:/Users/hicham/repo/scratch/onboarding-lambda.zip
+    aws lambda update-function-code --function-name auditor-handler \
+      --zip-file fileb://C:/Users/hicham/repo/scratch/onboarding-lambda.zip
+
+`fileb://` is een URL en geen Windows-pad: schuine strepen vooruit, anders
+volgt een ParamValidation-fout.
+
+Controleer daarna dat beide functies dezelfde `CodeSha256` hebben. Lopen die
+uiteen, dan draait er een `auditor_handler` die uit een andere versie van
+`team_handler` importeert dan die ernaast staat.
+
+    aws lambda get-function-configuration --function-name team-handler \
+      --query "[LastUpdateStatus,State,CodeSha256]" --output text
+
+`LastUpdateStatus` staat vlak na de uitrol op `InProgress`; dat wordt vanzelf
+`Successful`.
+
+## Tweede uitrol (13 oktober 2026)
+
+Aanleiding: stap 4 van de onboarding vinkt zichzelf af zodra er een
+workspace-integratie is (`count_organization_integrations`). Beide functies
+bijgewerkt, hash `+5bFi25YY1pKEM2QehOKkqUugyLZwI15l+icVqlMdh0=`, rookproef
+opnieuw 401 op `/onboarding/progress`, `/team` en `/auditor/scope`.
+
+Geen migratie gedraaid: migratie 031 legt `workspace_integrations` en
+`integration_tickets` vast in de repository, maar die tabellen bestaan al in
+productie — de handler van #279 maakt ze zelf aan. De migratie is er voor het
+geschreven geheugen, niet voor de database.
