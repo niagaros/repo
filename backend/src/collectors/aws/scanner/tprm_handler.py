@@ -39,6 +39,8 @@ from datetime import date, datetime, timezone
 import boto3
 import psycopg2
 
+from collectors.aws.scanner.notification_lib import create_notification
+
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
@@ -327,6 +329,27 @@ CREATE TABLE IF NOT EXISTS tprm_remediation_tasks (
     resolved_at         TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS tprm_remediation_tasks_vendor_idx ON tprm_remediation_tasks(vendor_id);
+-- Deleting a vendor must not destroy its own audit trail (ON DELETE CASCADE did
+-- exactly that) — the log now survives the vendor, with the vendor's name snapshotted
+-- onto each of its rows (by _delete_vendor, before the delete) so the entries stay
+-- meaningful once the vendor itself is gone.
+ALTER TABLE tprm_audit_log ALTER COLUMN vendor_id DROP NOT NULL;
+ALTER TABLE tprm_audit_log ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255);
+DO $$
+DECLARE
+    fk_name text;
+BEGIN
+    SELECT tc.constraint_name INTO fk_name
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+    WHERE tc.table_name = 'tprm_audit_log' AND tc.constraint_type = 'FOREIGN KEY'
+      AND kcu.column_name = 'vendor_id' AND tc.constraint_name != 'tprm_audit_log_vendor_id_fkey_set_null';
+    IF fk_name IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE tprm_audit_log DROP CONSTRAINT %I', fk_name);
+        EXECUTE 'ALTER TABLE tprm_audit_log ADD CONSTRAINT tprm_audit_log_vendor_id_fkey_set_null '
+                'FOREIGN KEY (vendor_id) REFERENCES tprm_vendors(id) ON DELETE SET NULL';
+    END IF;
+END $$;
 """
 
 ADMIN_MIGRATION_SQL = BOOTSTRAP_SQL + """
@@ -349,7 +372,11 @@ def _compute_risk(criticality, certifications, assessments, country=None,
     points = CRITICALITY_RISK_POINTS.get(criticality, 20)
     today = date.today()
 
-    valid_certs = [c for c in certifications if c["expiry_date"] and c["expiry_date"] >= today]
+    # A certification record with no uploaded file (s3_key) is an unverifiable claim —
+    # a future expiry_date typed into a form, nothing else — and must not lower the
+    # risk score the same way a real, evidenced certificate does.
+    valid_certs = [c for c in certifications
+                   if c["expiry_date"] and c["expiry_date"] >= today and c.get("s3_key")]
     if not valid_certs:
         points += NO_VALID_CERTIFICATION_POINTS
     else:
@@ -431,7 +458,7 @@ def _list_vendors(cur, cloud_account_id):
 
     for v in vendors:
         cur.execute("""
-            SELECT id, certification_type, issued_date, expiry_date, filename, uploaded_at
+            SELECT id, certification_type, issued_date, expiry_date, filename, uploaded_at, s3_key
             FROM tprm_certifications WHERE vendor_id = %s ORDER BY expiry_date NULLS LAST
         """, (v["id"],))
         cert_raw_rows = cur.fetchall()
@@ -441,6 +468,7 @@ def _list_vendors(cur, cloud_account_id):
             "expiry_date": r[3].isoformat() if r[3] else None,
             "filename": r[4], "uploaded_at": r[5].isoformat(),
             "computed_status": _cert_status({"expiry_date": r[3]}),
+            "has_file": bool(r[6]),
         } for r in cert_raw_rows]
         v["certifications"] = certs
 
@@ -495,7 +523,7 @@ def _list_vendors(cur, cloud_account_id):
             "overdue": bool(r[3] and r[3] < date.today() and r[4] in ("open", "in_progress")),
         } for r in cur.fetchall()]
 
-        raw_certs = [{"expiry_date": r[3]} for r in cert_raw_rows]
+        raw_certs = [{"expiry_date": r[3], "s3_key": r[6]} for r in cert_raw_rows]
         v["risk"] = _compute_risk(v["criticality"], raw_certs, assessments, v["country"],
                                    v["handles_sensitive_data"], v["website_tls_valid"])
 
@@ -573,6 +601,21 @@ def _advance_onboarding(conn, vendor_id, stage, actor):
         raise ValueError(f"stage must be one of {ONBOARDING_STAGES}")
     with conn:
         with conn.cursor() as cur:
+            # A real state machine must not let a caller jump straight to a later
+            # stage (e.g. "active") without passing through the required reviews —
+            # only the immediate next stage, or moving back, is allowed.
+            cur.execute("SELECT onboarding_stage FROM tprm_vendors WHERE id = %s", (vendor_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("vendor not found")
+            current = row[0] or ONBOARDING_STAGES[0]
+            current_idx = ONBOARDING_STAGES.index(current) if current in ONBOARDING_STAGES else 0
+            target_idx = ONBOARDING_STAGES.index(stage)
+            if target_idx > current_idx + 1:
+                raise ValueError(
+                    f"cannot advance from '{current}' straight to '{stage}' — "
+                    f"the required review stages in between must be completed first"
+                )
             if stage == "active":
                 cur.execute("""
                     UPDATE tprm_vendors SET onboarding_stage = %s, status = 'active', updated_at = NOW()
@@ -624,8 +667,16 @@ def _notify_approval_needed(vendor_name, owner_name, owner_email, stage):
 def _delete_vendor(conn, vendor_id, actor):
     with conn:
         with conn.cursor() as cur:
-            cur.execute("INSERT INTO tprm_audit_log (vendor_id, actor, action) VALUES (%s, %s, 'deleted')",
-                        (vendor_id, actor))
+            cur.execute("SELECT name FROM tprm_vendors WHERE id = %s", (vendor_id,))
+            row = cur.fetchone()
+            vendor_name = row[0] if row else None
+            cur.execute("INSERT INTO tprm_audit_log (vendor_id, vendor_name, actor, action) VALUES (%s, %s, %s, 'deleted')",
+                        (vendor_id, vendor_name, actor))
+            # Snapshot the name onto every earlier log row for this vendor too, before
+            # the FK's ON DELETE SET NULL clears vendor_id on all of them — the audit
+            # trail must remain readable, not just non-destroyed.
+            cur.execute("UPDATE tprm_audit_log SET vendor_name = %s WHERE vendor_id = %s AND vendor_name IS NULL",
+                        (vendor_name, vendor_id))
             cur.execute("DELETE FROM tprm_vendors WHERE id = %s", (vendor_id,))
 
 
@@ -789,6 +840,17 @@ def _answer_assessment_item(conn, item_id, answer, notes, actor):
         raise ValueError("answer must be one of yes, no, na, unknown")
     with conn:
         with conn.cursor() as cur:
+            # An approved assessment's answers must not be silently editable —
+            # that would let the record of what was actually approved change
+            # after the fact. update_assessment must reopen it (set it back to
+            # e.g. 'received') before any item on it can be answered again.
+            cur.execute("""
+                SELECT a.status FROM tprm_assessment_items i
+                JOIN tprm_assessments a ON a.id = i.assessment_id WHERE i.id = %s
+            """, (item_id,))
+            status_row = cur.fetchone()
+            if status_row and status_row[0] == "approved":
+                raise ValueError("this assessment is approved — reopen it before changing an answer")
             cur.execute("""
                 UPDATE tprm_assessment_items SET answer = %s, notes = %s, answered_at = NOW()
                 WHERE id = %s RETURNING assessment_id
@@ -849,7 +911,8 @@ def _get_evidence_package(cur, vendor_id):
     cur.execute("""
         SELECT id, name, category, criticality, business_owner, contact_email, website,
                status, onboarding_stage, country, registration_number, created_at,
-               contract_start_date, contract_end_date, contract_s3_key, contract_filename
+               contract_start_date, contract_end_date, contract_s3_key, contract_filename,
+               handles_sensitive_data, website_tls_valid
         FROM tprm_vendors WHERE id = %s
     """, (vendor_id,))
     row = cur.fetchone()
@@ -860,6 +923,7 @@ def _get_evidence_package(cur, vendor_id):
         "business_owner": row[4], "contact_email": row[5], "website": row[6],
         "status": row[7], "onboarding_stage": row[8], "country": row[9],
         "registration_number": row[10], "created_at": row[11].isoformat(),
+        "handles_sensitive_data": row[16], "website_tls_valid": row[17],
     }
     # AC (issue #261): evidence for an auditor must include "assessments,
     # certifications, contracts, and supporting documents" — contracts were
@@ -882,16 +946,18 @@ def _get_evidence_package(cur, vendor_id):
         FROM tprm_certifications WHERE vendor_id = %s
     """, (vendor_id,))
     certifications = []
+    raw_certs = []
     for r in cur.fetchall():
         entry = {"certification_type": r[1], "issued_date": r[2].isoformat() if r[2] else None,
                   "expiry_date": r[3].isoformat() if r[3] else None,
-                  "status": _cert_status({"expiry_date": r[3]}), "filename": r[5]}
+                  "status": _cert_status({"expiry_date": r[3]}), "filename": r[5], "has_file": bool(r[4])}
         if r[4]:
             entry["download_url"] = _s3().generate_presigned_url(
                 "get_object", Params={"Bucket": DOCS_BUCKET, "Key": r[4],
                                        "ResponseContentDisposition": f'attachment; filename="{r[5]}"'},
                 ExpiresIn=900)
         certifications.append(entry)
+        raw_certs.append({"expiry_date": r[3], "s3_key": r[4]})
 
     cur.execute("""
         SELECT id, questionnaire_type, domain, status, approved_at, s3_key, filename
@@ -900,7 +966,11 @@ def _get_evidence_package(cur, vendor_id):
     assessments = []
     for r in cur.fetchall():
         entry = {"questionnaire_type": r[1], "domain": r[2], "status": r[3],
-                  "approved_at": r[4].isoformat() if r[4] else None, "filename": r[6]}
+                  "approved_at": r[4].isoformat() if r[4] else None, "filename": r[6],
+                  # AC (issue #261): evidence for an auditor must include the actual
+                  # answers given, not just that a questionnaire exists and its status —
+                  # these were missing from the package entirely until now.
+                  "items": _list_assessment_items(cur, r[0])}
         if r[5]:
             entry["download_url"] = _s3().generate_presigned_url(
                 "get_object", Params={"Bucket": DOCS_BUCKET, "Key": r[5],
@@ -914,9 +984,12 @@ def _get_evidence_package(cur, vendor_id):
     incidents = [{"title": r[0], "description": r[1], "source_url": r[2],
                   "occurred_date": r[3].isoformat() if r[3] else None} for r in cur.fetchall()]
 
-    raw_certs = [{"expiry_date": c.get("expiry_date") and date.fromisoformat(c["expiry_date"])} for c in certifications]
+    # Same real inputs as the vendor overview's risk score (handles_sensitive_data,
+    # website_tls_valid) — omitting them here made the evidence package report a
+    # different, lower risk score for the same vendor than the overview shows.
     risk = _compute_risk(vendor["criticality"], raw_certs,
-                          [{"status": a["status"]} for a in assessments], vendor["country"])
+                          [{"status": a["status"]} for a in assessments], vendor["country"],
+                          vendor["handles_sensitive_data"], vendor["website_tls_valid"])
 
     return {"vendor": vendor, "risk": risk, "certifications": certifications,
             "assessments": assessments, "incidents": incidents, "contract": contract,
@@ -1051,6 +1124,13 @@ def _check_and_notify(conn, cloud_account_id):
                 expiring.append({"vendor": v["name"], "certification_type": c["certification_type"],
                                   "expiry_date": c["expiry_date"], "status": c["computed_status"],
                                   "email": v["business_owner_email"]})
+                create_notification(
+                    conn, cloud_account_id, domain="tprm",
+                    event_type="vendor_cert_expired" if c["computed_status"] == "expired" else "vendor_cert_expiring",
+                    severity="P1" if c["computed_status"] == "expired" else "P2",
+                    title=f"Certificate {c['computed_status'].replace('_', ' ')}: {c['certification_type']} ({v['name']})",
+                    description=f"Expires {c['expiry_date']}.", resource_link=f"tprm.html?vendor_id={v['id']}",
+                )
 
         # "Contract renewals" (Continuous Monitoring, issue #261) — real
         # date comparison against the vendor's own recorded contract end date.
@@ -1058,6 +1138,13 @@ def _check_and_notify(conn, cloud_account_id):
             days_left = (date.fromisoformat(v["contract_end_date"]) - today).days
             if days_left <= CERTIFICATION_EXPIRING_SOON_DAYS:
                 contracts_ending.append({"vendor": v["name"], "end_date": v["contract_end_date"], "days_left": days_left})
+                create_notification(
+                    conn, cloud_account_id, domain="tprm", event_type="vendor_contract_ending",
+                    severity="P1" if days_left <= 0 else "P2",
+                    title=f"Contract {'ended' if days_left <= 0 else 'ending soon'}: {v['name']}",
+                    description=f"Ends {v['contract_end_date']} ({days_left} days).",
+                    resource_link=f"tprm.html?vendor_id={v['id']}",
+                )
 
         # Real technical check, run here (daily) rather than on every page
         # load — refresh if never checked or stale (>7 days).
@@ -1068,9 +1155,19 @@ def _check_and_notify(conn, cloud_account_id):
         for t in v["remediation_tasks"]:
             if t["overdue"]:
                 overdue_tasks.append({"vendor": v["name"], "task": t["title"], "due_date": t["due_date"]})
+                create_notification(
+                    conn, cloud_account_id, domain="workflow", event_type="tprm_remediation_overdue",
+                    severity="P2", title=f"Overdue: {t['title']} ({v['name']})",
+                    description=f"Was due {t['due_date']}.", resource_link=f"tprm.html?vendor_id={v['id']}",
+                )
 
         if v["risk"]["level"] == "critical":
             critical.append({"vendor": v["name"], "score": v["risk"]["score"], "email": v["business_owner_email"]})
+            create_notification(
+                conn, cloud_account_id, domain="risk", event_type="critical_vendor_risk", severity="P1",
+                title=f"Critical vendor risk: {v['name']}",
+                description=f"Risk score {v['risk']['score']}.", resource_link=f"tprm.html?vendor_id={v['id']}",
+            )
             # Acceptance criterion 4 (issue #261): "...alerts and
             # remediation workflows are triggered." Real automation: open
             # one real, trackable remediation task per vendor that just
@@ -1093,7 +1190,37 @@ def _check_and_notify(conn, cloud_account_id):
     if not expiring and not critical and not contracts_ending and not overdue_tasks:
         return {"expiring_count": 0, "critical_count": 0, "email": {"sent": False, "reason": "nothing_to_report"}}
 
-    if not TPRM_SENDER_EMAIL or not TPRM_RECIPIENT_EMAILS:
+    # Acceptance criterion (issue #274 AC9): "related events are grouped
+    # into a single notification through correlation." Real, rule-based
+    # correlation — not a fabricated "AI correlation engine" — grouping
+    # everything this SAME monitoring run found for this account into one
+    # digest notification, in addition to (not instead of) the individual
+    # per-vendor ones, which stay for their deep links. Only worth a
+    # digest when there's actually more than one real thing to group.
+    total_findings = len(expiring) + len(critical) + len(contracts_ending) + len(overdue_tasks)
+    if total_findings > 1:
+        parts = []
+        if critical:
+            parts.append(f"{len(critical)} vendor(s) now critical risk")
+        if expiring:
+            parts.append(f"{len(expiring)} certification(s) expiring/expired")
+        if contracts_ending:
+            parts.append(f"{len(contracts_ending)} contract(s) ending soon")
+        if overdue_tasks:
+            parts.append(f"{len(overdue_tasks)} overdue remediation task(s)")
+        create_notification(
+            conn, cloud_account_id, domain="tprm", event_type="tprm_correlated_digest",
+            severity="P1" if critical else "P2",
+            title=f"TPRM monitoring: {total_findings} related findings from today's run",
+            description="; ".join(parts) + ".", resource_link="tprm.html",
+        )
+
+    # Only the sender identity is a hard requirement (SES needs a verified From
+    # address). TPRM_RECIPIENT_EMAILS is Niagaros' own internal list — it being
+    # unset must not also silence the email to the vendor's own owner (checked
+    # below, once recipients are known), which is the one AC (issue #261 AC3:
+    # "notifications are sent to the vendor owner") that must never depend on it.
+    if not TPRM_SENDER_EMAIL:
         return {"expiring_count": len(expiring), "critical_count": len(critical),
                 "email": {"sent": False, "reason": "not_configured"}}
 
@@ -1127,18 +1254,32 @@ def _check_and_notify(conn, cloud_account_id):
     for e in expiring:
         if e["email"] and e["email"] not in recipients:
             recipients.append(e["email"])
+    if not recipients:
+        return {"expiring_count": len(expiring), "critical_count": len(critical),
+                "email": {"sent": False, "reason": "no_recipients"}}
 
+    # Real bug (issue #274 AC13: "multi-channel resilience despite
+    # individual failures"): sesv2.send_email rejects the ENTIRE call if
+    # ANY address in one combined ToAddresses list is unverified — so one
+    # vendor's placeholder/bad contact email silently blocked the alert
+    # from ever reaching Niagaros' own configured team recipients too.
+    # Send to each recipient independently so one bad address can't take
+    # the others down with it.
     ses = boto3.client("sesv2", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
-    try:
-        ses.send_email(
-            FromEmailAddress=TPRM_SENDER_EMAIL,
-            Destination={"ToAddresses": recipients},
-            Content={"Simple": {"Subject": {"Data": f"TPRM alert: {len(expiring)} expiring cert(s), {len(critical)} critical vendor(s)", "Charset": "UTF-8"},
-                                 "Body": {"Text": {"Data": body_text, "Charset": "UTF-8"}}}},
-        )
-        email_result = {"sent": True}
-    except Exception as e:
-        email_result = {"sent": False, "reason": str(e)}
+    subject = f"TPRM alert: {len(expiring)} expiring cert(s), {len(critical)} critical vendor(s)"
+    per_recipient = {}
+    for recipient in recipients:
+        try:
+            ses.send_email(
+                FromEmailAddress=TPRM_SENDER_EMAIL,
+                Destination={"ToAddresses": [recipient]},
+                Content={"Simple": {"Subject": {"Data": subject, "Charset": "UTF-8"},
+                                     "Body": {"Text": {"Data": body_text, "Charset": "UTF-8"}}}},
+            )
+            per_recipient[recipient] = {"sent": True}
+        except Exception as e:
+            per_recipient[recipient] = {"sent": False, "reason": str(e)}
+    email_result = {"sent": any(r["sent"] for r in per_recipient.values()), "per_recipient": per_recipient}
 
     return {"expiring_count": len(expiring), "critical_count": len(critical), "email": email_result}
 
@@ -1147,6 +1288,41 @@ def _check_and_notify(conn, cloud_account_id):
 
 def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body, default=str)}
+
+
+from collectors.aws.scanner.tenant_auth import guard, authenticate
+
+REFS = {
+    "vendor_id": (
+        "SELECT cloud_account_id FROM tprm_vendors WHERE id = %s"
+    ),
+    "assessment_id": (
+        "SELECT v.cloud_account_id FROM tprm_assessments a JOIN tprm_vendors v ON v.id = a.vendor_id WHERE a.id = %s"
+    ),
+    "item_id": (
+        "SELECT v.cloud_account_id FROM tprm_assessment_items i JOIN tprm_assessments a ON a.id = i.assessment_id JOIN tprm_vendors v ON v.id = a.vendor_id WHERE i.id = %s"
+    ),
+    "task_id": (
+        "SELECT v.cloud_account_id FROM tprm_remediation_tasks t JOIN tprm_vendors v ON v.id = t.vendor_id WHERE t.id = %s"
+    ),
+    # These four GET actions carry the real id under the action's own name instead of
+    # vendor_id/assessment_id above — without these, guard() never resolves the object
+    # being read at all (it only ever recognizes the account the caller already owns,
+    # which is unrelated to which vendor/certification/assessment this actually returns),
+    # so any authenticated caller could read another tenant's documents/answers by id.
+    "download_certification": (
+        "SELECT v.cloud_account_id FROM tprm_certifications c JOIN tprm_vendors v ON v.id = c.vendor_id WHERE c.id = %s"
+    ),
+    "download_contract": (
+        "SELECT cloud_account_id FROM tprm_vendors WHERE id = %s"
+    ),
+    "assessment_items": (
+        "SELECT v.cloud_account_id FROM tprm_assessments a JOIN tprm_vendors v ON v.id = a.vendor_id WHERE a.id = %s"
+    ),
+    "evidence_package": (
+        "SELECT cloud_account_id FROM tprm_vendors WHERE id = %s"
+    ),
+}
 
 
 def handler(event, context):
@@ -1186,10 +1362,18 @@ def handler(event, context):
         return _resp(200, {})
 
     qs = event.get("queryStringParameters") or {}
-    body = json.loads(event["body"]) if event.get("body") else {}
+    try:
+        body = json.loads(event["body"]) if event.get("body") else {}
+        if not isinstance(body, dict):
+            raise ValueError("body must be a JSON object")
+    except (ValueError, TypeError):
+        return _resp(400, {"error": "Invalid JSON"})
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             account_id = qs.get("cloud_account_id")
             if not _is_uuid(account_id):
@@ -1230,7 +1414,11 @@ def handler(event, context):
 
         if method == "POST":
             action = body.get("action")
-            actor = body.get("actor_name", "Admin")
+            # The audit log's actor must be who actually made the authenticated
+            # request, not a free-text field the caller can set to anything —
+            # only fall back to the client-supplied label when, for whatever
+            # reason, no verified identity comes back (enforcement disabled etc).
+            actor = authenticate(event) or body.get("actor_name", "Admin")
             if action == "create_vendor":
                 if not body.get("name"):
                     return _resp(400, {"error": "name is required"})
@@ -1335,6 +1523,6 @@ def handler(event, context):
         return _resp(405, {"error": "method not allowed"})
     except Exception as e:
         logger.error("tprm_handler error: %s", e, exc_info=True)
-        return _resp(500, {"error": str(e)})
+        return _resp(500, {"error": "An unexpected error occurred. Please try again, or contact support if this keeps happening."})
     finally:
         conn.close()

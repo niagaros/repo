@@ -104,7 +104,13 @@ FRAMEWORK_DB_VALUES = {
     "HITRUST": ["HITRUST CSF"], "DORA": ["DORA"], "CRIPROFILE": ["CRI Profile"], "EUAIACT": ["EU AI Act"],
     "NISTAIRMF": ["NIST AI RMF"], "ISO27701": ["ISO 27701"], "ISO27018": ["ISO 27018"], "SSPA": ["Microsoft SSPA"],
     "CISCTRL": ["CIS Controls v8.1"], "NYDFS": ["23 NYCRR 500 (NYDFS)"], "NISTPRIV": ["NIST Privacy Framework"],
-    "CISAWS": ["CIS AWS Foundations Benchmark v5.0.0", "AWS Foundational Security Best Practices"],
+    # FSBP is its own real, separately-mapped framework (see aws_fsbp_mapper_handler.py)
+    # and must not be folded into CISAWS — that made FSBP always report a 0 gap (nothing
+    # in the DB is ever tagged "FSBP", only "CIS AWS Foundations Benchmark v5.0.0" or
+    # "AWS Foundational Security Best Practices") while double-counting FSBP findings
+    # under CIS AWS Foundations Benchmark.
+    "CISAWS": ["CIS AWS Foundations Benchmark v5.0.0"],
+    "FSBP": ["AWS Foundational Security Best Practices"],
 }
 
 CALCULATOR_TYPES = ("compliance_effort", "compliance_cost")
@@ -336,6 +342,24 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON calculator_scenarios TO cspm_lambda;
 """
 
 
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "scenario_id": (
+        "SELECT cloud_account_id FROM calculator_scenarios WHERE id = %s"
+    ),
+    # gap_data and list_scenarios carry a plain cloud_account_id value under an
+    # alias key, not an indirect id needing a real lookup — guard()'s REFS check
+    # only ever inspects the literal "cloud_account_id" key on its own, so without
+    # this a request naming only one of these two aliases (with or without also
+    # sending a real, owned cloud_account_id) reads another tenant's data with no
+    # ownership check at all. Resolving it to itself lets the normal ACCESS_SQL
+    # ownership check see it like any other account id.
+    "gap_data": "SELECT %s::uuid",
+    "list_scenarios": "SELECT %s::uuid",
+}
+
+
 def handler(event, context):
     if event and event.get("migrate"):
         secret_name = os.environ.get("DB_SECRET_NAME", "cspm/database/credentials")
@@ -361,10 +385,18 @@ def handler(event, context):
         return _resp(200, {})
 
     qs = event.get("queryStringParameters") or {}
-    body = json.loads(event["body"]) if event.get("body") else {}
+    try:
+        body = json.loads(event["body"]) if event.get("body") else {}
+        if not isinstance(body, dict):
+            raise ValueError("body must be a JSON object")
+    except (ValueError, TypeError):
+        return _resp(400, {"error": "Invalid JSON"})
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             with conn.cursor() as cur:
                 if qs.get("gap_data"):
@@ -405,6 +437,20 @@ def handler(event, context):
                     return _resp(400, {"error": f"calculator_type must be one of {CALCULATOR_TYPES}"})
                 if not body.get("title"):
                     return _resp(400, {"error": "title is required"})
+                # Stored XSS + fabricated-result guard: results is rendered back
+                # verbatim on the scenario list (calculators.html), and total_hours/
+                # total_cost are shown in real currency/time figures elsewhere (e.g.
+                # the audit created from "Start remediation") — both must be real,
+                # non-negative numbers, never arbitrary attacker-supplied HTML/strings.
+                results = body.get("results") or {}
+                if not isinstance(results, dict):
+                    return _resp(400, {"error": "results must be an object"})
+                for field in ("total_hours", "total_cost"):
+                    if field not in results:
+                        continue
+                    val = results[field]
+                    if isinstance(val, bool) or not isinstance(val, (int, float)) or val < 0:
+                        return _resp(400, {"error": f"results.{field} must be a non-negative number"})
                 scenario_id = _save_scenario(
                     conn, body["cloud_account_id"], body["calculator_type"], body["title"],
                     body.get("framework"), body.get("gap_snapshot", {}), body.get("assumptions", {}),
@@ -421,6 +467,6 @@ def handler(event, context):
         return _resp(405, {"error": "method not allowed"})
     except Exception as e:
         logger.exception("calculator_handler error")
-        return _resp(500, {"error": str(e)})
+        return _resp(500, {"error": "An unexpected error occurred. Please try again, or contact support if this keeps happening."})
     finally:
         conn.close()

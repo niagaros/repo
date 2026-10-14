@@ -25,6 +25,7 @@ difference is where the control definitions come from.
 import json
 import logging
 import os
+import re
 
 import boto3
 import psycopg2
@@ -233,8 +234,27 @@ def run_mapping(cloud_account_id: str) -> dict:
 
 # ── entrypoint ────────────────────────────────────────────────────────
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _is_uuid(value):
+    return isinstance(value, str) and bool(_UUID_RE.match(value))
+
+
 def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
+
+
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "framework_id": (
+        "SELECT cloud_account_id FROM custom_frameworks WHERE id = %s"
+    ),
+    "control_id": (
+        "SELECT f.cloud_account_id FROM custom_framework_controls c JOIN custom_frameworks f ON f.id = c.custom_framework_id WHERE c.id = %s"
+    ),
+}
 
 
 def handler(event, context):
@@ -266,14 +286,22 @@ def handler(event, context):
         return _resp(200, {})
 
     qs = event.get("queryStringParameters") or {}
-    body = json.loads(event["body"]) if event.get("body") else {}
+    try:
+        body = json.loads(event["body"]) if event.get("body") else {}
+        if not isinstance(body, dict):
+            raise ValueError("body must be a JSON object")
+    except (ValueError, TypeError):
+        return _resp(400, {"error": "Invalid JSON"})
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             account_id = qs.get("cloud_account_id")
-            if not account_id:
-                return _resp(400, {"error": "cloud_account_id required"})
+            if not _is_uuid(account_id):
+                return _resp(400, {"error": "cloud_account_id must be a valid id"})
             return _resp(200, {"frameworks": _list_frameworks(conn, account_id)})
 
         if method == "POST":
@@ -302,6 +330,6 @@ def handler(event, context):
         return _resp(405, {"error": "method not allowed"})
     except Exception as e:
         logger.error("custom_framework_handler error: %s", e, exc_info=True)
-        return _resp(500, {"error": str(e)})
+        return _resp(500, {"error": "An unexpected error occurred. Please try again, or contact support if this keeps happening."})
     finally:
         conn.close()

@@ -70,8 +70,27 @@ import re
 import urllib.request
 from datetime import date, datetime, timezone
 
+# ── free-text evidence retrieval (same technique already proven in
+# questionnaire_handler.py — token-overlap search over this account's
+# real findings AND Niagaros' own published security docs, so an
+# open-ended question isn't limited to the fixed intents below) ──────
+STOPWORDS = set("""
+a an the is are was were be been being do does did will would should could
+can may might must shall of to in on at for with without by from as and or
+but if then than that this these those it its your you we our their they
+he she his her him please provide describe explain does your company have
+has do you what how when where which who all any not no yes
+""".split())
+
+
+def _tokenize(text):
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9\-]{2,}", (text or "").lower())
+    return {w for w in words if w not in STOPWORDS}
+
 import boto3
 import psycopg2
+
+from collectors.aws.scanner.notification_lib import create_notification
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
@@ -151,6 +170,22 @@ FRAMEWORK_DB_VALUES = {
     "CISAWS": ["CIS AWS Foundations Benchmark v5.0.0", "AWS Foundational Security Best Practices"],
 }
 
+# Mapped-compliance-framework names (findings.framework values written by the
+# framework mapper Lambdas, which copy one real raw misconfiguration into a
+# framework-specific control code per framework it also applies to). The
+# dashboard's severity cards and Issues list already exclude these so the
+# same real issue isn't counted/listed once per framework that cites it —
+# kept as this exact same list here so the AI Agent's numbers never
+# disagree with what the user is looking at on screen. See get-dashboard-
+# data's lambda_function.py for the original comment/incident this fixed.
+MAPPED_FRAMEWORK_NAMES = (
+    'ISO 27001:2022', 'NIST CSF v2.0', 'GDPR', 'SOC2', 'PCI DSS v4.0', 'NIS2', 'HIPAA',
+    'NIST 800-53 Rev 5', 'BSI-C5', 'CSA CCM 4.0', 'FedRAMP Moderate Rev 4', 'ISO 42001',
+    'ISO 27017', 'AWS FTR', 'MVSP', 'TISAX', 'HITRUST CSF', 'DORA', 'CRI Profile',
+    'EU AI Act', 'NIST AI RMF', 'ISO 27701', 'ISO 27018', 'Microsoft SSPA',
+    'CIS Controls v8.1', '23 NYCRR 500 (NYDFS)', 'NIST Privacy Framework',
+)
+
 # Only real check IDs this scanner can honestly call "internet exposure" —
 # S3 public-access checks. No security-group/VPC/RDS-public checks exist
 # in this scanner, so this list is deliberately narrow, not a general
@@ -160,7 +195,7 @@ INTERNET_FACING_CHECK_PREFIXES = ("S3.2.", "S3.3.")
 INTENTS = (
     "highest_risks", "account_compliance", "accounts_compliance", "internet_facing_critical",
     "framework_status", "vendor_certs_expiring", "audit_evidence_needed",
-    "executive_summary", "unsupported",
+    "executive_summary", "general_data_question", "unsupported",
 )
 
 BOOTSTRAP_SQL = """
@@ -178,6 +213,21 @@ CREATE TABLE IF NOT EXISTS ai_agent_queries (
 );
 CREATE INDEX IF NOT EXISTS ai_agent_queries_account_idx ON ai_agent_queries(cloud_account_id, created_at DESC);
 GRANT SELECT, INSERT, UPDATE, DELETE ON ai_agent_queries TO cspm_lambda;
+
+-- findings.detected_at is overwritten to NOW() on every scan run for every
+-- finding (see db_writer.py's ON CONFLICT DO UPDATE), so it really means
+-- "last verified at", not "first appeared at" — there was no real way to
+-- answer "which issue was most recently added". first_detected_at is set
+-- once on INSERT and never touched by any ON CONFLICT DO UPDATE clause
+-- (none of them list it), so it stays truthful across every future rescan.
+-- Existing rows are backfilled to their current detected_at as an honest
+-- floor — their true original detection time predates this column and
+-- isn't recoverable, so this is the earliest truthful value available,
+-- not a guess at history.
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS first_detected_at TIMESTAMPTZ;
+UPDATE findings SET first_detected_at = detected_at WHERE first_detected_at IS NULL;
+ALTER TABLE findings ALTER COLUMN first_detected_at SET DEFAULT NOW();
+GRANT SELECT, INSERT, UPDATE ON findings TO cspm_lambda;
 """
 
 
@@ -202,16 +252,16 @@ def _get_authenticated_caller(event):
     headers = event.get("headers") or {}
     auth = headers.get("Authorization") or headers.get("authorization") or ""
     if not auth.startswith("Bearer "):
-        return None, None, "Er is geen toegangstoken meegestuurd met dit verzoek."
+        return None, None, "No access token was provided with this request."
     token = auth[7:].strip()
     if not token:
-        return None, None, "Er is geen toegangstoken meegestuurd met dit verzoek."
+        return None, None, "No access token was provided with this request."
     region = os.environ.get("SECRET_REGION", "eu-west-1")
     cognito = boto3.client("cognito-idp", region_name=region)
     try:
         user = cognito.get_user(AccessToken=token)
     except Exception:
-        return None, None, "Dit toegangstoken is ongeldig of verlopen."
+        return None, None, "This access token is invalid or expired."
     email = next((a["Value"] for a in user["UserAttributes"] if a["Name"] == "email"), None)
     return user["Username"], email, None
 
@@ -229,10 +279,10 @@ def _get_caller_admin_status(event):
             UserPoolId=os.environ["COGNITO_USER_POOL_ID"], Username=username
         )
     except Exception:
-        return False, email, "De rol van dit account kon niet worden geverifieerd."
+        return False, email, "Could not verify this account's role."
     group_names = [g["GroupName"] for g in groups_resp.get("Groups", [])]
     if ADMIN_GROUP_NAME not in group_names:
-        return False, email, f"Dit account heeft niet de {ADMIN_GROUP_NAME}-rol die nodig is voor deze actie."
+        return False, email, f"This account does not have the {ADMIN_GROUP_NAME} role required for this action."
     return True, email, None
 
 
@@ -278,11 +328,33 @@ def _call_groq(prompt, max_tokens=400):
     return payload["choices"][0]["message"]["content"].strip()
 
 
-def _classify_intent(question):
+def _classify_intent(question, has_page_context=False, previous_question=None):
     fw_codes = "\n".join(f"  {code}: {label}" for code, label in sorted(FRAMEWORK_LABELS.items()))
+    page_note = (
+        "\nNote: the user is currently looking at a specific dashboard page, and the real, literal "
+        "text/numbers currently visible on that page will be provided as additional evidence "
+        "alongside your answer to database-backed questions. So a question about something "
+        "'on this page', 'shown here', 'right now', or referring to a value in a calculator/tool "
+        "the user is actively using (e.g. 'what's the total shown above?') IS answerable and must "
+        "be classified as general_data_question, NOT unsupported.\n"
+        if has_page_context else ""
+    )
+    # A short chat follow-up ("give me the one that was added most recently")
+    # reads as topic-less on its own — the topic (findings, a severity level,
+    # a framework) usually lives in the PREVIOUS question. Without this, a
+    # real, on-topic follow-up gets wrongly rejected as unsupported just
+    # because it's ambiguous in isolation.
+    history_note = (
+        f"\nThe user's previous question in this same chat was: \"{previous_question}\". Use it ONLY "
+        "to resolve an implied subject in a short follow-up (e.g. 'which one is newest', 'and the "
+        "critical ones?') — classify based on what the CURRENT question is really asking, informed by "
+        "that context, not the previous question's own intent.\n"
+        if previous_question else ""
+    )
     prompt = (
         "Classify this security/compliance question into exactly one intent from "
-        f"this fixed list: {', '.join(INTENTS)}.\n\n"
+        f"this fixed list: {', '.join(INTENTS)}.\n"
+        f"{page_note}{history_note}"
         "- highest_risks: asking about top/highest/worst risks or vulnerabilities in general.\n"
         "- account_compliance: asking about overall or per-framework compliance score/posture "
         "for the CURRENT single account.\n"
@@ -296,9 +368,17 @@ def _classify_intent(question):
         "- audit_evidence_needed: asking what evidence is needed for an audit of one named framework.\n"
         "- executive_summary: asking for an executive summary, board-level report, or an overview "
         "of security/compliance/risk posture across the whole account (not one specific framework).\n"
-        "- unsupported: anything about a cloud provider other than AWS, a tool this platform "
-        "doesn't integrate with (Jira, ServiceNow, Okta, CrowdStrike, Wiz, etc.), or asking the "
-        "agent to autonomously change/remediate infrastructure itself.\n\n"
+        "- general_data_question: ANY OTHER real question about this account's security/compliance "
+        "posture, controls, or Niagaros' own published security practices that isn't a better fit "
+        "above — e.g. RPO/RTO targets, backup policy, encryption details, a specific control's exact "
+        "requirement, incident response process, access control policy. This is the default for a "
+        "specific, on-topic question, not 'unsupported' — a real answer will be searched for and it "
+        "is fine to say plainly if nothing is found.\n"
+        "- unsupported: ONLY for things with no real connection to this AWS-only product at all — "
+        "a different cloud provider, a tool this platform doesn't integrate with (Jira, ServiceNow, "
+        "Okta, CrowdStrike, Wiz, etc.), or asking the agent to autonomously change/remediate "
+        "infrastructure itself. Do not use this just because a question isn't in the list above — "
+        "use general_data_question instead.\n\n"
         f"If the question names a specific framework, match it to exactly one of these short "
         f"codes (use the code, not the full name) — or null if none is named or none matches:\n"
         f"{fw_codes}\n\n"
@@ -333,10 +413,11 @@ def _q_highest_risks(cur, account_id):
         SELECT f.check_id, f.title, f.severity, r.resource_name, f.remediation
         FROM findings f JOIN resources r ON f.resource_id = r.id
         WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+          AND (f.framework IS NULL OR f.framework NOT IN %s)
         ORDER BY CASE UPPER(f.severity) WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2
                  WHEN 'MEDIUM' THEN 3 ELSE 4 END, f.check_id
         LIMIT 10
-    """, (account_id,))
+    """, (account_id, MAPPED_FRAMEWORK_NAMES))
     return [{"check_id": r[0], "title": r[1], "severity": r[2], "resource_name": r[3], "remediation": r[4]}
             for r in cur.fetchall()]
 
@@ -375,7 +456,7 @@ def _q_internet_facing_critical(cur, account_id):
 
 def _q_framework_status(cur, account_id, framework_code):
     if not framework_code or framework_code not in FRAMEWORK_DB_VALUES:
-        return {"error": "Ik kon dit niet koppelen aan een van de normenkaders die voor dit account worden bijgehouden."}
+        return {"error": "I couldn't match that to one of this account's tracked frameworks."}
     db_values = FRAMEWORK_DB_VALUES[framework_code]
     cur.execute("""
         SELECT f.check_id, f.title, r.resource_name
@@ -401,7 +482,7 @@ def _q_vendor_certs_expiring(cur, account_id):
 
 def _q_audit_evidence_needed(cur, account_id, framework_code):
     if not framework_code:
-        return {"error": "Ik kon dit niet koppelen aan een van de normenkaders die voor dit account worden bijgehouden."}
+        return {"error": "I couldn't match that to one of this account's tracked frameworks."}
     fw_label = FRAMEWORK_LABELS.get(framework_code, framework_code)
     cur.execute("""
         SELECT a.id, a.title, a.status FROM audits a
@@ -435,14 +516,18 @@ def _q_accounts_compliance(cur, owner_email):
     """, (owner_email,))
     accounts = [{"id": str(r[0]), "name": r[1]} for r in cur.fetchall()]
     if not accounts:
-        return {"error": "Geen AWS-accounts gevonden voor deze gebruiker."}
+        return {"error": "No AWS accounts found for this user."}
     results = []
     for acct in accounts:
+        # Same raw-only scope as _q_executive_summary (and the dashboard's headline
+        # gauge) — excluding framework-mapped copies of the same real finding. Without
+        # this filter, an account with several mapped compliance frameworks reports a
+        # different score here than in its own executive summary, for no real reason.
         cur.execute("""
             SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS')
             FROM findings f JOIN resources r ON f.resource_id = r.id
-            WHERE r.cloud_account_id = %s
-        """, (acct["id"],))
+            WHERE r.cloud_account_id = %s AND (f.framework IS NULL OR f.framework NOT IN %s)
+        """, (acct["id"], MAPPED_FRAMEWORK_NAMES))
         total, passed = cur.fetchone()
         score = round(passed * 100.0 / total, 1) if total else None
         results.append({"account_name": acct["name"], "compliance_score": score})
@@ -451,11 +536,14 @@ def _q_accounts_compliance(cur, owner_email):
 
 
 def _q_executive_summary(cur, account_id):
+    # Same raw-only scope as the dashboard's headline gauge and severity
+    # cards (excludes framework-mapped copies of the same real finding) so
+    # this summary's numbers never disagree with what's on screen.
     cur.execute("""
         SELECT COUNT(*), COUNT(*) FILTER (WHERE f.result = 'PASS')
         FROM findings f JOIN resources r ON f.resource_id = r.id
-        WHERE r.cloud_account_id = %s
-    """, (account_id,))
+        WHERE r.cloud_account_id = %s AND (f.framework IS NULL OR f.framework NOT IN %s)
+    """, (account_id, MAPPED_FRAMEWORK_NAMES))
     total, passed = cur.fetchone()
     overall_score = round(passed * 100.0 / total, 1) if total else None
 
@@ -463,8 +551,9 @@ def _q_executive_summary(cur, account_id):
         SELECT UPPER(f.severity), COUNT(*)
         FROM findings f JOIN resources r ON f.resource_id = r.id
         WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+          AND (f.framework IS NULL OR f.framework NOT IN %s)
         GROUP BY UPPER(f.severity)
-    """, (account_id,))
+    """, (account_id, MAPPED_FRAMEWORK_NAMES))
     open_findings_by_severity = {row[0]: row[1] for row in cur.fetchall()}
 
     cur.execute("SELECT COUNT(*) FROM tprm_vendors WHERE cloud_account_id = %s", (account_id,))
@@ -490,7 +579,181 @@ def _q_executive_summary(cur, account_id):
     }
 
 
-def _run_intent(cur, account_id, intent, framework_code):
+SEVERITY_SYNONYMS = {
+    "critical": "CRITICAL", "kritiek": "CRITICAL", "kritisch": "CRITICAL",
+    "high": "HIGH", "hoog": "HIGH",
+    "medium": "MEDIUM", "gemiddeld": "MEDIUM", "matig": "MEDIUM",
+    "low": "LOW", "laag": "LOW",
+}
+
+
+def _q_general_data_question(cur, account_id, question, previous_question=None):
+    """Open-ended fallback — the same token-overlap retrieval already
+    proven in questionnaire_handler.py, applied here instead of the
+    fixed intents above. Covers anything real but not worth a dedicated
+    intent (RPO/RTO targets, a specific control's exact wording, backup
+    policy, etc.) by searching this account's own findings AND
+    Niagaros' own published security docs — never free-form SQL, never
+    a source outside those two real tables."""
+    q_tokens = _tokenize(question)
+    if not q_tokens:
+        return {"findings": [], "documents": []}
+    # A short, specific chat question ("What is our RPO?") often reduces to
+    # a single real keyword once stopwords are removed — requiring 2
+    # overlapping words (fine for a full questionnaire sentence) would
+    # never match it. Scale the bar to how much the question gives us.
+    min_overlap = 1 if len(q_tokens) <= 2 else 2
+
+    # Dashboards show severity counts prominently ("33 Medium Severity"), so
+    # "which issues are medium severity" is one of the most natural
+    # follow-ups a user can ask — but severity lives in its own column, not
+    # in a finding's title/description prose, so the keyword-overlap search
+    # below can never match it. Answer it with a real, direct filter instead.
+    ql = question.lower()
+    # A follow-up like "which one is newest?" doesn't repeat "medium
+    # severity" — that scope lived in the previous question. Fall back to
+    # it only when the current question names no severity of its own.
+    wanted_severities = sorted({sev for word, sev in SEVERITY_SYNONYMS.items() if word in ql})
+    if not wanted_severities and previous_question:
+        prev_ql = previous_question.lower()
+        wanted_severities = sorted({sev for word, sev in SEVERITY_SYNONYMS.items() if word in prev_ql})
+    severity_findings = []
+    severity_total = 0
+    if wanted_severities:
+        # Same raw-only scope as the dashboard's severity cards (excludes
+        # framework-mapped copies of the same real finding) so this count
+        # matches the number the user is literally looking at on screen.
+        cur.execute("""
+            SELECT COUNT(*) FROM findings f JOIN resources r ON r.id = f.resource_id
+            WHERE r.cloud_account_id = %s AND f.result = 'FAIL' AND UPPER(f.severity) = ANY(%s)
+              AND (f.framework IS NULL OR f.framework NOT IN %s)
+        """, (account_id, wanted_severities, MAPPED_FRAMEWORK_NAMES))
+        severity_total = cur.fetchone()[0]
+        cur.execute("""
+            SELECT f.check_id, f.title, f.severity, r.resource_name, f.framework
+            FROM findings f JOIN resources r ON r.id = f.resource_id
+            WHERE r.cloud_account_id = %s AND f.result = 'FAIL' AND UPPER(f.severity) = ANY(%s)
+              AND (f.framework IS NULL OR f.framework NOT IN %s)
+            ORDER BY f.check_id
+            LIMIT 25
+        """, (account_id, wanted_severities, MAPPED_FRAMEWORK_NAMES))
+        severity_findings = [
+            {"check_id": r[0], "title": r[1], "severity": r[2], "resource_name": r[3], "framework": r[4]}
+            for r in cur.fetchall()
+        ]
+
+    # "Which issue was added most recently?" needs a real first-seen
+    # timestamp, not detected_at (which is bumped to NOW() on every rescan
+    # for every finding, old or new — see the first_detected_at migration).
+    # Detect the question asking about recency/newness in English or Dutch.
+    RECENCY_WORDS = (
+        "recent", "recently", "latest", "newest", "new issue", "new finding",
+        "just added", "last added", "most recent",
+        "laatst", "laatste", "nieuwste", "nieuw ", "bijgekomen", "toegevoegd", "recentelijk",
+    )
+    recent_findings = []
+    if any(w in ql for w in RECENCY_WORDS):
+        base_sql = """
+            SELECT f.check_id, f.title, f.severity, r.resource_name, f.framework, f.first_detected_at
+            FROM findings f JOIN resources r ON r.id = f.resource_id
+            WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+              AND (f.framework IS NULL OR f.framework NOT IN %s)
+        """
+        if wanted_severities:
+            cur.execute(base_sql + " AND UPPER(f.severity) = ANY(%s) ORDER BY f.first_detected_at DESC NULLS LAST LIMIT 5",
+                        (account_id, MAPPED_FRAMEWORK_NAMES, wanted_severities))
+        else:
+            cur.execute(base_sql + " ORDER BY f.first_detected_at DESC NULLS LAST LIMIT 5",
+                        (account_id, MAPPED_FRAMEWORK_NAMES))
+        recent_findings = [
+            {"check_id": r[0], "title": r[1], "severity": r[2], "resource_name": r[3],
+             "framework": r[4], "first_detected_at": r[5].isoformat() if r[5] else None}
+            for r in cur.fetchall()
+        ]
+        # first_detected_at only started being tracked from the migration
+        # that added it — every finding that already existed at that point
+        # was backfilled to roughly the same timestamp, so "most recent"
+        # among those is not a meaningful historical order, just whichever
+        # row happened to sort first. Only findings inserted for the FIRST
+        # time after that backfill have a genuinely earned, distinct
+        # first_detected_at. Flag this honestly instead of presenting a
+        # backfill artifact as if it were a real answer.
+        if recent_findings:
+            cur.execute("""
+                SELECT MIN(f.first_detected_at), MAX(f.first_detected_at)
+                FROM findings f JOIN resources r ON r.id = f.resource_id
+                WHERE r.cloud_account_id = %s AND f.result = 'FAIL'
+                  AND (f.framework IS NULL OR f.framework NOT IN %s)
+            """, (account_id, MAPPED_FRAMEWORK_NAMES))
+            earliest, latest = cur.fetchone()
+            spread_seconds = (latest - earliest).total_seconds() if earliest and latest else 0
+            if spread_seconds < 300:
+                recent_findings = {
+                    "no_real_history_yet": True,
+                    "explanation": (
+                        "This account's findings were all backfilled to essentially the same "
+                        "first-detected timestamp when this tracking was just set up, so there is "
+                        "no genuine 'most recently added' answer yet — that will only become "
+                        "meaningful once a future scan introduces a real new finding."
+                    ),
+                }
+
+    cur.execute("""
+        SELECT f.check_id, MAX(f.title) AS title, MAX(f.description) AS description,
+               MAX(f.framework) AS framework, BOOL_OR(f.result = 'FAIL') AS any_fail,
+               COUNT(*) FILTER (WHERE f.result = 'PASS') AS n_pass,
+               COUNT(*) FILTER (WHERE f.result = 'FAIL') AS n_fail
+        FROM findings f JOIN resources r ON r.id = f.resource_id
+        WHERE r.cloud_account_id = %s
+        GROUP BY f.check_id
+    """, (account_id,))
+    scored_findings = []
+    for check_id, title, description, framework, any_fail, n_pass, n_fail in cur.fetchall():
+        overlap = q_tokens & (_tokenize(title) | _tokenize(description))
+        if len(overlap) >= min_overlap:
+            scored_findings.append({
+                "score": len(overlap), "check_id": check_id, "title": title, "framework": framework,
+                "status": "FAIL" if any_fail else "PASS", "passed": n_pass, "failed": n_fail,
+            })
+    scored_findings.sort(key=lambda x: -x["score"])
+
+    cur.execute("SELECT source_path, category, section_title, content FROM evidence_documents")
+    scored_docs = []
+    for source_path, category, section_title, content in cur.fetchall():
+        overlap = q_tokens & (_tokenize(section_title) | _tokenize(content))
+        if len(overlap) >= min_overlap:
+            excerpt = content.strip()
+            if len(excerpt) > 600:
+                excerpt = excerpt[:600].rsplit(" ", 1)[0] + "…"
+            scored_docs.append({
+                "score": len(overlap), "source_path": source_path,
+                "category": category, "section_title": section_title, "excerpt": excerpt,
+            })
+    scored_docs.sort(key=lambda x: -x["score"])
+
+    result = {"findings": [{k: v for k, v in f.items() if k != "score"} for f in scored_findings[:5]],
+              "documents": [{k: v for k, v in d.items() if k != "score"} for d in scored_docs[:5]]}
+    if severity_findings:
+        result["severity_filtered_findings"] = {
+            "severities_asked_about": wanted_severities,
+            "total_matching": severity_total,
+            "findings_shown": severity_findings,
+            "note": f"showing {len(severity_findings)} of {severity_total} matching findings" if severity_total > len(severity_findings) else None,
+        }
+    if recent_findings:
+        if isinstance(recent_findings, dict):
+            result["most_recently_added_findings"] = recent_findings
+        else:
+            result["most_recently_added_findings"] = {
+                "note": "ordered newest-first by first_detected_at — the timestamp each finding was "
+                        "FIRST ever seen, not last verified. This is the real answer to 'which issue "
+                        "was added most recently'.",
+                "findings": recent_findings,
+            }
+    return result
+
+
+def _run_intent(cur, account_id, intent, framework_code, question=None, previous_question=None):
     if intent == "highest_risks":
         return {"findings": _q_highest_risks(cur, account_id)}
     if intent == "account_compliance":
@@ -505,44 +768,67 @@ def _run_intent(cur, account_id, intent, framework_code):
         return {"certificates": _q_vendor_certs_expiring(cur, account_id)}
     if intent == "audit_evidence_needed":
         return _q_audit_evidence_needed(cur, account_id, framework_code)
+    if intent == "general_data_question":
+        return _q_general_data_question(cur, account_id, question, previous_question)
     return None
 
 
 UNSUPPORTED_MESSAGE = (
-    "Ik kan alleen vragen beantwoorden over de echte, gescande data van dit AWS-account — "
-    "ik heb geen koppeling met Azure, GCP, Kubernetes, GitHub, GitLab, Jira, ServiceNow, Okta, "
-    "CrowdStrike, Wiz of andere tools, en ik kan jullie infrastructuur niet zelfstandig aanpassen. "
-    "Ik kan wel vertellen over: jullie grootste risico's, compliance-scores per normenkader, welke "
-    "van jullie AWS-accounts compliant zijn, publiek toegankelijke S3-buckets, welke controls falen "
-    "voor een specifiek normenkader, verlopende leveranciercertificaten, welk bewijs er is voor een "
-    "audit, en een executive summary van de algehele status."
+    "I can only answer questions with a real connection to this AWS account's own data or "
+    "Niagaros' published security documentation — I'm not connected to Azure, GCP, Kubernetes, "
+    "GitHub, GitLab, Jira, ServiceNow, Okta, CrowdStrike, Wiz, or any other tool, and I can't "
+    "autonomously change your infrastructure. Ask me about your risks, compliance, vendors, "
+    "audits, or specific security practices — I'll search for a real answer."
 )
 
 
 def _phrase_answer(question, intent, evidence):
     if intent == "unsupported":
         return UNSUPPORTED_MESSAGE
+    non_page_evidence = {k: v for k, v in evidence.items() if k != "visible_page_content"} if isinstance(evidence, dict) else evidence
+    has_page_content = isinstance(evidence, dict) and bool(evidence.get("visible_page_content", {}).get("page_text"))
+    empty_evidence = (not non_page_evidence or (isinstance(non_page_evidence, dict) and not any(non_page_evidence.values()))) and not has_page_content
     prompt = (
-        "Answer this security/compliance question using ONLY the real data below, which comes "
-        "directly from this account's own live compliance scans and stored records. Do not invent "
-        "any numbers, names, or facts that are not present in the data — this includes not listing "
-        "example or typical evidence/document types for a framework unless they literally appear in "
-        "the data. If the data is empty, or shows no audit/no issues/no records, say that plainly in "
-        "one sentence instead of describing what such an audit or evidence set would generally "
-        "contain. Be concise: 2-5 sentences, professional tone, as if written by a security "
-        "analyst.\n\n"
-        "Language: reply in Dutch by default. If the question is clearly written in a different "
+        "Answer this security/compliance question using ONLY the real data below. It comes from two "
+        "possible real sources: (1) this account's own live compliance scans, stored records, and "
+        "Niagaros' own published security documentation, and (2) under the key 'visible_page_content', "
+        "the literal text currently rendered on the dashboard page the user is looking at right now — "
+        "use this second source for questions about numbers or state that only exist in the current "
+        "view/session (e.g. a value just typed into a calculator) and are not expected to be in the "
+        "database. Do not invent any numbers, names, or facts that are not present in the data — this "
+        "includes not listing example or typical evidence/document types for a framework unless they "
+        "literally appear in the data. If the data is empty, or shows no audit/no issues/no "
+        "records/no matching documentation and there is no relevant visible_page_content either, say "
+        "that plainly in one sentence instead of describing what such an answer would generally "
+        "contain. Be concise: 2-5 sentences, professional tone, as if written by a security analyst.\n\n"
+        "Language: reply in English by default. If the question is clearly written in a different "
         "language, reply in that same language instead.\n\n"
         f"Question: {question}\n\n"
         f"Real data:\n{json.dumps(evidence, default=str)}\n\n"
         "Answer:"
     )
+    if empty_evidence and intent == "general_data_question":
+        return ("I couldn't find anything relevant to that in this account's real scan data, "
+                "Niagaros' published security documentation, or what's currently visible on this "
+                "page, so I don't have a grounded answer to give you rather than guessing.")
     try:
         return _call_groq(prompt, max_tokens=350)
     except Exception as e:
         logger.exception("groq phrasing failed")
-        return (f"Ik heb hier echte data voor gevonden ({json.dumps(evidence, default=str)[:300]}...), "
-                f"maar kon de AI-dienst niet bereiken om dit in woorden om te zetten ({e}).")
+        return (f"I found real data for this ({json.dumps(evidence, default=str)[:300]}...), "
+                f"but couldn't reach the AI service to phrase it in words ({e}).")
+
+
+from collectors.aws.scanner.tenant_auth import guard, account_allowed
+
+REFS = {
+    "query_id": (
+        "SELECT cloud_account_id FROM ai_agent_queries WHERE id = %s"
+    ),
+    "finding_id": (
+        "SELECT r.cloud_account_id FROM findings f JOIN resources r ON r.id = f.resource_id WHERE f.id = %s"
+    ),
+}
 
 
 def handler(event, context):
@@ -554,10 +840,18 @@ def handler(event, context):
         return _resp(200, {})
 
     qs = event.get("queryStringParameters") or {}
-    body = json.loads(event["body"]) if event.get("body") else {}
+    try:
+        body = json.loads(event["body"]) if event.get("body") else {}
+        if not isinstance(body, dict):
+            raise ValueError("body must be a JSON object")
+    except (ValueError, TypeError):
+        return _resp(400, {"error": "Invalid JSON"})
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, None)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             account_id = qs.get("cloud_account_id")
             if not _is_uuid(account_id):
@@ -586,13 +880,17 @@ def handler(event, context):
             if action == "ask":
                 account_id = body.get("cloud_account_id")
                 question = (body.get("question") or "").strip()
+                page_title = (body.get("page_title") or "").strip()[:200]
+                page_text = (body.get("page_text") or "").strip()[:4000]
+                previous_question = (body.get("previous_question") or "").strip()[:500] or None
                 if not _is_uuid(account_id):
                     return _resp(400, {"error": "cloud_account_id is required"})
                 if not question:
                     return _resp(400, {"error": "question is required"})
 
                 try:
-                    intent, framework_code = _classify_intent(question)
+                    intent, framework_code = _classify_intent(
+                        question, has_page_context=bool(page_text), previous_question=previous_question)
                 except Exception as e:
                     logger.exception("intent classification failed")
                     return _resp(200, {"intent": "unsupported", "answer": UNSUPPORTED_MESSAGE,
@@ -610,12 +908,16 @@ def handler(event, context):
                         else:
                             evidence = _q_accounts_compliance(cur, caller_email)
                     else:
-                        evidence = _run_intent(cur, account_id, intent, framework_code)
+                        evidence = _run_intent(cur, account_id, intent, framework_code, question, previous_question)
+
+                if isinstance(evidence, dict) and page_text:
+                    evidence = dict(evidence)
+                    evidence["visible_page_content"] = {"page_title": page_title, "page_text": page_text}
 
                 if needs_login:
-                    answer = ("Je moet ingelogd zijn om je AWS-accounts met elkaar te vergelijken "
-                               f"({auth_reason}). Stel deze vraag opnieuw vanuit de AI Agent-pagina "
-                               "terwijl je bent ingelogd.")
+                    answer = ("I need you to be signed in to compare across your AWS accounts "
+                               f"({auth_reason}). Please ask this again from the AI Agent while "
+                               "logged in.")
                 else:
                     answer = _phrase_answer(question, intent, evidence)
 
@@ -633,7 +935,7 @@ def handler(event, context):
             if action == "create_remediation_task":
                 is_admin, caller_email, deny_reason = _get_caller_admin_status(event)
                 if not is_admin:
-                    return _resp(403, {"error": "Geweigerd: deze actie vereist de Admin-rol.",
+                    return _resp(403, {"error": "Refused: administrative action requires the Admin role.",
                                         "reason": deny_reason})
                 query_id = body.get("query_id")
                 finding_id = body.get("finding_id")
@@ -641,12 +943,36 @@ def handler(event, context):
                 owner_email = body.get("owner_email")
                 due_date = body.get("due_date")
                 if not (_is_uuid(query_id) and _is_uuid(finding_id) and title):
-                    return _resp(400, {"error": "query_id, finding_id en title zijn verplicht"})
+                    return _resp(400, {"error": "query_id, finding_id and title are required"})
                 with conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id FROM audit_findings WHERE id = %s", (finding_id,))
-                        if not cur.fetchone():
-                            return _resp(404, {"error": "Deze bevinding bestaat niet meer in Audit Management."})
+                        cur.execute("""
+                            SELECT af.id, a.cloud_account_id FROM audit_findings af
+                            JOIN audits a ON af.audit_id = a.id WHERE af.id = %s
+                        """, (finding_id,))
+                        row = cur.fetchone()
+                        if not row:
+                            return _resp(404, {"error": "That finding no longer exists in Audit Management."})
+                        finding_account_id = row[1]
+                        # tenant_auth's guard() already ran, but its REFS for this handler
+                        # resolves finding_id against the CSPM scan findings table (findings/
+                        # resources), not audit_findings/audits above — a different table this
+                        # action actually uses. guard() can't see a table its REFS never
+                        # declared, so this id must be checked explicitly, here, against the
+                        # authenticated caller (see tenant_auth.account_allowed docstring).
+                        if not account_allowed(cur, caller_email, finding_account_id, write=True):
+                            logger.warning("tenant isolation: %s denied create_remediation_task on finding %s",
+                                           caller_email, finding_id)
+                            return _resp(403, {"error": "Forbidden"})
+                        # Idempotency: a repeated confirmation for the same AI query must not
+                        # create a second task (e.g. a double click, or a retried request after
+                        # a slow/lost response). action_details already carries the task_id
+                        # from the first, real INSERT — no schema change needed to check it.
+                        cur.execute("SELECT action_details->>'task_id' FROM ai_agent_queries WHERE id = %s AND action_taken = 'create_remediation_task'",
+                                    (query_id,))
+                        already = cur.fetchone()
+                        if already and already[0]:
+                            return _resp(200, {"task_id": already[0], "already_created": True})
                         cur.execute("""
                             INSERT INTO audit_remediation_tasks (audit_finding_id, title, owner_email, due_date)
                             VALUES (%s, %s, %s, %s) RETURNING id
@@ -659,6 +985,12 @@ def handler(event, context):
                                    action_details = %s WHERE id = %s
                         """, (json.dumps({"task_id": task_id, "finding_id": finding_id, "title": title,
                                           "performed_by": caller_email}), query_id))
+                create_notification(
+                    conn, finding_account_id, domain="ai", event_type="ai_action_executed", severity="P2",
+                    title=f"AI Agent created remediation task: {title}",
+                    description=f"Confirmed by {caller_email or 'an Admin'}.",
+                    resource_link=f"audit_management.html?finding_id={finding_id}", actor=caller_email,
+                )
                 return _resp(200, {"task_id": task_id})
 
             return _resp(400, {"error": f"unknown action: {action}"})
@@ -666,6 +998,6 @@ def handler(event, context):
         return _resp(405, {"error": "method not allowed"})
     except Exception as e:
         logger.exception("ai_agent_handler error")
-        return _resp(500, {"error": str(e)})
+        return _resp(500, {"error": "An unexpected error occurred. Please try again, or contact support if this keeps happening."})
     finally:
         conn.close()

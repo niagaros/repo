@@ -1,0 +1,35 @@
+name: Production smoke tests
+
+# Issue #279: a second, GitHub-side copy of the production smoke. The primary one runs inside AWS (Lambda platform-smoke,
+# EventBridge: every 30 minutes and after every Amplify deployment). Read-only — no data is created.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [deployment-finished]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
+      E2E_PASSWORD_D: ${{ secrets.E2E_PASSWORD_D }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: node tests/tools/deploy_gate.mjs
+      - run: pip install pytest requests playwright boto3 pypdf
+      - run: python -m playwright install --with-deps chromium
+      - name: Availability + authentication checks (read-only)
+        run: python -m pytest tests/api/test_platform_availability.py tests/api/test_auth_and_isolation.py tests/api/test_auth_session.py tests/ui/test_live_session_pages.py

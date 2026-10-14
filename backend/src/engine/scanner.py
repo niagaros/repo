@@ -44,20 +44,43 @@ class Scanner:
     def run(self) -> dict:
 
         # ── 1. collect resources ──────────────────────────────────
+        scan_started_at   = self.db.current_timestamp()
         all_resources     = []
+        prunable          = []   # (resource_type, existing_ids, regions) of complete listings
         collector_classes = _discover(collectors_pkg, BaseCollector)
         logger.info(f"Scanner: discovered {len(collector_classes)} collectors")
 
         for cls in collector_classes:
             try:
-                resources = cls(self.aws).collect()
+                collector = cls(self.aws)
+                resources = collector.collect()
                 logger.info(f"Scanner: {cls.__name__} collected {len(resources)} resources")
                 all_resources.extend(resources)
+                existing_ids = getattr(collector, "existing_ids", None)
+                if existing_ids is not None:
+                    rtype = collector.get_resource_type()
+                    rtype = getattr(rtype, "value", rtype)
+                    if not getattr(collector, "listing_complete", False):
+                        logger.warning(f"Scanner: {cls.__name__} listing incomplete — nothing pruned for {rtype}")
+                    elif not existing_ids:
+                        # An empty listing is more likely a permission/region problem than
+                        # "everything was deleted": never prune on it.
+                        logger.warning(f"Scanner: {cls.__name__} listed 0 resources — nothing pruned for {rtype}")
+                    else:
+                        prunable.append((rtype, existing_ids, getattr(collector, "listed_regions", None)))
             except Exception as e:
                 logger.error(f"Scanner: {cls.__name__} failed — {e}")
 
-        # ── 2. persist resources ──────────────────────────────────
+        # ── 2. persist resources, prune resources AWS no longer lists ──
         id_map = self.db.upsert_resources(self.cloud_account_id, all_resources)
+        pruned = []
+        for rtype, existing_ids, regions in prunable:
+            try:
+                pruned.extend(self.db.prune_resources(self.cloud_account_id, rtype, existing_ids, regions,
+                                                      scan_started_at=scan_started_at))
+            except Exception as e:
+                logger.error(f"Scanner: pruning {rtype} failed — {e}")
+                self.db.conn.rollback()
 
         # ── 3. run checks ─────────────────────────────────────────
         all_findings  = []
@@ -107,6 +130,7 @@ class Scanner:
         return {
             "cloud_account_id":    self.cloud_account_id,
             "resources_collected": len(all_resources),
+            "resources_pruned":    len(pruned),
             "checks_run":          len(all_findings),
             "findings_failed":     score["failed"],
             "compliance_score":    score,

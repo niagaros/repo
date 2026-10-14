@@ -5,6 +5,7 @@ applications:
       phases:
         preBuild:
           commands:
+            - node ../tests/tools/deploy_gate.mjs
             - |
               if [ "$AWS_BRANCH" = "main" ]; then
                 SECRET_ID="niagaros/cspm/frontend-config/prod"

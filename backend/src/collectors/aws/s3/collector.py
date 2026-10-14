@@ -13,6 +13,8 @@ class S3Collector(BaseCollector):
         s3        = self.aws.get_client("s3")
         buckets   = s3.list_buckets().get("Buckets", [])
         resources = []
+        # list_buckets is global and unpaginated here: every existing bucket is in it.
+        self.existing_ids = {f"arn:aws:s3:::{b['Name']}" for b in buckets}
         logger.info(f"S3Collector: found {len(buckets)} buckets")
         for bucket in buckets:
             name = bucket["Name"]
