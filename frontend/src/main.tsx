@@ -4,11 +4,17 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Amplify } from "aws-amplify";
 import "./index.css";
 import App from "./App";
-import SettingsIndex  from "./settings/SettingsIndex";
-import PersonalData   from "./settings/PersonalData";
-import Company        from "./settings/Company";
-import Plans          from "./settings/Plans";
-import GitHub         from "./settings/GitHub";
+import SettingsIndex   from "./settings/SettingsIndex";
+import PersonalData    from "./settings/PersonalData";
+import Company         from "./settings/Company";
+import Plans           from "./settings/Plans";
+import GitHub          from "./settings/GitHub";
+import Infrastructure  from "./settings/Infrastructure";
+import Team            from "./settings/Team";
+import Auditors        from "./settings/Auditors";
+import AuditorPortal   from "./auditor/AuditorPortal";
+import OnboardingHome  from "./onboarding/OnboardingHome";
+import MfaSetup        from "./mfa/MfaSetup";
 
 async function bootstrap() {
   try {
@@ -40,11 +46,19 @@ async function bootstrap() {
     <React.StrictMode>
       <BrowserRouter>
         <Routes>
+          {/* ── Onboarding accelerator ─────────────────── */}
+          <Route path="/onboarding"              element={<OnboardingHome />} />
+          <Route path="/mfa-setup"               element={<MfaSetup       />} />
+
           {/* ── Settings module ─────────────────────── */}
           <Route path="/settings"                element={<SettingsIndex />} />
           <Route path="/settings/personal-data"  element={<PersonalData  />} />
           <Route path="/settings/company"        element={<Company       />} />
           <Route path="/settings/plans"          element={<Plans         />} />
+          <Route path="/settings/infrastructure" element={<Infrastructure />} />
+          <Route path="/settings/team"           element={<Team           />} />
+          <Route path="/settings/auditor"        element={<Auditors      />} />
+          <Route path="/auditor"                 element={<AuditorPortal />} />
           <Route path="/settings/github"         element={<GitHub        />} />
 
           {/* ── Existing app (login / onboarding / dashboard redirect) ── */}
