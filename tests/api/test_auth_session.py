@@ -65,6 +65,7 @@ def test_refresh_with_invalid_token_fails(bad):
 
 
 @pytest.mark.flow("E2E-AUTH-002")
+@pytest.mark.local_only("reads the Cognito app client; needs AWS credentials CI does not have")
 def test_the_real_login_client_also_prevents_account_enumeration():
     """Only checkable with AWS credentials (local runs); reported as blocked in CI instead of pretending."""
     boto3 = pytest.importorskip("boto3")

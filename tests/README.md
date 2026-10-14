@@ -22,7 +22,7 @@ node tests/tools/deploy_gate.mjs           # the P0 deployment gate
 Every test carries `@pytest.mark.flow("E2E-…")` and `@pytest.mark.severity("P0..P4")`. Flow metadata (domain, owner, environment, frequency, dependencies) lives in `tests/registry/critical_flows.json`. To register a new critical flow, add it there and tag its tests — coverage recalculates automatically. Flows for features that do not exist yet stay in the inventory as honest gaps with a `gap_reason`.
 
 ## Statuses (never hidden)
-`passed` · `failed` (blocks) · `known_failure` (a real, tracked defect — strict-xfail, so it turns red the moment it is fixed and the marker must be removed) · `blocked` (needs `E2E_TOKEN`) · `skipped` (not applicable) · `flaky` (failed, then passed on immediate re-run).
+`passed` · `failed` (blocks) · `known_failure` (a real, tracked defect — strict-xfail, so it turns red the moment it is fixed and the marker must be removed) · `blocked` (a prerequisite such as a test-user password is missing; a blocked P0 fails the run, except in CI for tests marked `local_only`, which need AWS credentials CI does not get and are listed separately) · `skipped` (not applicable) · `flaky` (failed, then passed on immediate re-run).
 
 ## What is covered (all against the live system, with dedicated test users)
 Users A, B, C(not created), D and their tenants: **tenant isolation** (reads, writes, every id-only action, denied attempts audited), **enterprise permissions**

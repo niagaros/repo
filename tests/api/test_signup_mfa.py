@@ -49,6 +49,7 @@ def admin():
     return c
 
 
+@pytest.mark.local_only("needs Cognito administrator rights (creates and deletes a user); kept out of CI on purpose")
 def test_signup_verification_mfa_session_and_signout(admin, step):
     email = f"e2e-signup-{secrets.token_hex(4)}@niagaros.test"
     password = "Aa1!" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))

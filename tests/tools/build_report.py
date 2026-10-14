@@ -8,6 +8,7 @@ every figure is computed from the run that produced latest.json.
 Exit code 1 when a P0 test FAILED (a known, tracked defect does not count — it is shown, not hidden).
 """
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -128,7 +129,15 @@ def main():
     # not "skipped" as genuinely not-applicable — must gate the suite exactly like a
     # failure. Real bug this fixes: a run missing e.g. E2E_PASSWORD_C silently reported
     # 0 failures and exit code 0, even though a mandatory P0 flow was never executed.
-    p0_blocked = [t for t in results if t["status"] == "blocked" and t["severity"] == "P0"]
+    # Exception, CI only: tests marked local_only need AWS credentials that CI deliberately
+    # does not get (one even needs Cognito admin rights). They are still listed as blocked —
+    # never as passed — but cannot gate CI. Locally they gate like any other P0.
+    in_ci = bool(os.environ.get("CI"))
+    p0_blocked_all = [t for t in results if t["status"] == "blocked" and t["severity"] == "P0"]
+    p0_local_only = [t for t in p0_blocked_all if in_ci and t.get("local_only")]
+    p0_blocked = [t for t in p0_blocked_all if t not in p0_local_only]
+    if p0_local_only:
+        print("P0 local-only — not run in CI, run locally with AWS credentials:", [t["test_id"] for t in p0_local_only])
     if p0_blocked:
         print("P0 BLOCKED — never ran (deployment-blocking):", [t["test_id"] for t in p0_blocked])
     return 1 if any(x["status"] == "failed" for x in problems) or unregistered or p0_blocked else 0

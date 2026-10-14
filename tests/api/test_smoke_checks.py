@@ -33,6 +33,7 @@ def test_the_scheduled_smoke_run_is_recent(anon):
     assert age < 45 * 60, f"the last smoke run is {int(age / 60)} minutes old; the 30-minute schedule is not running"
 
 
+@pytest.mark.local_only("runs the smoke checks with real AWS access; needs AWS credentials CI does not have")
 def test_the_smoke_checks_also_pass_when_run_directly_with_real_aws_access():
     """Local/admin-only: proves the checks work standalone too (not just as deployed), using real credentials."""
     boto3 = pytest.importorskip("boto3")
@@ -45,6 +46,7 @@ def test_the_smoke_checks_also_pass_when_run_directly_with_real_aws_access():
     assert not bad, bad
 
 
+@pytest.mark.local_only("reads EventBridge rules; needs AWS credentials CI does not have")
 def test_the_schedule_and_the_after_deployment_trigger_exist_and_are_enabled():
     boto3 = pytest.importorskip("boto3")
     try:

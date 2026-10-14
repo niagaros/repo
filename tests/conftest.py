@@ -74,6 +74,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "needs_two_tenants: requires both dedicated test users A and B")
     config.addinivalue_line("markers", "needs_token: requires E2E_TOKEN (skipped and reported as blocked otherwise)")
     config.addinivalue_line("markers", "known_failure(issue, reason): a real, tracked defect; strict-xfail so a fix is noticed")
+    config.addinivalue_line("markers", "local_only(reason): needs AWS credentials that CI does not have; still reported as blocked there, but does not gate a CI run")
     config._e2e_results = []
     config._e2e_started = time.time()
 
@@ -188,6 +189,7 @@ def pytest_runtest_makereport(item, call):
         "last_exchange": last,
         "request_id": (last or {}).get("request_id"),
         "screenshot": screenshot,
+        "local_only": item.get_closest_marker("local_only") is not None,
     })
 
 
