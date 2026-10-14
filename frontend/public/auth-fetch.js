@@ -2,12 +2,23 @@
 // enforce tenant isolation (each caller only reaches accounts they own). Loaded before any page script.
 // A 401 from the API means the session is missing or expired -> back to the login page.
 (function () {
-  var API_HOST = 'execute-api.eu-west-1.amazonaws.com';
+  var API_HOST = 'hzf92ft6j7.execute-api.eu-west-1.amazonaws.com';
   var nativeFetch = window.fetch.bind(window);
 
+  // Exact host match on the parsed URL: a substring check would also hand the token to
+  // e.g. https://evil.example/?x=execute-api.eu-west-1.amazonaws.com.
+  function isApiUrl(url) {
+    try {
+      var u = new URL(url, location.href);
+      return u.protocol === 'https:' && u.hostname === API_HOST;
+    } catch (e) {
+      return false;
+    }
+  }
+
   window.fetch = function (input, init) {
-    var url = typeof input === 'string' ? input : (input && input.url) || '';
-    var isApi = url.indexOf(API_HOST) !== -1;
+    var url = (typeof input === 'string' || input instanceof URL) ? String(input) : (input && input.url) || '';
+    var isApi = isApiUrl(url);
     if (isApi) {
       var token = null;
       try { token = localStorage.getItem('niagaros_token'); } catch (e) { /* storage blocked */ }

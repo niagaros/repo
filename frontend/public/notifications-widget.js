@@ -155,10 +155,23 @@
           if (accountId) {
             fetch(API, { method: "POST", body: JSON.stringify({ action: "mark_read", cloud_account_id: accountId, id: id }) });
           }
-          if (link) location.href = link;
+          var target = safeLink(link);
+          if (target) location.href = target;
         });
       }
     });
+  }
+
+  // Notification links are relative app pages (e.g. "tprm.html?vendor_id=…"). Only follow a link that
+  // resolves to this same origin, so a stored "javascript:" or external URL can never run or redirect.
+  function safeLink(link) {
+    if (!link) return null;
+    try {
+      var u = new URL(link, location.href);
+      return u.origin === location.origin ? u.href : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   function updateBadge(count) {
