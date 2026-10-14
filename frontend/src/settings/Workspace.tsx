@@ -20,7 +20,7 @@ import { useRequireAuth } from "./useRequireAuth";
 //     /settings/github, and points the other way: it reads a GitHub org in
 //     order to assess it, rather than pushing findings out. It is linked
 //     from here instead of duplicated.
-//   - Communication, Identity, SIEM and CI/CD are shown as in development.
+//   - Communication, Identity, SIEM and CI/CD are shown as on request.
 //     Each needs a business account at the vendor to authenticate against,
 //     and an integration that cannot be tested is not an integration. The
 //     same approach is used for the non-AWS cloud providers in step 1.
@@ -459,7 +459,11 @@ export default function Workspace() {
     if (connected) return { text: "Connected", color: "#4ade80", bg: "rgba(22,163,74,0.12)", border: "rgba(22,163,74,0.3)" };
     if (p.availability === "ready" || p.availability === "elsewhere")
       return { text: "Available", color: "#ef4444", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)" };
-    return { text: "In development", color: "#4e627a", bg: "#0d0f14", border: "#1a2030" };
+    // "On request" rather than "In development": nothing is being built for
+    // these today. They are designed and waiting on an account at the vendor
+    // to authenticate against, and the honest thing to tell a customer is
+    // that asking is what starts it — not that work is already underway.
+    return { text: "On request", color: "#4e627a", bg: "#0d0f14", border: "#1a2030" };
   };
 
   return (
@@ -694,12 +698,13 @@ export default function Workspace() {
 
       {/* ── Why four categories are empty ─────────────────────────────────── */}
       <div style={{ ...card, maxWidth: 760, background: "#0d0f14" }}>
-        <div style={{ ...label, marginBottom: 10 }}>Why some providers are still in development</div>
+        <div style={{ ...label, marginBottom: 10 }}>Why some providers are available on request</div>
         <div style={{ color: "#64748b", fontSize: 12.5, lineHeight: 1.8 }}>
           Every integration authenticates against the vendor itself, so it can only be released once it
           has been tested against a real account there. Ticketing is available because that test could be
-          done. Communication, identity, SIEM and CI/CD are designed and queued behind the accounts needed
-          to prove them, and are shown here so the direction is visible rather than hidden.
+          done. Communication, identity, SIEM and CI/CD are designed but not built: they are waiting on
+          an account to prove them against. If you need one of them, say so — that is what starts it.
+          They are listed here so the direction is visible rather than hidden.
         </div>
       </div>
     </SettingsLayout>
