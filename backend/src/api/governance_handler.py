@@ -38,8 +38,10 @@ import os
 import re
 from datetime import date, datetime, timedelta
 
+import boto3
+
 from config.database import Database, MAPPED_FRAMEWORK_NAMES
-from api.team_handler import _get_caller, _response, _route_path
+from api.team_handler import _response, _route_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -89,6 +91,88 @@ def _token_from_our_pool(event: dict) -> bool:
     region = pool_id.split("_")[0]
     return (claims.get("iss") == f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
             and claims.get("token_use") == "access")
+
+
+def _cognito_identity(event: dict) -> dict | None:
+    """The caller's identity from Cognito's own GetUser (which verifies signature, expiry and revocation)."""
+    headers = event.get("headers") or {}
+    auth = headers.get("Authorization") or headers.get("authorization") or ""
+    token = auth[7:].strip() if auth.startswith("Bearer ") else ""
+    if not token:
+        return None
+    try:
+        resp = boto3.client("cognito-idp").get_user(AccessToken=token)
+    except Exception as e:
+        logger.warning(f"governance_handler: token validation failed — {type(e).__name__}")
+        return None
+    attrs = {a["Name"]: a["Value"] for a in resp.get("UserAttributes", [])}
+    if not attrs.get("email") or not attrs.get("sub"):
+        return None
+    return {"sub": attrs["sub"], "email": attrs["email"], "name": attrs.get("name"),
+            "verified": attrs.get("email_verified") == "true"}
+
+
+def _user_by_sub(db: Database, sub: str) -> dict | None:
+    with db.conn.cursor() as cur:
+        cur.execute("SELECT id, email, full_name, organization_id, role, status FROM users WHERE cognito_sub = %s", (sub,))
+        r = cur.fetchone()
+    if not r:
+        return None
+    return {"id": str(r[0]), "email": r[1], "full_name": r[2], "organization_id": str(r[3]), "role": r[4], "status": r[5]}
+
+
+def _resolve_caller(event: dict, db: Database) -> dict | None:
+    """
+    The active Niagaros user behind this request, or None.
+
+    Identity is the Cognito `sub` (stable, unforgeable), never the email alone, and only callers whose
+    email Cognito has verified are accepted. This closes the gap where an unverified, changed email
+    could select someone else's users row.
+
+    Production has no Cognito post-confirmation trigger, so most people who sign up never got a
+    `users` row and every organization-scoped endpoint refused them. Provisioning here does what that
+    trigger was meant to do: on the first request a row is created (email exactly as Cognito has it, so
+    team_handler's exact-match lookup keeps working), and the users_default_organization trigger
+    (migration 002) puts the user in their own organization as admin. A pending team invitation for
+    the email is accepted on every request until it succeeds — the same thing useRequireAuth already
+    triggers via /team/accept-invite on each page load — so an invitee lands in the inviting
+    organization even if an earlier attempt was interrupted. A deactivated user keeps their row and is
+    never re-created.
+    """
+    if not _token_from_our_pool(event):
+        return None
+    identity = _cognito_identity(event)
+    if not identity or not identity["verified"]:
+        return None
+    user = _user_by_sub(db, identity["sub"])
+    email = identity["email"]
+    if user is None:
+        with db.conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM users WHERE lower(email) = lower(%s)", (email,))
+            if cur.fetchone():
+                # A row for this email that belongs to another Cognito identity: never adopt it.
+                db.conn.rollback()
+                logger.warning("governance_handler: email already belongs to another identity; not provisioning")
+                return None
+            cur.execute("""INSERT INTO users (cognito_sub, email, full_name) VALUES (%s, %s, %s)
+                           ON CONFLICT DO NOTHING""", (identity["sub"], email, identity["name"]))
+            created = cur.rowcount == 1
+        if created:
+            db.conn.commit()
+            logger.info("governance_handler: provisioned a users row for a first-time caller")
+        else:
+            db.conn.rollback()  # lost a race: also undoes the organization the trigger made
+        user = _user_by_sub(db, identity["sub"])
+    if user and user["status"] == "active":
+        for candidate in dict.fromkeys([email, email.lower()]):
+            result = db.accept_pending_invite(user["id"], candidate)
+            if result:
+                db.log_audit_event(organization_id=result["organization_id"], actor_user_id=user["id"],
+                                   action="invite_accepted", target_user_id=user["id"],
+                                   details={"role": result["role"]})
+                user = _user_by_sub(db, identity["sub"])
+                break
+    return user if user and user["status"] == "active" else None
 
 
 class RequestError(Exception):
@@ -784,7 +868,7 @@ def handle(event: dict, db: Database) -> dict:
     handler, arg = _route(method, path)
     if not handler:
         return _response(404, {"error": f"no route for {method} {path}"})
-    caller = _get_caller(event, db) if _token_from_our_pool(event) else None
+    caller = _resolve_caller(event, db)
     if not caller:
         return _response(401, {"error": "unauthorized"})
     try:

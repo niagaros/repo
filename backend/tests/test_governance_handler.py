@@ -69,7 +69,7 @@ def db(conn):
 def _user(conn, email, role="admin", org=None):
     with conn.cursor() as cur:
         cur.execute("INSERT INTO users (cognito_sub, email) VALUES (%s, %s) RETURNING id, organization_id",
-                    (uuid.uuid4().hex, email))
+                    ("sub-" + email, email))
         uid, own_org = cur.fetchone()
         if org:
             cur.execute("UPDATE users SET organization_id = %s, role = %s WHERE id = %s", (org, role, uid))
@@ -92,11 +92,11 @@ def team(conn):
     }
 
 
-def _token(email, pool=POOL, token_use="access"):
+def _token(email, pool=POOL, token_use="access", verified=True):
     def seg(d):
         return base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
     claims = {"iss": f"https://cognito-idp.eu-west-1.amazonaws.com/{pool}", "token_use": token_use,
-              "test_email": email}
+              "test_email": email, "verified": verified}
     return f"{seg({'alg': 'none'})}.{seg(claims)}.sig"
 
 
@@ -104,13 +104,13 @@ def _token(email, pool=POOL, token_use="access"):
 def call(db):
     from api import governance_handler as gh
 
-    def fake_caller(event, d):
-        # Stands in for Cognito GetUser: the email comes from the (already pool-checked) token.
+    def fake_identity(event):
+        # Stands in for Cognito GetUser: identity comes from the (already pool-checked) test token.
         auth = (event.get("headers") or {}).get("authorization", "")
         payload = auth[7:].split(".")[1]
-        email = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["test_email"]
-        user = d.get_user_by_email(email)
-        return user if user and user["status"] == "active" else None
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return {"sub": "sub-" + claims["test_email"], "email": claims["test_email"], "name": None,
+                "verified": claims.get("verified", True)}
 
     def _call(who, method, path, body=None, token=None):
         event = {
@@ -119,7 +119,7 @@ def call(db):
             "headers": {"authorization": "Bearer " + (token or _token(who["email"]))},
             "body": json.dumps(body) if body is not None else None,
         }
-        with patch.object(gh, "_get_caller", fake_caller), patch.dict(os.environ, {"COGNITO_USER_POOL_ID": POOL}):
+        with patch.object(gh, "_cognito_identity", fake_identity), patch.dict(os.environ, {"COGNITO_USER_POOL_ID": POOL}):
             r = gh.handle(event, db)
         return r["statusCode"], json.loads(r["body"])
 
@@ -144,6 +144,84 @@ def test_missing_pool_configuration_fails_closed(db, team):
              "headers": {"authorization": "Bearer " + _token("admin@a.test")}}
     with patch.dict(os.environ, {"COGNITO_USER_POOL_ID": ""}):
         assert gh.handle(event, db)["statusCode"] == 401
+
+
+def test_first_time_user_with_verified_email_is_provisioned_into_their_own_organization(call, conn):
+    newcomer = {"email": "new.customer@c.test"}
+    s, b = call(newcomer, "GET", "/compliance")
+    assert s == 200 and b["can_edit"] is True  # own organization, admin
+    with conn.cursor() as cur:
+        cur.execute("SELECT u.role, u.status, o.owner_email FROM users u JOIN organizations o ON o.id = u.organization_id "
+                    "WHERE u.email = %s", ("new.customer@c.test",))
+        assert cur.fetchone() == ("admin", "active", "new.customer@c.test")
+    conn.rollback()
+    s, _ = call(newcomer, "GET", "/compliance")  # second request: no duplicate, still works
+    assert s == 200
+
+
+def test_unverified_email_is_not_provisioned(call, conn):
+    s, _ = call({"email": "unverified@c.test"}, "GET", "/compliance", token=_token("unverified@c.test", verified=False))
+    assert s == 401
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM users WHERE email = 'unverified@c.test'")
+        assert cur.fetchone()[0] == 0
+    conn.rollback()
+
+
+def test_email_owned_by_another_identity_is_never_adopted(call, team, conn):
+    # Same email as the admin, but a different Cognito sub (e.g. a changed, unverified email elsewhere).
+    def other_identity(event):
+        return {"sub": "someone-else", "email": "ADMIN@a.test", "name": None, "verified": True}
+    from api import governance_handler as gh
+    with patch.object(gh, "_cognito_identity", other_identity), patch.dict(os.environ, {"COGNITO_USER_POOL_ID": POOL}):
+        r = gh.handle({"rawPath": "/default/governance", "requestContext": {"stage": "default", "http": {"method": "GET"}},
+                       "headers": {"authorization": "Bearer " + _token("x@x.test")}}, gh_db(conn))
+    assert r["statusCode"] == 401
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM users WHERE cognito_sub = 'someone-else'")
+        assert cur.fetchone()[0] == 0
+    conn.rollback()
+
+
+def test_pending_invite_is_accepted_on_first_request(call, team, conn):
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO team_invites (organization_id, email, role, invited_by) VALUES (%s, %s, 'compliance', %s)",
+                    (team["admin"]["org"], "invitee@a.test", team["admin"]["id"]))
+    conn.commit()
+    s, b = call({"email": "Invitee@a.test"}, "GET", "/governance")
+    assert s == 200 and b["me"]["role"] == "compliance"
+    assert any(m["email"] == "admin@a.test" for m in b["members"])  # landed in the inviting organization
+    with conn.cursor() as cur:
+        cur.execute("SELECT status FROM team_invites WHERE email = 'invitee@a.test'")
+        assert cur.fetchone()[0] == "accepted"
+        cur.execute("SELECT email FROM users WHERE cognito_sub = 'sub-Invitee@a.test'")
+        assert cur.fetchone()[0] == "Invitee@a.test"  # stored as Cognito has it (team_handler matches exactly)
+        cur.execute("SELECT count(*) FROM team_audit_log WHERE action = 'invite_accepted'")
+        assert cur.fetchone()[0] == 1
+        # Leave the shared team as later tests expect it.
+        cur.execute("UPDATE users SET status = 'deactivated' WHERE cognito_sub = 'sub-Invitee@a.test'")
+    conn.commit()
+
+
+def test_invite_sent_after_first_login_is_still_accepted_later(call, team, conn):
+    s, _ = call({"email": "late@a.test"}, "GET", "/compliance")  # provisioned into a solo organization
+    assert s == 200
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO team_invites (organization_id, email, role, invited_by) VALUES (%s, 'late@a.test', 'viewer', %s)",
+                    (team["admin"]["org"], team["admin"]["id"]))
+    conn.commit()
+    s, b = call({"email": "late@a.test"}, "GET", "/governance")
+    assert s == 200 and b["me"]["role"] == "viewer"
+    with conn.cursor() as cur:
+        cur.execute("UPDATE users SET status = 'deactivated' WHERE email = 'late@a.test'")
+    conn.commit()
+
+
+def gh_db(conn):
+    from config.database import Database
+    d = Database.__new__(Database)
+    d.conn = conn
+    return d
 
 
 def test_unknown_route_is_404(call, team):
