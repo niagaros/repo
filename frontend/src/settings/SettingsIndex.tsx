@@ -128,6 +128,31 @@ export default function SettingsIndex() {
           />
         </div>
       </section>
+
+      {/* Compliance & governance — onboarding steps 5–7 (#270) */}
+      <section style={{ marginTop: 36 }}>
+        <SectionLabel>Compliance &amp; Governance</SectionLabel>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 12 }}>
+          <SettingCard
+            icon="📋"
+            title="Compliance"
+            desc="Choose your frameworks, assign owners and track certifications"
+            href="/settings/compliance"
+          />
+          <SettingCard
+            icon="🏛️"
+            title="Governance"
+            desc="Policies with approvals, controlled exceptions and an audit trail"
+            href="/settings/governance"
+          />
+          <SettingCard
+            icon="🎓"
+            title="Security Training"
+            desc="Team members read and acknowledge your security policies"
+            href="/settings/training"
+          />
+        </div>
+      </section>
     </SettingsLayout>
   );
 }

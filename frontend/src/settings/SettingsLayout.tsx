@@ -19,6 +19,9 @@ const SUB_NAV = [
   { label: "Team",                href: "/settings/team" },
   { label: "Auditors",            href: "/settings/auditor" },
   { label: "GitHub",              href: "/settings/github" },
+  { label: "Compliance",          href: "/settings/compliance" },
+  { label: "Governance",          href: "/settings/governance" },
+  { label: "Security Training",   href: "/settings/training" },
 ];
 
 interface Props {
@@ -34,10 +37,23 @@ export default function SettingsLayout({ children, breadcrumb, title, subtitle, 
   const { pathname } = useLocation();
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#080b12", fontFamily: "system-ui,-apple-system,sans-serif" }}>
+    <div className="nsl-root" style={{ display: "flex", minHeight: "100vh", background: "#080b12", fontFamily: "system-ui,-apple-system,sans-serif" }}>
+      {/* Phone widths: the 220px sidebar left too little room and cut the page off. Below 760px the
+          sidebar becomes a top bar with a horizontally scrollable menu. !important beats the inline styles. */}
+      <style>{`
+        @media (max-width: 760px) {
+          .nsl-root { flex-direction: column !important; }
+          .nsl-aside { width: 100% !important; border-right: none !important; border-bottom: 1px solid #1a2030; }
+          .nsl-nav { display: flex !important; overflow-x: auto; padding: 6px 0 !important; }
+          .nsl-nav > * { flex-shrink: 0; white-space: nowrap; }
+          .nsl-sub { padding: 7px 12px !important; }
+          .nsl-body { min-height: 0 !important; overflow: visible !important; min-width: 0; }
+          .nsl-main { padding: 20px 16px !important; }
+        }
+      `}</style>
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside style={{ width: 220, background: "#0d0f14", borderRight: "1px solid #1a2030", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+      <aside className="nsl-aside" style={{ width: 220, background: "#0d0f14", borderRight: "1px solid #1a2030", display: "flex", flexDirection: "column", flexShrink: 0 }}>
 
         {/* Logo */}
         <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid #1a2030", cursor: "pointer" }}
@@ -52,7 +68,7 @@ export default function SettingsLayout({ children, breadcrumb, title, subtitle, 
         </div>
 
         {/* Nav */}
-        <nav style={{ padding: "12px 0", flex: 1 }}>
+        <nav className="nsl-nav" style={{ padding: "12px 0", flex: 1 }}>
           {/* Dashboard link — back to CSPM */}
           <a
             href="/niagaros-dashboard.html"
@@ -83,6 +99,7 @@ export default function SettingsLayout({ children, breadcrumb, title, subtitle, 
             return (
               <div
                 key={item.href}
+                className="nsl-sub"
                 onClick={() => navigate(item.href)}
                 style={{
                   display: "flex", alignItems: "center",
@@ -104,7 +121,7 @@ export default function SettingsLayout({ children, breadcrumb, title, subtitle, 
       </aside>
 
       {/* ── Main ────────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", overflow: "auto" }}>
+      <div className="nsl-body" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", overflow: "auto" }}>
 
         {/* Top bar */}
         <header style={{
@@ -146,7 +163,7 @@ export default function SettingsLayout({ children, breadcrumb, title, subtitle, 
         </header>
 
         {/* Page content */}
-        <main style={{ flex: 1, padding: "36px 40px", background: "#0b0e17" }}>
+        <main className="nsl-main" style={{ flex: 1, padding: "36px 40px", background: "#0b0e17" }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: "#f1f5f9", margin: "0 0 6px" }}>{title}</h1>
           {subtitle && <p style={{ fontSize: 13.5, color: "#64748b", margin: "0 0 32px", lineHeight: 1.6 }}>{subtitle}</p>}
           {children}

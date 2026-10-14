@@ -8,10 +8,10 @@ import { useRequireAuth } from "../settings/useRequireAuth";
 // individual settings pages together into one sequence with a visible
 // progress indicator.
 //
-// Honesty over completeness: Steps 1, 2 and 3 (Cloud Infrastructure, Team,
-// Auditors) have real backend signals to check today. Steps 4 and 5
-// (Workspace, Training) have no settings page or API behind them yet —
-// they are shown as "In progress" rather than faked as clickable/complete.
+// Honesty over completeness: steps 1, 2, 3 and 5, 6, 7 (Cloud Infrastructure,
+// Team, Auditors, Compliance, Governance, Training) have real backend signals.
+// Step 4 (Workspace) has no settings page on this branch yet, so it is shown
+// as "In progress" rather than faked as clickable/complete.
 // (Note: the existing /settings/github page is a source-code scanner
 // connection, not the Jira/ServiceNow-style "Connect Workspace" step #268
 // describes — deliberately not reused here to avoid overstating progress.)
@@ -70,19 +70,19 @@ const STEPS: Step[] = [
     n: 5, id: "compliance",
     title: "Configure Compliance",
     description: "Select and configure the compliance frameworks that apply to your organization.",
-    href: "/settings/compliance", available: false,
+    href: "/settings/compliance", available: true,
   },
   {
     n: 6, id: "governance",
     title: "Configure Governance",
     description: "Set up policies, ownership and review cycles for your security posture.",
-    href: "/settings/governance", available: false,
+    href: "/settings/governance", available: true,
   },
   {
     n: 7, id: "training",
     title: "Complete Security Training",
-    description: "Assign and track baseline security awareness training.",
-    href: "/settings/training", available: false,
+    description: "Every team member reads and acknowledges your published security policies.",
+    href: "/settings/training", available: true,
   },
 ];
 
@@ -92,6 +92,12 @@ export default function OnboardingHome() {
   const [infraState, setInfraState] = useState<StepState>("loading");
   const [teamState, setTeamState]   = useState<StepState>("loading");
   const [auditorState, setAuditorState] = useState<StepState>("loading");
+  // Steps 5–7: the backend reports step_complete from the organization's own
+  // data (an enabled framework, an approved policy, everyone's acknowledgement);
+  // this page only displays it.
+  const [setupStates, setSetupStates] = useState<Record<string, StepState>>({
+    compliance: "loading", governance: "loading", training: "loading",
+  });
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
@@ -153,18 +159,34 @@ export default function OnboardingHome() {
     })();
   }, [authLoading, email]);
 
+  useEffect(() => {
+    if (authLoading || !email) return;
+    (["compliance", "governance", "training"] as const).forEach(async (id) => {
+      let state: StepState = "not_done";
+      try {
+        const resp = await fetch(`${getApiBase()}/${id}`, { cache: "no-store", headers: authHeader() });
+        if (resp.ok) state = (await resp.json()).step_complete ? "done" : "not_done";
+      } catch {
+        state = "not_done";
+      }
+      setSetupStates(prev => ({ ...prev, [id]: state }));
+    });
+  }, [authLoading, email]);
+
   const stateFor = (step: Step): StepState => {
     if (!step.available) return "unavailable";
     if (step.id === "infrastructure") return infraState;
     if (step.id === "team") return teamState;
     if (step.id === "auditor") return auditorState;
+    if (step.id in setupStates) return setupStates[step.id];
     return "not_done";
   };
 
   const doneCount = STEPS.filter(s => stateFor(s) === "done").length;
   const progressPct = Math.round((doneCount / STEPS.length) * 100);
 
-  if (authLoading || infraState === "loading" || teamState === "loading" || auditorState === "loading") return (
+  if (authLoading || infraState === "loading" || teamState === "loading" || auditorState === "loading"
+      || Object.values(setupStates).includes("loading")) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#080b12", color: "#64748b", fontSize: 14 }}>
       Loading…
     </div>
