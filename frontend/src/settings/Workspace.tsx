@@ -27,6 +27,19 @@ import { useRequireAuth } from "./useRequireAuth";
 //
 // See the afbakeningsnotitie for #268 for which acceptance criteria that
 // covers (1, 2 and 10, plus making 6 reachable) and which it does not.
+//
+// One backend action is deliberately not called from here. The handler
+// supports connect, select_project, create_ticket, sync and disconnect;
+// this page uses four of those. `create_ticket` is missing on purpose,
+// not by oversight: it turns a finding into a ticket, and there are no
+// findings on this page to point at. The button belongs where findings
+// are listed, which is the static dashboard and a different codebase.
+//
+// Criterion 3 of the issue asks for a ticket that appears *automatically*
+// when a critical finding is raised. A manual button here would satisfy
+// neither that criterion nor this page's purpose, so it would be motion
+// rather than progress. The gap is recorded in the validation report
+// instead, with the same reasoning.
 
 function getApiBase(): string {
   return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
