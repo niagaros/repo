@@ -434,11 +434,18 @@ export default function Workspace() {
 
   const connectedProviderIds = new Set(integrations.map(i => i.provider));
 
+  // A badge says one thing everywhere: whether this provider is connected,
+  // connectable, or not built yet. GitHub used to get its own badge reading
+  // "Own page", which told you where it is managed rather than how it
+  // stands — and repeated the note underneath in different words. Where it
+  // lives is what that note is for; this is for the state.
   const badgeFor = (p: Provider) => {
-    if (p.id === "github" && githubConnected) return { text: "Connected", color: "#4ade80", bg: "rgba(22,163,74,0.12)", border: "rgba(22,163,74,0.3)" };
-    if (p.availability === "elsewhere") return { text: "Own page", color: "#9ca3af", bg: "#0d0f14", border: "#1e2433" };
-    if (connectedProviderIds.has(p.id)) return { text: "Connected", color: "#4ade80", bg: "rgba(22,163,74,0.12)", border: "rgba(22,163,74,0.3)" };
-    if (p.availability === "ready") return { text: "Available", color: "#ef4444", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)" };
+    // GitHub's connection is kept in its own table and reported by its own
+    // endpoint, so its state comes from a different call than the rest.
+    const connected = p.id === "github" ? githubConnected : connectedProviderIds.has(p.id);
+    if (connected) return { text: "Connected", color: "#4ade80", bg: "rgba(22,163,74,0.12)", border: "rgba(22,163,74,0.3)" };
+    if (p.availability === "ready" || p.availability === "elsewhere")
+      return { text: "Available", color: "#ef4444", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)" };
     return { text: "In development", color: "#4e627a", bg: "#0d0f14", border: "#1a2030" };
   };
 
