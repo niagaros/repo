@@ -75,7 +75,7 @@ export default function SettingsIndex() {
         <SettingCard
           icon="🚀"
           title="Onboarding"
-          desc="Track your setup progress across cloud, team, auditors, workspace and training"
+          desc="Track your setup progress across every stage, and pick up where you left off"
           href="/onboarding"
         />
       </section>
@@ -125,6 +125,12 @@ export default function SettingsIndex() {
             title="GitHub"
             desc="Connect your GitHub org for CIS GitHub Benchmark scanning"
             href="/settings/github"
+          />
+          <SettingCard
+            icon="🔗"
+            title="Workspace"
+            desc="Sync findings into ticketing, communication, identity, SIEM and CI/CD tools"
+            href="/settings/workspace"
           />
         </div>
       </section>
