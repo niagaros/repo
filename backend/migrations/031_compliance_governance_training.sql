@@ -136,3 +136,10 @@ GRANT SELECT, INSERT, UPDATE         ON governance_policies        TO cspm_lambd
 GRANT SELECT, INSERT, UPDATE         ON governance_policy_versions TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE         ON governance_exceptions      TO cspm_lambda;
 GRANT SELECT, INSERT                 ON policy_acknowledgements    TO cspm_lambda;
+
+-- Production has default privileges that give cspm_lambda SELECT, INSERT, UPDATE
+-- and DELETE on every new table. Take back what the runtime must not have: policy
+-- history, exceptions and acknowledgements are audit evidence and are never
+-- deleted (or, for acknowledgements, changed) by the application.
+REVOKE DELETE         ON governance_policies, governance_policy_versions, governance_exceptions FROM cspm_lambda;
+REVOKE UPDATE, DELETE ON policy_acknowledgements FROM cspm_lambda;
