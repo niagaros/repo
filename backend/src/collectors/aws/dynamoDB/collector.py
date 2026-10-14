@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from collectors.base_collector import BaseCollector
 from standards.enums import ResourceType
 
@@ -16,6 +17,8 @@ class DynamoDBCollector(BaseCollector):
 
     def collect(self) -> list:
         resources = []
+        self.existing_ids = set()
+        self.listed_regions = set()
 
         for region in REGIONS_TO_CHECK:
             ddb = self.aws.get_client("dynamodb", region=region)
@@ -26,12 +29,20 @@ class DynamoDBCollector(BaseCollector):
                     table_names.extend(page.get("TableNames", []))
             except Exception as e:
                 logger.error(f"DynamoDBCollector: failed to list tables in {region} — {e}")
+                self.listing_complete = False
                 continue
+            self.listed_regions.add(region)
 
             for name in table_names:
+                arn_known = False
                 try:
                     table = ddb.describe_table(TableName=name)["Table"]
+                    if table.get("TableArn"):
+                        # Stored rows are keyed by TableArn; a name alone cannot protect them.
+                        self.existing_ids.add(table["TableArn"])
+                        arn_known = True
                     pitr = ddb.describe_continuous_backups(TableName=name)["ContinuousBackupsDescription"]
+                    observed_at = datetime.now(timezone.utc).isoformat()
                     pitr_desc = pitr.get("PointInTimeRecoveryDescription", {})
                     pitr_status = pitr_desc.get("PointInTimeRecoveryStatus")
                     latest_restorable = pitr_desc.get("LatestRestorableDateTime")
@@ -43,6 +54,7 @@ class DynamoDBCollector(BaseCollector):
                         "billing_mode":                  table.get("BillingModeSummary", {}).get("BillingMode"),
                         "item_count":                    table.get("ItemCount", 0),
                         "latest_restorable_time":        latest_restorable.isoformat() if latest_restorable else None,
+                        "observed_at":                   observed_at,
                     }
                     resources.append(self._resource(
                         resource_id = table.get("TableArn", name),
@@ -53,5 +65,9 @@ class DynamoDBCollector(BaseCollector):
                     logger.info(f"DynamoDBCollector: collected {name} ({region})")
                 except Exception as e:
                     logger.error(f"DynamoDBCollector: failed on {name} — {e}")
+                finally:
+                    if not arn_known:
+                        # No ARN for a table that exists: prune nothing this run.
+                        self.listing_complete = False
 
         return resources

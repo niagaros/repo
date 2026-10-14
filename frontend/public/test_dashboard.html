@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Automated Testing</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px;display:flex}
+.sb{width:220px;background:#0d0f14;height:100vh;flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0}
+.sb-logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1a1f2e}
+.sb-logo-icon{width:30px;height:30px;background:#ef4444;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.sb-logo-text{font-size:14px;font-weight:700;color:#fff}
+.ni-item{display:flex;align-items:center;gap:9px;padding:9px 10px 9px 14px;font-size:12.5px;font-weight:500;color:#9ca3af;cursor:pointer;border-radius:7px;margin:1px 6px}
+.ni-item:hover{background:#161b27;color:#e5e7eb}
+.ni-item.on{background:#1e2a1e;color:#fff}
+.main{flex:1;min-width:0;padding:24px 28px 48px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 20px;max-width:720px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 22px;margin-bottom:20px}
+.card-title{font-size:14px;font-weight:700;margin-bottom:4px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:14px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.tile{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px}
+.tile b{display:block;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.tile span{font-size:11px;color:#6b7280}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:9px 8px;border-bottom:1px solid #f6f6f6;vertical-align:top}
+th.n,td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.scroll{overflow-x:auto}
+.pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap;display:inline-block}
+.p-passing{background:#f0fdf4;color:#15803d}
+.p-known_defect,.p-partially_blocked{background:#fffbeb;color:#b45309}
+.p-failing{background:#fef2f2;color:#b91c1c}
+.p-gap,.p-not_built,.p-blocked,.p-no_result{background:#f3f4f6;color:#4b5563}
+.sev{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:6px;background:#eff6ff;color:#1d4ed8}
+.sev.P0{background:#fef2f2;color:#b91c1c}
+.bar{height:8px;background:#f3f4f6;border-radius:6px;overflow:hidden;min-width:120px}
+.bar i{display:block;height:100%;background:#2563eb}
+.fail{border:1px solid #f3f4f6;border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.fail h4{font-size:12.5px;font-weight:700;margin-bottom:6px;word-break:break-all}
+.kv{font-size:11.5px;color:#374151;margin:2px 0}
+.kv em{font-style:normal;color:#9ca3af;display:inline-block;min-width:92px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:#f9fafb;border-radius:6px;padding:6px 8px;margin-top:6px;word-break:break-word}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.foot{font-size:11.5px;color:#6b7280}
+@media(max-width:760px){.sb{display:none}.main{padding:16px}}
+</style>
+</head>
+<body>
+<aside class="sb">
+  <div class="sb-logo"><div class="sb-logo-icon">🛡</div><div class="sb-logo-text">Niagaros</div></div>
+  <nav>
+    <div class="ni-item" onclick="location.href='niagaros-dashboard.html'">⌘ Dashboard</div>
+    <div class="ni-item" onclick="location.href='notification_settings.html'">🔔 Notification Settings</div>
+    <div class="ni-item" onclick="location.href='status.html'">🟢 System Status</div>
+    <div class="ni-item on">🧪 Automated Testing</div>
+  </nav>
+</aside>
+<div class="main">
+  <h1>Automated Testing</h1>
+  <div class="sub">Coverage is measured by critical business flows, not lines of code. Every number below is read from the test runs stored in the Niagaros database (Admins only) — nothing on this page is typed in by hand.</div>
+  <div id="root"><div class="empty">Loading…</div></div>
+</div>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LABEL = {passing:'Passing', known_defect:'Known defect', failing:'Failing', partially_blocked:'Partly blocked', blocked:'Blocked', gap:'Not automated yet', not_built:'Feature not built', no_result:'No result'};
+const pct = v => v == null ? '—' : v + '%';
+let FAIL_HISTORY = {};
+const FUNCTION_BY_PATH = {notifications: 'notification-handler', tprm: 'tprm-handler', 'audit-management': 'audit-management-handler', questionnaires: 'questionnaire-handler',
+  'custom-frameworks': 'custom-framework-handler', 'trust-center': 'trust-center-handler', calculators: 'calculator-handler', 'ai-agent': 'ai-agent-handler',
+  'get-dashboard-data': 'get-dashboard-data', enterprise: 'enterprise-handler', integrations: 'integrations-handler', scan: 'scan-handler', 'test-results': 'test-results-handler'};
+
+function render(d){
+  const t = d.totals;
+  const tiles = [
+    [t.critical_flows_in_inventory, 'Critical flows in inventory'],
+    [t.flows_automated, 'Flows automated'],
+    [pct(t.coverage_of_existing_flows_pct), 'Coverage of flows that exist'],
+    [pct(t.coverage_of_inventory_pct), 'Coverage of full inventory'],
+    [t.tests, 'Tests in last run'],
+    [t.passed, 'Passing'],
+    [t.known_failure, 'Known defects'],
+    [t.failed, 'Failing'],
+    [t.blocked, 'Blocked (no test session)'],
+    [t.skipped || 0, 'Not applicable (skipped)'],
+    [t.flaky || 0, 'Flaky'],
+    [d.full_run_duration_s + 's', 'Last full run'],
+  ].map(([n, l]) => `<div class="tile"><b>${esc(n)}</b><span>${esc(l)}</span></div>`).join('');
+
+  const sev = Object.entries(d.by_severity).map(([s, v]) => `<tr>
+    <td><span class="sev ${esc(s)}">${esc(s)}</span></td>
+    <td class="n">${v.automated} / ${v.flows}</td>
+    <td><div class="bar"><i style="width:${v.coverage_pct || 0}%"></i></div></td>
+    <td class="n">${pct(v.coverage_pct)}</td>
+    <td class="n">${v.passing}</td><td class="n">${v.known_defect}</td><td class="n">${v.failing}</td></tr>`).join('');
+
+  const flows = d.flows.map(f => `<tr>
+    <td style="white-space:nowrap;font-weight:600">${esc(f.id)}</td>
+    <td>${esc(f.name)}<div style="color:#9ca3af;font-size:11px">${esc(f.domain)} · ${esc(f.environment)}</div></td>
+    <td><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span></td>
+    <td>${esc(f.owner)}</td>
+    <td>${esc(f.frequency)}</td>
+    <td><span class="pill p-${esc(f.status)}">${esc(LABEL[f.status] || f.status)}</span></td>
+    <td class="n">${f.tests ? `${f.passed}/${f.tests}` : '—'}</td>
+    <td class="n">${f.tests ? f.duration_s + 's' : '—'}</td>
+    <td class="n">${f.failure_count_history}</td></tr>`).join('');
+
+  const fails = d.failures.length ? d.failures.map(x => {
+      const ex = x.last_exchange || {};
+      const path = ((ex.request || {}).url || '').split('/default/')[1] || '';
+      const fn = FUNCTION_BY_PATH[path.split('?')[0].split('/')[0]];
+      const hist = (FAIL_HISTORY[x.test_id] || []).length;
+      const issue = 'https://github.com/niagaros/repo/issues/new?title=' + encodeURIComponent('Test failing: ' + x.test_id) +
+        '&body=' + encodeURIComponent('Test: ' + x.test_id + '\nFlow: ' + x.flow + ' (' + x.severity + ')\nStep: ' + (x.failed_step || 'n/a') + '\nCommit: ' + (x.commit || 'n/a') + '\nRequest id: ' + (x.request_id || 'n/a') + '\n\n' + x.message);
+      const logs = fn ? 'https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logsV2:log-groups/log-group/' + encodeURIComponent('/aws/lambda/' + fn).replace(/%/g, '$25') : null;
+      return `<div class="fail">
+      <h4>${x.status === 'failed' ? '❌' : '⚠️'} ${esc(x.test_id)}</h4>
+      <div class="kv"><em>Flow</em>${esc(x.flow)} · <span class="sev ${esc(x.severity)}">${esc(x.severity)}</span> · ${x.status === 'failed' ? 'FAILING — must be fixed' : 'known, tracked defect'}</div>
+      <div class="kv"><em>Failed step</em>${esc(x.failed_step || '—')}</div>
+      <div class="kv"><em>Commit</em>${esc(x.commit || '—')} · <em style="min-width:0">Layer</em> ${esc(x.layer || '—')}</div>
+      <div class="kv"><em>Request / trace id</em>${esc(x.request_id || '—')}</div>
+      ${ex.request ? `<div class="kv"><em>Request</em>${esc(ex.request.method)} /${esc(path)} → HTTP ${esc((ex.response || {}).status)}</div>` : ''}
+      <div class="kv"><em>Failed before</em>${hist} time${hist === 1 ? '' : 's'} in stored runs</div>
+      ${x.screenshot ? `<div class="kv"><em>Screenshot</em>${esc(x.screenshot)} (in the run's report folder / CI artifact)</div>` : ''}
+      <div class="mono">${esc(x.message)}</div>
+      ${ex.response ? `<div class="mono">response: ${esc(String(ex.response.body || '').slice(0, 300))}</div>` : ''}
+      <div class="kv" style="margin-top:8px">${logs ? `<a href="${logs}" target="_blank" rel="noopener">View logs</a> · ` : ''}<a href="${issue}" target="_blank" rel="noopener">Open issue</a></div></div>`;
+    }).join('')
+    : '<div class="empty">No failures and no known defects in the last run.</div>';
+
+  const gaps = d.flows.filter(f => f.status === 'gap' || f.status === 'not_built').map(f => `<tr>
+    <td style="white-space:nowrap;font-weight:600">${esc(f.id)}</td><td>${esc(f.name)}</td>
+    <td><span class="pill p-${esc(f.status)}">${esc(LABEL[f.status])}</span></td><td>${esc(f.gap_reason || '')}</td></tr>`).join('');
+
+  const flaky = (d.flaky_tests || []).length
+    ? d.flaky_tests.map(x => `<div class="kv">${esc(x.test_id)} — attempts: ${esc((x.attempts || []).join(' → '))}</div>`).join('')
+    : '<div class="empty">No flaky tests detected in the last run (a flaky test fails, then passes on an immediate re-run).</div>';
+
+  document.getElementById('root').innerHTML = `
+    <div class="tiles">${tiles}</div>
+    <div class="card"><div class="card-title">Coverage by severity</div>
+      <div class="note">P0 failures block deployment. A "known defect" is a real problem the tests found and are tracking — it is shown here, never hidden.</div>
+      <div class="scroll"><table><thead><tr><th>Severity</th><th class="n">Flows automated</th><th></th><th class="n">Coverage</th><th class="n">Passing</th><th class="n">Known defects</th><th class="n">Failing</th></tr></thead><tbody>${sev}</tbody></table></div></div>
+    <div class="card"><div class="card-title">Critical flows</div>
+      <div class="scroll"><table><thead><tr><th>Test ID</th><th>Flow</th><th>Severity</th><th>Owner</th><th>Frequency</th><th>Status</th><th class="n">Passed</th><th class="n">Duration</th><th class="n">Failures (history)</th></tr></thead><tbody>${flows}</tbody></table></div></div>
+    <div class="card"><div class="card-title">Failures &amp; known defects</div>
+      <div class="note">Each entry shows the test, the step of the flow that failed, the commit tested, and the assertion that did not hold.</div>${fails}</div>
+    <div class="card"><div class="card-title">Coverage gaps</div>
+      <div class="note">Flows from the critical-flow inventory that are not automated, and why. Features that do not exist yet are listed as gaps — they are not tested with stand-ins.</div>
+      <div class="scroll"><table><thead><tr><th>Flow</th><th>Description</th><th>Status</th><th>Reason</th></tr></thead><tbody>${gaps}</tbody></table></div></div>
+    <div class="card"><div class="card-title">Flaky tests</div>${flaky}</div>
+    <div class="foot">Last run ${esc(new Date(d.run_at).toLocaleString())} · ${esc(d.trigger)} · branch ${esc(d.branch || '—')} · commit ${esc(d.commit || '—')} · ${d.environment && d.environment.token_provided ? 'authenticated tests enabled' : 'authenticated tests blocked (no test session token)'}</div>`;
+}
+
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/test-results';
+fetch(API).then(async r => {
+  if (r.status === 403) throw new Error('Test results are visible to Admins only. Sign in with an Admin account.');
+  if (!r.ok) throw new Error('Could not load test results (' + r.status + ').');
+  return r.json();
+}).then(d => {
+  if (!d.run) { document.getElementById('root').innerHTML = '<div class="empty">No test run has been stored yet. Run <code>python tests/tools/run_suite.py</code> — it uploads its result here.</div>'; return; }
+  const run = d.run;
+  FAIL_HISTORY = d.failure_history || {};
+  run.flaky_tests = (run.flaky_tests || []).concat((d.flaky_by_history || []).filter(id => !(run.flaky_tests || []).some(f => f.test_id === id)).map(id => ({ test_id: id, attempts: ['seen failing and passing in the last 20 stored runs'] })));
+  render(run);
+
+  if (d.smoke) {
+    const s = d.smoke, bad = s.failing || [];
+    const bars = (s.history || []).slice().reverse().map(x => `<i title="${esc(new Date(x.run_at).toLocaleString())}: ${x.failed} failing" style="display:inline-block;width:6px;height:22px;margin-right:2px;border-radius:2px;background:${x.failed ? '#dc2626' : '#16a34a'}"></i>`).join('');
+    document.getElementById('root').insertAdjacentHTML('afterbegin', `<div class="card"><div class="card-title">Production smoke <span class="pill ${bad.length ? 'p-failing' : 'p-passing'}">${bad.length ? bad.length + ' failing' : 'all passing'}</span></div>
+      <div class="note">Runs inside AWS every 30 minutes and right after every deployment. Last run ${esc(new Date(s.run_at).toLocaleString())} (${esc(s.trigger_detail)}): ${s.totals.passed}/${s.totals.tests} checks passed.</div>
+      <div>${bars}</div>${bad.map(c => `<div class="kv" style="margin-top:8px">❌ [${esc(c.severity)}] ${esc(c.name)} — got ${esc(c.detail)}</div>`).join('')}</div>`);
+  }
+  const hist = (d.history || []).map(x => `<tr><td>${esc(new Date(x.run_at).toLocaleString())}</td><td>${esc(x.trigger || '')}</td><td>${esc(x.commit || '—')}</td><td class="n">${x.tests ?? '—'}</td><td class="n">${x.passed ?? '—'}</td><td class="n">${x.failed ?? '—'}</td></tr>`).join('');
+  document.getElementById('root').insertAdjacentHTML('beforeend', `<div class="card" style="margin-top:20px"><div class="card-title">Recent runs</div><div class="note">Every stored run, newest first — this is the history behind the failure counts above.</div><div class="scroll"><table><thead><tr><th>Run</th><th>Trigger</th><th>Commit</th><th class="n">Tests</th><th class="n">Passed</th><th class="n">Failed</th></tr></thead><tbody>${hist}</tbody></table></div></div>`);
+}).catch(e => {
+  document.getElementById('root').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+});
+</script>
+</body>
+</html>

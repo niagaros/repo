@@ -159,11 +159,19 @@ def lambda_handler(event, context):
             # ── 1. Accounts — only accounts owned by this user ───────
             try:
                 cur.execute("""
-                    SELECT id, account_name, account_id, last_scan_at, status
-                    FROM cloud_accounts
-                    WHERE owner_email = %s
-                    ORDER BY account_name
-                """, (authenticated_email,))
+                    SELECT c.id, c.account_name, c.account_id, c.last_scan_at, c.status
+                    FROM cloud_accounts c
+                    WHERE lower(c.owner_email) = lower(%(e)s)
+                       OR EXISTS (
+                            SELECT 1 FROM bu_accounts ba
+                            JOIN business_units b ON b.id = ba.business_unit_id
+                            JOIN organizations o ON o.id = b.organization_id
+                            LEFT JOIN org_members m ON m.organization_id = o.id AND lower(m.email) = lower(%(e)s)
+                            WHERE ba.cloud_account_id = c.id
+                              AND ( lower(o.owner_email) = lower(%(e)s)
+                                    OR (m.id IS NOT NULL AND (m.business_unit_id IS NULL OR m.business_unit_id = b.id)) ) )
+                    ORDER BY c.account_name
+                """, {"e": authenticated_email})
                 for row in cur.fetchall():
                     data["accounts"].append({
                         "id":             str(row[0]),
@@ -190,10 +198,19 @@ def lambda_handler(event, context):
 
             # ── Ownership check ──────────────────────────────────────
             try:
-                cur.execute(
-                    "SELECT id FROM cloud_accounts WHERE id = %s AND owner_email = %s",
-                    (account_id, authenticated_email),
-                )
+                cur.execute("""
+                    SELECT c.id FROM cloud_accounts c
+                    WHERE c.id = %(id)s
+                      AND ( lower(c.owner_email) = lower(%(e)s)
+                            OR EXISTS (
+                                SELECT 1 FROM bu_accounts ba
+                                JOIN business_units b ON b.id = ba.business_unit_id
+                                JOIN organizations o ON o.id = b.organization_id
+                                LEFT JOIN org_members m ON m.organization_id = o.id AND lower(m.email) = lower(%(e)s)
+                                WHERE ba.cloud_account_id = c.id
+                                  AND ( lower(o.owner_email) = lower(%(e)s)
+                                        OR (m.id IS NOT NULL AND (m.business_unit_id IS NULL OR m.business_unit_id = b.id)) ) ) )
+                """, {"id": account_id, "e": authenticated_email})
                 if not cur.fetchone():
                     conn.close()
                     return {
@@ -202,8 +219,14 @@ def lambda_handler(event, context):
                         "body": json.dumps({"error": "Access denied"}),
                     }
             except Exception as e:
-                data["_debug"]["ownership"] = str(e)
-                conn.rollback()
+                # Fail closed: if ownership cannot be verified, no account data is returned.
+                print(f"[get-dashboard-data] ownership check failed: {e}")
+                conn.close()
+                return {
+                    "statusCode": 503,
+                    "headers": {**CORS, "Content-Type": "application/json"},
+                    "body": json.dumps({"error": "Could not verify account access, please retry"}),
+                }
 
             # ── 2. Current account metadata ─────────────────────────
             try:
@@ -618,7 +641,7 @@ def lambda_handler(event, context):
                         "rpo_seconds":          row[2],
                         "rto_seconds":          row[3],
                         "data_integrity_match": row[4],
-                        "tested_at":            str(row[5]) if row[5] else None,
+                        "tested_at":            row[5].isoformat() if row[5] else None,
                     }
                     for row in cur.fetchall()
                 ]

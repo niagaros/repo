@@ -508,8 +508,10 @@ CORS_HEADERS = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
+
+from collectors.aws.scanner.tenant_auth import guard
 
 
 def handler(event, context):
@@ -520,10 +522,22 @@ def handler(event, context):
     if event and "httpMethod" in event:
         if event["httpMethod"] == "OPTIONS":
             return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
-        body = json.loads(event["body"]) if event.get("body") else {}
+        try:
+            body = json.loads(event["body"]) if event.get("body") else {}
+            if not isinstance(body, dict):
+                raise ValueError("body must be a JSON object")
+        except (ValueError, TypeError):
+            return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Invalid JSON"})}
         cloud_account_id = body.get("cloud_account_id")
         if not cloud_account_id:
             return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "cloud_account_id is required"})}
+        guard_conn = _get_connection()
+        try:
+            denied = guard(event, guard_conn, {}, body, {}, None)
+        finally:
+            guard_conn.close()
+        if denied:
+            return {"statusCode": denied[0], "headers": CORS_HEADERS, "body": json.dumps({"error": denied[1]})}
         try:
             result = generate_report(cloud_account_id, preview_only=True)
             return {"statusCode": 200, "headers": CORS_HEADERS, "body": json.dumps(result)}

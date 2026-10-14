@@ -8,6 +8,28 @@
     return new URLSearchParams(location.search).get("account_id") || null;
   }
 
+  // Real, literal text currently visible on screen — lets the agent answer
+  // about things that only exist in the current view/session (e.g. numbers
+  // just typed into a calculator) and not in the database at all. This is
+  // exactly what the user can already see, so sending it back changes
+  // nothing about who has access to it. Capped and stripped of noise from
+  // this widget's own panel so it doesn't just describe itself.
+  function getPageContext() {
+    try {
+      var root = document.querySelector(".content") || document.body;
+      var clone = root.cloneNode(true);
+      var widget = clone.querySelector("#niagaros-ai-widget, #nn-widget");
+      if (widget) widget.remove();
+      var text = (clone.innerText || "").replace(/\n{3,}/g, "\n\n").trim();
+      return {
+        page_title: document.title || "",
+        page_text: text.length > 4000 ? text.slice(0, 4000) + "…" : text,
+      };
+    } catch (e) {
+      return { page_title: document.title || "", page_text: "" };
+    }
+  }
+
   function esc(s) {
     return (s == null ? "" : String(s)).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -65,18 +87,19 @@
     + '  <div id="niagaros-ai-panel">'
     + '    <div id="niagaros-ai-hdr">'
     + '      <span style="font-size:18px">🤖</span>'
-    + '      <div><b>Niagaros AI Agent</b><span>Antwoorden op basis van jullie echte data</span></div>'
+    + '      <div><b>Niagaros AI Agent</b><span>Answers grounded in your real data</span></div>'
     + '      <button id="niagaros-ai-close">✕</button>'
     + "    </div>"
-    + '    <div id="niagaros-ai-scroll"><div class="empty">Stel een vraag over jullie risico\'s, compliance, leveranciers of audits.</div></div>'
+    + '    <div id="niagaros-ai-scroll"><div class="empty">Ask anything about your risks, compliance, vendors, or audits — type your own question below.</div></div>'
     + '    <div id="niagaros-ai-sugg">'
-    + '      <div class="nai-chip" data-q="Wat zijn onze grootste risico\'s?">Grootste risico\'s?</div>'
-    + '      <div class="nai-chip" data-q="Hoe compliant zijn we in totaal?">Compliance overzicht</div>'
-    + '      <div class="nai-chip" data-q="Geef een executive summary">Executive summary</div>'
+    + '      <div class="nai-chip" data-q="What are our highest risks?">Highest risks?</div>'
+    + '      <div class="nai-chip" data-q="How compliant are we overall?">Compliance overview</div>'
+    + '      <div class="nai-chip" data-q="What is our RPO?">What\'s our RPO?</div>'
+    + '      <div class="nai-chip" data-q="Give me an executive summary">Executive summary</div>'
     + "    </div>"
     + '    <div id="niagaros-ai-inputrow">'
-    + '      <input id="niagaros-ai-input" placeholder="Stel je vraag…">'
-    + '      <button id="niagaros-ai-send">Vraag</button>'
+    + '      <input id="niagaros-ai-input" placeholder="Ask your own question…">'
+    + '      <button id="niagaros-ai-send">Ask</button>'
     + "    </div>"
     + "  </div>"
     + '  <button id="niagaros-ai-bubble" title="Niagaros AI Agent">🤖</button>'
@@ -91,13 +114,22 @@
   var scroll = document.getElementById("niagaros-ai-scroll");
   var input = document.getElementById("niagaros-ai-input");
   var sendBtn = document.getElementById("niagaros-ai-send");
-  var historyLoaded = false;
+  var historyLoadedForAccount = null;
+  // Tracks the last question asked in this chat so a short, contextless
+  // follow-up ("which one is newest?") can be resolved server-side against
+  // what was actually being discussed, instead of being rejected as
+  // unrelated. Seeded from real stored history when the panel first opens.
+  var lastQuestion = "";
 
   bubble.addEventListener("click", function () {
     var willOpen = !panel.classList.contains("open");
     panel.classList.toggle("open");
-    if (willOpen && !historyLoaded) {
-      historyLoaded = true;
+    // Reload history whenever the visible account has changed since it was last
+    // loaded (e.g. the page's own account switcher, no full reload) — not just once
+    // per page load, or the chat silently keeps showing a different account's history.
+    var acct = getAccountId();
+    if (willOpen && historyLoadedForAccount !== acct) {
+      historyLoadedForAccount = acct;
       loadHistory();
     }
   });
@@ -134,12 +166,20 @@
   function loadHistory() {
     var accountId = getAccountId();
     if (!accountId) return;
+    lastQuestion = "";
     fetch(AGENT_API + "?cloud_account_id=" + encodeURIComponent(accountId))
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        var history = (d.history || []).slice().reverse();
-        if (!history.length) return;
-        clearEmpty();
+        var raw = d.history || [];
+        // Reloading (a switched account) must replace what's shown, not append to
+        // it — otherwise a previous account's chat bubbles stay mixed in with the
+        // new one's. Re-add the empty placeholder when the new account has no
+        // history, instead of leaving a blank panel.
+        scroll.innerHTML = raw.length
+          ? "" : '<div class="empty">Ask anything about your risks, compliance, vendors, or audits — type your own question below.</div>';
+        if (!raw.length) return;
+        lastQuestion = raw[0].question || ""; // raw is newest-first
+        var history = raw.slice().reverse();
         history.forEach(function (h) {
           scroll.appendChild(bubbleEl("user", esc(h.question)));
           scroll.appendChild(bubbleEl("bot", esc(h.answer)));
@@ -153,7 +193,7 @@
     var accountId = getAccountId();
     if (!accountId) {
       clearEmpty();
-      scroll.appendChild(bubbleEl("bot", "Ik kan geen account vinden op deze pagina. Open de AI Agent vanuit het dashboard."));
+      scroll.appendChild(bubbleEl("bot", "I can't find an account on this page. Open the AI Agent from the dashboard."));
       return;
     }
     clearEmpty();
@@ -168,23 +208,29 @@
     var token = "";
     try { token = localStorage.getItem("niagaros_token") || ""; } catch (e) {}
 
+    var pageContext = getPageContext();
+    var previousQuestion = lastQuestion;
+    lastQuestion = question;
+
     fetch(AGENT_API, {
       method: "POST",
       headers: token ? { Authorization: "Bearer " + token } : {},
       body: JSON.stringify({
         action: "ask", cloud_account_id: accountId, question: question,
+        page_title: pageContext.page_title, page_text: pageContext.page_text,
+        previous_question: previousQuestion,
         asked_by: (function () { try { return localStorage.getItem("niagaros_display_name") || "Admin"; } catch (e) { return "Admin"; } })(),
       }),
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         typingRow.remove();
-        scroll.appendChild(bubbleEl("bot", esc(d.answer || "Er ging iets mis.")));
+        scroll.appendChild(bubbleEl("bot", esc(d.answer || "Something went wrong.")));
         scroll.scrollTop = scroll.scrollHeight;
       })
       .catch(function () {
         typingRow.remove();
-        scroll.appendChild(bubbleEl("bot", "Kon de AI Agent-dienst niet bereiken. Probeer het opnieuw."));
+        scroll.appendChild(bubbleEl("bot", "Could not reach the AI Agent service. Please try again."));
         scroll.scrollTop = scroll.scrollHeight;
       })
       .finally(function () { sendBtn.disabled = false; });

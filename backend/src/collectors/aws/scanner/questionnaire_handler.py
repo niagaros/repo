@@ -41,10 +41,13 @@ import logging
 import os
 import re
 import secrets
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timezone
+
+from pypdf import PdfReader
 
 import boto3
 import psycopg2
@@ -218,10 +221,39 @@ def _find_doc_evidence(cur, q_tokens, limit=5):
     return scored[:limit]
 
 
-def _confidence(control_ev, doc_ev):
-    if control_ev and doc_ev:
+# A generic "which controls talk about X" keyword search doesn't work for
+# subprocessor questions — a real vendor record like "Northwind Cloud
+# Storage" shares no tokens with a question like "do you use third-party
+# subprocessors". Real bug this fixes: Domits had 2 real vendors tracked
+# in Third-Party Risk Management, but the questionnaire answered "cannot
+# confirm" to a subprocessor question because it never looked at that
+# table at all. Trigger on the question's own topic words instead, then
+# return the account's real, complete vendor list (there are only ever a
+# handful per account, so sending the whole list is reasonable).
+VENDOR_QUESTION_WORDS = (
+    "vendor", "subprocessor", "sub-processor", "third-party", "third party",
+    "supplier", "outsourc", "fourth-party",
+)
+
+
+def _find_vendor_evidence(cur, cloud_account_id, question_lower):
+    if not any(w in question_lower for w in VENDOR_QUESTION_WORDS):
+        return []
+    cur.execute("""
+        SELECT name, category, criticality, status
+        FROM tprm_vendors
+        WHERE cloud_account_id = %s
+        ORDER BY (criticality = 'critical') DESC, name
+    """, (cloud_account_id,))
+    return [{"type": "vendor", "name": r[0], "category": r[1], "criticality": r[2], "status": r[3]}
+            for r in cur.fetchall()]
+
+
+def _confidence(control_ev, doc_ev, vendor_ev=None):
+    sources_present = sum([bool(control_ev), bool(doc_ev), bool(vendor_ev)])
+    if sources_present >= 2:
         return "high"
-    if control_ev or doc_ev:
+    if sources_present == 1:
         return "medium"
     return "low"
 
@@ -244,34 +276,90 @@ def _get_groq_key():
     return _groq_key_cache
 
 
-def _draft_answer(question_text, control_ev, doc_ev):
+def _draft_answer(question_text, control_ev, doc_ev, account_name=None, vendor_ev=None):
     """Returns (answer_text, error). error is a short string if the
-    drafting API isn't usable; answer_text is None in that case."""
-    if not control_ev and not doc_ev:
+    drafting API isn't usable; answer_text is None in that case.
+
+    control_ev, doc_ev and vendor_ev describe THREE different real things
+    and must never be blended into one voice: control_ev is the scanned
+    customer account's own findings (the organization actually being
+    assessed — e.g. Domits, when Domits uses this tool to answer its own
+    customers' questionnaires), doc_ev is Niagaros' own published security
+    documentation (the platform/vendor), and vendor_ev is the account's own
+    real, tracked third-party vendor list from Third-Party Risk Management.
+    A real bug this fixes: a question that happens to name "Niagaros" (or
+    any other company) got answered by the model as if the *account's own*
+    control findings were confessions about that named company's
+    infrastructure — e.g. "Niagaros does not enforce MFA... we are
+    actively working to remediate" when the failing MFA control was
+    actually the scanned customer account's own AWS misconfiguration,
+    nothing to do with Niagaros' backend at all."""
+    vendor_ev = vendor_ev or []
+    if not control_ev and not doc_ev and not vendor_ev:
         return None, None  # no evidence — caller skips drafting, that's expected
 
-    lines = []
-    for e in control_ev:
-        lines.append(
-            f"- Compliance control {e['check_id']} ({e['framework']}): {e['title']}. "
-            f"Current status in this account: {e['status']} "
-            f"({e['passed']} resources passing, {e['failed']} failing)."
+    account_label = account_name or "the account being assessed"
+
+    control_lines = [
+        f"- Compliance control {e['check_id']} ({e['framework']}): {e['title']}. "
+        f"Current status: {e['status']} ({e['passed']} resources passing, {e['failed']} failing)."
+        for e in control_ev
+    ]
+    doc_lines = [f"- {e['section_title']}: {e['excerpt']}" for e in doc_ev]
+    vendor_lines = [
+        f"- {e['name']} ({e['category'] or 'uncategorized'}, criticality: {e['criticality']}, status: {e['status']})"
+        for e in vendor_ev
+    ]
+
+    evidence_block = ""
+    if control_lines:
+        evidence_block += (
+            f"REAL FINDINGS FROM {account_label.upper()}'S OWN SCANNED AWS ENVIRONMENT — this is "
+            f"{account_label}, the organization actually being assessed, NOT Niagaros the platform:\n"
+            + "\n".join(control_lines) + "\n\n"
         )
-    for e in doc_ev:
-        lines.append(f"- Published security documentation — {e['section_title']}: {e['excerpt']}")
-    evidence_block = "\n".join(lines)
+    if doc_lines:
+        evidence_block += (
+            "NIAGAROS' OWN PUBLISHED SECURITY DOCUMENTATION — the platform/vendor's own practices. "
+            "Some of this is a specific, verified claim about Niagaros' own operations; some is general "
+            "security background/education that is NOT a confirmed fact about any specific "
+            "organization's actual configuration:\n" + "\n".join(doc_lines) + "\n\n"
+        )
+    if vendor_lines:
+        evidence_block += (
+            f"{account_label.upper()}'S OWN REAL, TRACKED THIRD-PARTY VENDOR LIST (from Third-Party "
+            f"Risk Management) — this is the complete real list of {account_label}'s own tracked "
+            "subprocessors/vendors, not Niagaros':\n" + "\n".join(vendor_lines)
+        )
 
     prompt = (
-        "You are drafting a candidate answer to one question from a customer's "
-        "security/vendor-assessment questionnaire (e.g. CAIQ, SIG). Use ONLY the "
-        "evidence listed below, which comes from this vendor's own live compliance "
-        "scan results and published security documentation. Do not invent facts, "
-        "certifications, dates, or numbers that are not present in the evidence. "
-        "If the evidence only partially answers the question, say what is covered "
-        "and explicitly note what is not. Write 2-5 sentences, professional tone, "
-        "as if written by the vendor's security team.\n\n"
+        "You are drafting a candidate answer to one question from a security/vendor-assessment "
+        f"questionnaire (e.g. CAIQ, SIG), on behalf of {account_label} — the organization whose real "
+        "AWS account was scanned. Use ONLY the evidence below.\n\n"
+        "CRITICAL: the evidence sections above describe DIFFERENT real things — never blend them "
+        f"into one voice. The findings section is {account_label}'s own environment. The documentation "
+        f"section is Niagaros' own platform practices. The vendor list, if present, is {account_label}'s "
+        f"own tracked subprocessors. If the question names a company or product "
+        f"other than {account_label} (including 'Niagaros' itself, if {account_label} is a different "
+        "organization), do not assume the evidence describes that other name unless it explicitly "
+        "does — say plainly that this can't be confirmed from the real evidence instead of guessing "
+        "or borrowing a name mentioned in the question. Do not state a general security best-practice "
+        "or checklist item as if it were a confirmed fact about a specific organization's actual "
+        "configuration. Do not invent facts, certifications, dates, or numbers not present in the "
+        "evidence. If the evidence only partially answers the question, say what is covered and "
+        "explicitly note what is not.\n\n"
+        "TONE: write as a member of the security team answering a prospective customer directly — "
+        "not as an internal audit report. A real customer reading this should come away confident, "
+        "not alarmed. Never recite raw pass/fail counts or phrases like 'N checks passing, N failing' "
+        "or 'suggests gaps in the overall posture' — that reads as a vulnerability scan printout, not "
+        "a professional response. Instead: state plainly what control IS in place and what it does. "
+        "If it's not fully in place everywhere, say so honestly but frame it as a specific, scoped, "
+        "actively-tracked item (e.g. 'is being extended to the remaining resources' rather than "
+        "'is not yet fully applied, suggesting gaps'). Never claim something is fully done when the "
+        "evidence shows it isn't, and never omit a real, material gap — the goal is confident, "
+        "accurate phrasing of the true state, not a rosier version of the facts. Write 2-4 sentences.\n\n"
         f"Question: {question_text}\n\n"
-        f"Evidence:\n{evidence_block}\n\n"
+        f"{evidence_block}\n\n"
         "Draft answer:"
     )
 
@@ -306,34 +394,43 @@ def _draft_answer(question_text, control_ev, doc_ev):
 def _generate_item(conn, item_id):
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT qi.question_text, q.cloud_account_id
+            SELECT qi.question_text, q.cloud_account_id, ca.account_name
             FROM questionnaire_items qi
             JOIN questionnaires q ON q.id = qi.questionnaire_id
+            JOIN cloud_accounts ca ON ca.id = q.cloud_account_id
             WHERE qi.id = %s
         """, (item_id,))
         row = cur.fetchone()
         if not row:
             return {"error": "item not found"}
-        question_text, cloud_account_id = row
+        question_text, cloud_account_id, account_name = row
 
         q_tokens = _tokenize(question_text)
         control_ev = _find_control_evidence(cur, cloud_account_id, q_tokens)
         doc_ev = _find_doc_evidence(cur, q_tokens)
-        confidence = _confidence(control_ev, doc_ev)
-        evidence = control_ev + doc_ev
+        vendor_ev = _find_vendor_evidence(cur, cloud_account_id, question_text.lower())
+        confidence = _confidence(control_ev, doc_ev, vendor_ev)
+        evidence = control_ev + doc_ev + vendor_ev
 
-    answer, bedrock_error = _draft_answer(question_text, control_ev, doc_ev)
+    answer, bedrock_error = _draft_answer(question_text, control_ev, doc_ev, account_name, vendor_ev)
 
     with conn:
         with conn.cursor() as cur:
             if answer:
+                # Acceptance criterion (issue #259): "Given AI confidence is
+                # below a defined threshold, when the response is generated,
+                # then the question is flagged for manual review." Only
+                # 'high' (both a real control AND a real doc match) skips
+                # the extra flag; 'medium' (only one type of evidence) is
+                # real and usable but explicitly below that threshold.
+                status = "draft" if confidence == "high" else "needs_review"
                 cur.execute("""
                     UPDATE questionnaire_items
                     SET answer_text = %s, confidence = %s, evidence = %s,
                         ai_generated = TRUE, edited_after_ai = FALSE,
-                        answer_status = 'draft', updated_at = NOW()
+                        answer_status = %s, updated_at = NOW()
                     WHERE id = %s
-                """, (answer, confidence, Json(evidence), item_id))
+                """, (answer, confidence, Json(evidence), status, item_id))
             else:
                 cur.execute("""
                     UPDATE questionnaire_items
@@ -344,7 +441,7 @@ def _generate_item(conn, item_id):
 
     if answer:
         return {"generated": True, "answer": answer, "confidence": confidence, "evidence": evidence}
-    if not control_ev and not doc_ev:
+    if not control_ev and not doc_ev and not vendor_ev:
         return {"generated": False, "reason": "no_evidence", "confidence": confidence, "evidence": evidence}
     return {"generated": False, "reason": "bedrock_unavailable", "detail": bedrock_error,
             "confidence": confidence, "evidence": evidence}
@@ -466,6 +563,23 @@ def _parse_docx(file_bytes):
     return questions
 
 
+def _parse_pdf(file_bytes):
+    """PDF text extraction via pypdf (pure Python, no compiled extension —
+    unlike psycopg2 this needs no manylinux wheel, so it's vendored
+    directly). PDFs have no reliable structure to lean on the way a .docx
+    table does, so the same 'ends in ?' heuristic used for a structureless
+    .docx applies here, applied per extracted line across every page."""
+    reader = PdfReader(io.BytesIO(file_bytes))
+    questions = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        for line in text.splitlines():
+            line = line.strip()
+            if line.endswith("?") and len(line) > 5:
+                questions.append((line, None))
+    return questions
+
+
 def _parse_uploaded_file(filename, file_base64):
     ext = (filename or "").rsplit(".", 1)[-1].lower()
     raw = base64.b64decode(file_base64)
@@ -478,7 +592,7 @@ def _parse_uploaded_file(filename, file_base64):
     if ext == "doc":
         raise ValueError("Legacy .doc files aren't supported — please re-save as .docx or .csv and re-upload.")
     if ext == "pdf":
-        raise ValueError("PDF questionnaires aren't supported yet — please export/retype the questions as .csv, .xlsx, or .docx and re-upload.")
+        return _parse_pdf(raw)
     return _parse_csv(raw.decode("utf-8-sig", errors="replace"))
 
 
@@ -853,6 +967,15 @@ def _delete_questionnaire(conn, questionnaire_id):
             cur.execute("DELETE FROM questionnaires WHERE id = %s", (questionnaire_id,))
 
 
+def _rename_questionnaire(conn, questionnaire_id, name):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("name is required")
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE questionnaires SET name = %s WHERE id = %s", (name, questionnaire_id))
+
+
 # ── secure sharing ───────────────────────────────────────────────────
 
 SHARE_LINK_DEFAULT_DAYS = 7
@@ -924,8 +1047,34 @@ def _get_shared_questionnaire(cur, token):
 
 # ── entrypoint ────────────────────────────────────────────────────────
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _is_uuid(value):
+    return isinstance(value, str) and bool(_UUID_RE.match(value))
+
+
 def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
+
+
+from collectors.aws.scanner.tenant_auth import guard
+
+REFS = {
+    "questionnaire_id": (
+        "SELECT cloud_account_id FROM questionnaires WHERE id = %s"
+    ),
+    "item_id": (
+        "SELECT q.cloud_account_id FROM questionnaire_items i JOIN questionnaires q ON q.id = i.questionnaire_id WHERE i.id = %s"
+    ),
+    "token": (
+        "SELECT q.cloud_account_id FROM questionnaire_share_links l JOIN questionnaires q ON q.id = l.questionnaire_id WHERE l.token = %s"
+    ),
+}
+
+
+def _is_public(event, qs, body):
+    return event.get("httpMethod") == "GET" and bool(qs.get("share_token"))
 
 
 def handler(event, context):
@@ -971,10 +1120,18 @@ def handler(event, context):
         return _resp(200, {})
 
     qs = event.get("queryStringParameters") or {}
-    body = json.loads(event["body"]) if event.get("body") else {}
+    try:
+        body = json.loads(event["body"]) if event.get("body") else {}
+        if not isinstance(body, dict):
+            raise ValueError("body must be a JSON object")
+    except (ValueError, TypeError):
+        return _resp(400, {"error": "Invalid JSON"})
 
     conn = _get_connection()
     try:
+        denied = guard(event, conn, qs, body, REFS, _is_public)
+        if denied:
+            return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
             if qs.get("share_token"):
                 with conn.cursor() as cur:
@@ -990,8 +1147,8 @@ def handler(event, context):
                     q["share_links"] = _list_share_links(cur, qs["questionnaire_id"])
                 return _resp(200, q)
             account_id = qs.get("cloud_account_id")
-            if not account_id:
-                return _resp(400, {"error": "cloud_account_id required"})
+            if not _is_uuid(account_id):
+                return _resp(400, {"error": "cloud_account_id must be a valid id"})
             if qs.get("analytics"):
                 with conn.cursor() as cur:
                     return _resp(200, _get_analytics(cur, account_id))
@@ -1027,8 +1184,20 @@ def handler(event, context):
                     """, (body["questionnaire_id"],))
                     item_ids = [str(r[0]) for r in cur.fetchall()]
                 results = {"generated": 0, "no_evidence": 0, "bedrock_unavailable": 0}
+                # A tight loop of back-to-back Groq calls can trip its rate
+                # limit — a real failure mode found by live-testing a real
+                # 40-question questionnaire, not a hypothetical. One retry
+                # after a short pause turns most transient rate-limit hits
+                # into a success instead of a permanent "no answer". Each
+                # item commits independently (see _generate_item), so if
+                # this whole request still runs into the API's own timeout
+                # on a very large questionnaire, whatever already succeeded
+                # stays saved — calling generate_all again picks up the rest.
                 for iid in item_ids:
                     r = _generate_item(conn, iid)
+                    if not r.get("generated") and r.get("reason") == "bedrock_unavailable":
+                        time.sleep(2.0)
+                        r = _generate_item(conn, iid)
                     if r.get("generated"):
                         results["generated"] += 1
                     elif r.get("reason") == "no_evidence":
@@ -1039,6 +1208,12 @@ def handler(event, context):
             if action == "update_item":
                 _update_item(conn, body["item_id"], body.get("answer_text"), body.get("answer_status"), body.get("actor_name"))
                 return _resp(200, {"updated": True})
+            if action == "rename_questionnaire":
+                try:
+                    _rename_questionnaire(conn, body["questionnaire_id"], body.get("name"))
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"renamed": True})
             if action == "add_comment":
                 comment = _add_comment(conn, body["item_id"], body.get("author_name", "Anonymous"), body["comment_text"])
                 return _resp(200, comment)
@@ -1059,6 +1234,6 @@ def handler(event, context):
         return _resp(405, {"error": "method not allowed"})
     except Exception as e:
         logger.error("questionnaire_handler error: %s", e, exc_info=True)
-        return _resp(500, {"error": str(e)})
+        return _resp(500, {"error": "An unexpected error occurred. Please try again, or contact support if this keeps happening."})
     finally:
         conn.close()

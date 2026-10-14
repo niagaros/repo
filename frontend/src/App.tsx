@@ -232,11 +232,16 @@ function AppContent() {
         cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
+      // Fix #1: an error response must never be mistaken for "no account yet" or "here is a
+      // dashboard" — both branches below used to run for ANY response, including a 401/500 whose
+      // body just doesn't happen to set needs_onboarding, landing on the dashboard with no account id.
+      if (!resp.ok) throw new Error(data.error || `Could not load your account (HTTP ${resp.status}).`);
       if (data.needs_onboarding) {
         setAppState({ kind: "onboarding" });
       } else {
         const accountId = data.accounts?.[0]?.id || "";
+        if (!accountId) throw new Error("No account was found for this session.");
         setAppState({ kind: "dashboard", accountId });
       }
     } catch (e: any) {

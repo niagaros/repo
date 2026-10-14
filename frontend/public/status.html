@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — System Status</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f7f8fa;color:#111827;min-height:100vh;padding:40px 20px}
+.wrap{max-width:680px;margin:0 auto}
+.hdr{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.hdr h1{font-size:22px;font-weight:800}
+.hdr .sub{font-size:12.5px;color:#6b7280;margin-top:2px}
+.banner{border-radius:12px;padding:20px 22px;display:flex;align-items:center;gap:14px;margin-bottom:24px;font-weight:700;font-size:16px}
+.banner.operational{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.banner.degraded{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+.banner.unknown{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb}
+.dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.dot.operational{background:#22c55e}
+.dot.degraded{background:#f59e0b}
+.dot.unknown{background:#9ca3af}
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin:22px 0 10px}
+.card{background:#fff;border:1px solid #eef0f2;border-radius:10px;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #f3f4f6;font-size:13.5px}
+.row:last-child{border-bottom:none}
+.row-name{font-weight:600}
+.row-detail{font-size:12px;color:#9ca3af;margin-top:1px}
+.pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:capitalize}
+.pill.operational{background:#f0fdf4;color:#16a34a}
+.pill.degraded{background:#fffbeb;color:#d97706}
+.pill.no_recent_activity,.pill.unknown{background:#f3f4f6;color:#6b7280}
+.footer{margin-top:26px;font-size:11.5px;color:#9ca3af;text-align:center}
+.footer a{color:#6d28d9;text-decoration:none}
+.loading{color:#9ca3af;font-size:13px;padding:30px 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <span style="font-size:26px">🔴</span>
+    <div>
+      <h1>Niagaros System Status</h1>
+      <div class="sub">Read directly from AWS's own monitoring — independent of the main product's own database.</div>
+    </div>
+  </div>
+
+  <div id="banner" class="loading">Checking status…</div>
+  <div id="content"></div>
+
+  <div class="footer">Auto-refreshes every 30 seconds · Last checked: <span id="checked-at">—</span></div>
+</div>
+
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/status';
+const LAMBDA_LABELS = {
+  'get-dashboard-data': 'Security Dashboard',
+  'notification-handler': 'Notifications',
+  'questionnaire-handler': 'Questionnaire Automation',
+  'ai-agent-handler': 'AI Agent',
+  'tprm-handler': 'Third-Party Risk Management',
+  'audit-management-handler': 'Audit Management',
+};
+const BANNER_TEXT = {
+  operational: 'All systems operational',
+  degraded: 'Some systems are experiencing issues',
+  unknown: 'Status could not be fully determined',
+};
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function load(){
+  try{
+    const r = await fetch(API);
+    const d = await r.json();
+    render(d);
+  }catch(e){
+    document.getElementById('banner').outerHTML = '<div id="banner" class="banner unknown"><div class="dot unknown"></div>Could not reach the status service</div>';
+  }
+}
+
+function render(d){
+  document.getElementById('banner').outerHTML =
+    `<div id="banner" class="banner ${d.overall_status}"><div class="dot ${d.overall_status}"></div>${BANNER_TEXT[d.overall_status] || 'Status unknown'}</div>`;
+  document.getElementById('checked-at').textContent = new Date(d.checked_at).toLocaleString();
+
+  let html = '<div class="section-title">Core Infrastructure</div><div class="card">';
+  html += `<div class="row"><div><div class="row-name">Database</div><div class="row-detail">${esc(d.database.raw_status || d.database.error || '')}</div></div><span class="pill ${d.database.status}">${d.database.status.replace(/_/g,' ')}</span></div>`;
+  html += `<div class="row"><div><div class="row-name">Notification Queue</div><div class="row-detail">${d.notification_queue.messages_visible != null ? d.notification_queue.messages_visible + ' pending' : (d.notification_queue.error||'')}</div></div><span class="pill ${d.notification_queue.status}">${d.notification_queue.status.replace(/_/g,' ')}</span></div>`;
+  html += '</div>';
+
+  html += '<div class="section-title">Product Modules</div><div class="card">';
+  for (const [fn, h] of Object.entries(d.lambdas || {})) {
+    const label = LAMBDA_LABELS[fn] || fn;
+    const detail = h.status === 'no_recent_activity' ? 'No recent activity' :
+      (h.invocations != null ? `${h.invocations} requests/hr · ${h.error_rate_pct}% errors` : (h.error || ''));
+    html += `<div class="row"><div><div class="row-name">${esc(label)}</div><div class="row-detail">${esc(detail)}</div></div><span class="pill ${h.status}">${h.status.replace(/_/g,' ')}</span></div>`;
+  }
+  html += '</div>';
+
+  document.getElementById('content').innerHTML = html;
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="auth-fetch.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Niagaros — Security Dashboard</title>
@@ -551,7 +552,12 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     </div>
     <div class="nl">Security</div>
     <div class="ni-item"><span class="ni">🔑</span><span class="nt">IAM Analysis</span></div>
-    <div class="ni-item"><span class="ni">🔔</span><span class="nt">Alerts</span></div>
+    <div class="ni-item" onclick="location.href='notification_settings.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🔔</span><span class="nt">Alerts</span></div>
+    <div class="nl">Platform</div>
+    <div class="ni-item" onclick="location.href='enterprise.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🏢</span><span class="nt">Enterprise</span></div>
+    <div class="ni-item" onclick="location.href='integrations.html'+(currentAccountId?'?account_id='+encodeURIComponent(currentAccountId):'')"><span class="ni">🔗</span><span class="nt">Integrations</span></div>
+    <div class="ni-item" onclick="location.href='test_dashboard.html'"><span class="ni">🧪</span><span class="nt">Automated Testing</span></div>
+    <div class="ni-item" onclick="location.href='status.html'"><span class="ni">🟢</span><span class="nt">System Status</span></div>
   </nav>
   <div class="sb-footer">
     <div class="ni-item" onclick="location.href='/settings'"><span class="ni">⚙</span><span class="nt">Settings</span></div>
@@ -578,10 +584,10 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
     <div class="tp-chip">🌍 All Regions ▾</div>
     <div class="tp-right">
       <div class="tp-scan-info"><div class="tp-dot"></div><span id="last-scan">Loading…</span></div>
-      <button class="btn-primary" id="btn-scan" onclick="triggerScan()">↻ Scan Now</button>
-      <button class="btn-primary" id="btn-report" onclick="runReportPreview()" style="background:#fff;color:#374151;border:1px solid #e5e7eb" title="Genereert en verstuurt direct een rapport, zonder de geplande maandelijkse periode te verstoren">✉ Run Report Now</button>
+      <button class="btn-ghost" style="margin-right:8px" onclick="testConnection()" title="Assume the scanner role and check every permission the scans need">✔ Test connection</button><button class="btn-primary" id="btn-scan" onclick="triggerScan()">↻ Scan Now</button>
+      <button class="btn-primary" id="btn-report" onclick="runReportPreview()" style="background:#fff;color:#374151;border:1px solid #e5e7eb" title="Generates and sends a report immediately, without disrupting the scheduled monthly cycle">✉ Run Report Now</button>
       <div class="btn-icon">🔔</div>
-      <div class="avatar" onclick="logout()" title="Uitloggen" style="cursor:pointer">DN</div>
+      <div class="avatar" onclick="logout()" title="Log out" style="cursor:pointer">DN</div>
     </div>
   </header>
 
@@ -655,7 +661,6 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
             <option value="cloudwatch">CloudWatch</option><option value="kms">KMS</option>
             <option value="iso27001">ISO 27001</option><option value="nist">NIST CSF</option>
             <option value="gdpr">GDPR</option><option value="soc2">SOC 2</option>
-            <option value="iso42001">ISO 42001</option>
             <option value="iso27017">ISO 27017</option>
             <option value="awsftr">AWS FTR</option>
             <option value="mvsp">MVSP</option>
@@ -852,9 +857,17 @@ body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;display:fle
 
 <script>
 const API         = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/get-dashboard-data';
-const TRIGGER_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trigger-orchestrator';
+const SCAN_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/scan';
+async function testConnection(){
+  const r=await fetch(SCAN_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'validate_connection',cloud_account_id:currentAccountId})});
+  const d=await r.json();
+  if(!r.ok){alert(d.error||'Could not test the connection');return;}
+  alert((d.connected?'Connected to AWS account '+d.aws_account_id+'\n':'NOT fully connected\n')+(d.error?d.error+'\n':'')+(d.checks||[]).map(c=>(c.ok?'OK   ':'FAIL ')+c.permission).join('\n'));
+}
 let allF=[], filtF=[], pg=1, svcF='', drResults=[];
-let currentAccountId=null, allAccounts=[];
+// ?account_id=... (set by navTo() on other pages and by notification links) selects the
+// account; the API still enforces access and answers 403 for an account that is not yours.
+let currentAccountId=new URLSearchParams(location.search).get('account_id')||null, allAccounts=[];
 let lastCrossCompliance=null, hmShowPct=false, hmBiF='all';
 
 // ── Account switcher ─────────────────────────────────
@@ -971,10 +984,12 @@ async function triggerScan(){
 
   try {
     const _tok=localStorage.getItem('niagaros_token')||'';
-    const triggerResp = await fetch(TRIGGER_API + (currentAccountId ? '?account_id='+encodeURIComponent(currentAccountId) : ''), {
-      method: 'POST', headers: _tok ? {Authorization:'Bearer '+_tok} : {}
+    const triggerResp = await fetch(SCAN_API, {
+      method: 'POST', headers: {'Content-Type':'application/json', ...(_tok ? {Authorization:'Bearer '+_tok} : {})},
+      body: JSON.stringify({action:'scan', cloud_account_id: currentAccountId})
     });
     if (triggerResp.status === 401) { location.href = '/'; return; }
+    if (triggerResp.status === 429 || triggerResp.status === 403) { const e = await triggerResp.json().catch(()=>({})); btn.disabled=false; btn.textContent='↻ Scan Now'; alert(e.error || 'This scan could not be started.'); return; }
     renderToastSteps([0], [1]);
 
     // Poll every 10s; close only when total findings count is stable for 2 consecutive
@@ -992,6 +1007,9 @@ async function triggerScan(){
         const url = currentAccountId ? API+'?account_id='+encodeURIComponent(currentAccountId) : API;
         const r = await fetch(url, { headers: _tok ? {Authorization:'Bearer '+_tok} : {} });
         if (r.status === 401) { location.href = '/'; return; }
+        // A 403/503 body is an error, not dashboard data: never render it. Keep the last
+        // good data; if there is none, loadData() below shows the error after the loop.
+        if (!r.ok) continue;
         const d = await r.json();
         lastData = d;
         const count = (d.total && d.total.total) || 0;
@@ -1036,21 +1054,21 @@ async function triggerScan(){
 // the real month-over-month trend the scheduled report relies on.
 const REPORT_PREVIEW_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/monthly-report-preview';
 async function runReportPreview(){
-  if(!currentAccountId){ alert('Selecteer eerst een account.'); return; }
+  if(!currentAccountId){ alert('Select an account first.'); return; }
   const btn=document.getElementById('btn-report');
-  btn.disabled=true; btn.textContent='✉ Bezig…';
+  btn.disabled=true; btn.textContent='✉ Running…';
   try{
     const r=await fetch(REPORT_PREVIEW_API,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({cloud_account_id:currentAccountId})});
     const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'onbekende fout');
+    if(!r.ok) throw new Error(d.error||'unknown error');
     if(d.email && d.email.sent){
-      alert('Rapport verstuurd — score '+d.score+'%, '+d.new_findings+' nieuw, '+d.resolved_findings+' opgelost sinds de laatste sluiting.');
+      alert('Report sent — score '+d.score+'%, '+d.new_findings+' new, '+d.resolved_findings+' resolved since the last close.');
     } else {
-      alert('Rapport gegenereerd (score '+d.score+'%), maar de mail kon niet worden verstuurd: '+((d.email&&d.email.reason)||'onbekende reden'));
+      alert('Report generated (score '+d.score+'%), but the email could not be sent: '+((d.email&&d.email.reason)||'unknown reason'));
     }
   }catch(e){
-    alert('Rapport genereren mislukt: '+e.message);
+    alert('Could not generate the report: '+e.message);
   }finally{
     btn.disabled=false; btn.textContent='✉ Run Report Now';
   }
@@ -1192,9 +1210,13 @@ async function loadData(){
     const token=localStorage.getItem('niagaros_token')||'';
     const r=await fetch(url,{headers:token?{Authorization:'Bearer '+token}:{}}), d=await r.json();
     if(r.status===401){location.href='/';return;}
+    if(!r.ok){
+      // 403 = no access to this account, 503 = access could not be verified (fail closed).
+      throw new Error(d.error||('Dashboard data unavailable (HTTP '+r.status+')'));
+    }
     render(d);
   }catch(e){
-    document.getElementById('v-load').innerHTML='<div class="err-box">'+e.message+'</div>';
+    document.getElementById('v-load').innerHTML='<div class="err-box">'+esc(e.message)+'</div>';
   }
 }
 
@@ -1312,7 +1334,8 @@ function render(d){
     {name:'NIST CSF',  sub:'NIST CSF v2.0',          sc:nist.score||0,p:nist.passed||0,f:nist.failed||0,  clr:'#8b5cf6', go:"navTo('nist_csf.html')"},
     {name:'GDPR',      sub:'EU General Data Protection Regulation', sc:gdpr.score||0, p:gdpr.passed||0, f:gdpr.failed||0, clr:'#f59e0b', go:"navTo('gdpr.html')"},
     {name:'SOC 2',     sub:'Service Organization Control 2',        sc:soc2.score||0, p:soc2.passed||0, f:soc2.failed||0, clr:'#ec4899', go:"navTo('soc2.html')"},
-    {name:'ISO 42001', sub:'AI Management System (Annex A)',        sc:iso42001.score||0, p:iso42001.passed||0, f:iso42001.failed||0, clr:'#06b6d4', go:"navTo('iso42001.html')"},
+    // Every ISO 42001 control needs manual evidence (see iso42001_mapper_handler.py), so it has no score.
+    {name:'ISO 42001', sub:'AI Management System (Annex A)',        manual:true, sc:0, p:0, f:0, clr:'#06b6d4', go:"navTo('iso42001.html')"},
     {name:'ISO 27017', sub:'Cloud Security Controls',                sc:iso27017.score||0, p:iso27017.passed||0, f:iso27017.failed||0, clr:'#14b8a6', go:"navTo('iso27017.html')"},
     {name:'AWS FTR',   sub:'Foundational Technical Review',          sc:awsftr.score||0, p:awsftr.passed||0, f:awsftr.failed||0, clr:'#ff9900', go:"navTo('aws_ftr.html')"},
     {name:'MVSP',      sub:'Minimum Viable Secure Product',          sc:mvsp.score||0, p:mvsp.passed||0, f:mvsp.failed||0, clr:'#a855f7', go:"navTo('mvsp.html')"},
@@ -1337,6 +1360,14 @@ function render(d){
     {name:'NIST Privacy Framework', sub:'Privacy Risk Management', sc:nistpriv.score||0, p:nistpriv.passed||0, f:nistpriv.failed||0, clr:'#0284c7', go:"navTo('nist_privacy.html')"},
   ];
   document.getElementById('comp-grid').innerHTML=fws.map(fw=>{
+    if(fw.manual) return `<div class="comp-card anim" onclick="${fw.go}">
+      <div class="cc-hdr"><div><div class="cc-name">${fw.name}</div><div class="cc-sub">${fw.sub}</div></div><div class="cc-pct">—</div></div>
+      <div class="cc-bar"><div class="cc-bar-f" style="background:${fw.clr}" data-w="0"></div></div>
+      <div class="cc-foot">
+        <div class="cc-counts" style="color:#9ca3af">Not scored automatically</div>
+        <span class="badge-warn">Manual evidence</span>
+      </div>
+    </div>`;
     const [st,sc]=fw.sc>=75?['On Track','badge-ok']:fw.sc>=50?['At Risk','badge-warn']:['Critical','badge-risk'];
     return `<div class="comp-card anim" onclick="${fw.go}">
       <div class="cc-hdr"><div><div class="cc-name">${fw.name}</div><div class="cc-sub">${fw.sub}</div></div><div class="cc-pct">${fw.sc}%</div></div>
@@ -1393,16 +1424,17 @@ function render(d){
   // collapse them into one number (different denominators, different
   // control weighting per framework make an average statistically
   // meaningless). This shows the honest spread instead.
-  const fwSorted=[...fws].sort((a,b)=>a.sc-b.sc);
+  const scored=fws.filter(f=>!f.manual);
+  const fwSorted=[...scored].sort((a,b)=>a.sc-b.sc);
   const lowest=fwSorted[0], highest=fwSorted[fwSorted.length-1];
   const midIdx=fwSorted.length/2;
   const median=Number.isInteger(midIdx)
     ? Math.round((fwSorted[midIdx-1].sc+fwSorted[midIdx].sc)/2*10)/10
     : fwSorted[Math.floor(midIdx)].sc;
-  const onTrack=fws.filter(f=>f.sc>=75).length;
-  const atRisk=fws.filter(f=>f.sc>=50&&f.sc<75).length;
-  const criticalCt=fws.filter(f=>f.sc<50).length;
-  document.getElementById('rp-fw-count').textContent=fws.length+' frameworks tracked';
+  const onTrack=scored.filter(f=>f.sc>=75).length;
+  const atRisk=scored.filter(f=>f.sc>=50&&f.sc<75).length;
+  const criticalCt=scored.filter(f=>f.sc<50).length;
+  document.getElementById('rp-fw-count').textContent=scored.length+' frameworks scored';
   document.getElementById('rp-fw-range').innerHTML=[
     {lbl:'Lowest',  fw:lowest,  clr:'#ef4444'},
     {lbl:'Median',  fw:null, val:median, clr:'#6b7280'},
@@ -1469,7 +1501,9 @@ function render(d){
 
   // ── Top Findings (from real data) ────────────────
   const sevOrder=['CRITICAL','HIGH','MEDIUM','LOW'];
-  const topFails=allF.filter(f=>f.result==='FAIL')
+  // Mapped-framework rows are copies of one real finding per citing framework, so they are
+  // left out here (same rule as the headline score and severity cards).
+  const topFails=allF.filter(f=>f.result==='FAIL'&&!FW_SVC.includes(f.service)&&f.service!=='CUSTOM')
     .sort((a,b)=>sevOrder.indexOf(a.severity)-sevOrder.indexOf(b.severity))
     .slice(0,5);
   const sevIco={CRITICAL:'🔴',HIGH:'🟠',MEDIUM:'🟡',LOW:'🟢'};
@@ -1490,7 +1524,6 @@ function render(d){
     {ico:'🔒',name:'NIST CSF v2.0 Report',   sub:'NIST Cybersecurity Framework v2.0 control assessment across all functions.',type:'nist',     filter:f=>f.service==='NIST'},
     {ico:'🔏',name:'GDPR Report',            sub:'EU GDPR Articles 25, 30 and 32 compliance status for AWS environment.',     type:'gdpr',     filter:f=>f.service==='GDPR'},
     {ico:'🏢',name:'SOC 2 Report',           sub:'SOC 2 Trust Services Criteria assessment across CC, A, C and PI categories.',type:'soc2',    filter:f=>f.service==='SOC2'},
-    {ico:'🤖',name:'ISO 42001 Report',       sub:'ISO/IEC 42001 AI Management System Annex A control assessment.',            type:'iso42001', filter:f=>f.service==='ISO42001'},
     {ico:'☁', name:'ISO 27017 Report',       sub:'Cloud-specific information security controls assessment.',                  type:'iso27017', filter:f=>f.service==='ISO27017'},
     {ico:'🅰',name:'AWS FTR Report',         sub:'AWS Foundational Technical Review security requirement areas.',             type:'awsftr',   filter:f=>f.service==='AWSFTR'},
     {ico:'🔐',name:'MVSP Report',            sub:'Minimum Viable Secure Product control assessment.',                         type:'mvsp',     filter:f=>f.service==='MVSP'},
@@ -1569,6 +1602,16 @@ function render(d){
   document.getElementById('v-load').style.display='none';
   const view = getHashView();
   show(view, document.getElementById('ni-'+view));
+
+  // Deep link from a disaster-recovery notification (?dr_resource=...): open the
+  // database issues with the backup & recovery evidence, once.
+  const params=new URLSearchParams(location.search);
+  if(params.has('dr_resource')){
+    params.delete('dr_resource');
+    const qs=params.toString();
+    history.replaceState(null,'',location.pathname+(qs?'?'+qs:'')+location.hash);
+    goSvc('rds');
+  }
 }
 
 // ── Cross-Compliance Heatmap ─────────────────────────────────────────────────
@@ -1730,7 +1773,29 @@ function goCheck(checkId){
 function fmtDuration(sec){
   if(sec==null)return '—';
   const m=Math.floor(sec/60), s=sec%60;
-  return m>0?`${m}m ${s}s`:`${s}s`;
+  return m>0?(s?`${m}m ${s}s`:`${m}m`):`${s}s`;
+}
+// RPO target per resource type, same as the scanner rules RDS.DR.4 (15 min, see rds_dr_4.py)
+// and DynamoDB.DR.3 (5 min). Unknown types use the stricter value.
+const DR_RPO_TARGETS={'rds-instance':900,'dynamodb-table':300};
+function drRpoTarget(t){return DR_RPO_TARGETS[t.resource_type]||300;}
+const DR_RTO_TARGET_SECONDS=1800;   // ≤ 30 min, see disaster_recovery.md
+const DR_TEST_MAX_AGE_DAYS=90;      // a restore test older than this no longer counts as current evidence
+function drTestStatus(t,isLatest){
+  const red={color:'#b91c1c',bg:'#fef2f2',border:'#fecaca'};
+  const amber={color:'#b45309',bg:'#fffbeb',border:'#fde68a'};
+  const green={color:'#15803d',bg:'#f0fdf4',border:'#bbf7d0'};
+  if(t.data_integrity_match===false) return {...red,label:'Integrity mismatch',detail:''};
+  const missed=[];
+  if(t.rpo_seconds!=null&&t.rpo_seconds>drRpoTarget(t))missed.push('RPO');
+  if(t.rto_seconds!=null&&t.rto_seconds>DR_RTO_TARGET_SECONDS)missed.push('RTO');
+  if(missed.length) return {...red,label:'Target missed',detail:`${missed.join(' and ')} above target`};
+  if(t.rpo_seconds==null||t.rto_seconds==null||t.data_integrity_match==null)
+    return {...amber,label:'Incomplete',detail:'not every value was measured'};
+  const ageDays=t.tested_at?(Date.now()-new Date(t.tested_at).getTime())/86400000:NaN;
+  if(isLatest&&!(ageDays<=DR_TEST_MAX_AGE_DAYS))
+    return {...amber,label:'Test overdue',detail:isNaN(ageDays)?'test date unknown':`last test ${Math.floor(ageDays)} days ago (max ${DR_TEST_MAX_AGE_DAYS})`};
+  return {...green,label:'Within target',detail:''};
 }
 function renderDrEvidence(){
   const testedSection=document.getElementById('dr-tested-section');
@@ -1738,23 +1803,27 @@ function renderDrEvidence(){
   const checksGrid=document.getElementById('dr-checks-grid');
   if(!testedGrid||!checksGrid)return;
 
-  // Full history, newest first (API already orders by tested_at DESC).
-  // Mark the first occurrence per resource_name as "Most recent".
+  // Full history, newest first. A test is judged against the published targets
+  // (docs/public/security/data_protection/disaster_recovery.md); the most recent
+  // test per resource is additionally flagged when it is older than DR_TEST_MAX_AGE_DAYS.
   const seenResource={};
   const sortedTests=[...(drResults||[])].sort((a,b)=>new Date(b.tested_at)-new Date(a.tested_at));
 
   if(sortedTests.length){
     testedSection.hidden=false;
     testedGrid.innerHTML=sortedTests.map(t=>{
-      const isLatest=!seenResource[t.resource_name];
-      seenResource[t.resource_name]=true;
-      return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-        <div style="font-size:11.5px;font-weight:700;color:#15803d;word-break:break-word">${t.resource_name}</div>
-        ${isLatest?'<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#15803d;color:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0">Most recent</span>':''}
+      const key=(t.resource_type||'')+'|'+(t.resource_name||'');
+      const isLatest=!seenResource[key];
+      seenResource[key]=true;
+      const st=drTestStatus(t,isLatest);
+      return `<div style="background:${st.bg};border:1px solid ${st.border};border-radius:8px;padding:12px 14px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <div style="font-size:11.5px;font-weight:700;color:${st.color};word-break:break-word">${esc(t.resource_name)}</div>
+        ${isLatest?`<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:${st.color};color:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0">Most recent</span>`:''}
+        <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${st.color};border:1px solid ${st.border};padding:1px 6px;border-radius:4px;flex-shrink:0">${st.label}</span>
       </div>
-      <div style="font-size:12.5px;color:#374151;line-height:1.7">RPO <strong>${fmtDuration(t.rpo_seconds)}</strong> &middot; RTO <strong>${fmtDuration(t.rto_seconds)}</strong> &middot; ${t.data_integrity_match?'✓ integrity confirmed':'✗ integrity mismatch'}</div>
-      <div style="font-size:11px;color:#9ca3af;margin-top:4px">Tested ${t.tested_at?new Date(t.tested_at).toLocaleString():''}</div>
+      <div style="font-size:12.5px;color:#374151;line-height:1.7">RPO <strong>${fmtDuration(t.rpo_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(drRpoTarget(t))} target</span> &middot; RTO <strong>${fmtDuration(t.rto_seconds)}</strong> <span style="color:#9ca3af">/ ${fmtDuration(DR_RTO_TARGET_SECONDS)} target</span> &middot; ${t.data_integrity_match===true?'✓ integrity confirmed':t.data_integrity_match===false?'✗ integrity mismatch':'? integrity not verified'}</div>
+      <div style="font-size:11px;color:#9ca3af;margin-top:4px">Tested ${t.tested_at?esc(new Date(t.tested_at).toLocaleString()):'— (date unknown)'}${st.detail?` &middot; ${st.detail}`:''}</div>
     </div>`;
     }).join('');
   } else {
@@ -1767,7 +1836,7 @@ function renderDrEvidence(){
     {id:'RDS.DR.1',      label:'RDS automated backups'},
     {id:'RDS.DR.2',      label:'RDS Multi-AZ failover'},
     {id:'RDS.DR.3',      label:'RDS deletion protection'},
-    {id:'RDS.DR.4',      label:'RDS RPO target (5 min)'},
+    {id:'RDS.DR.4',      label:'RDS RPO target (15 min)'},
     {id:'DynamoDB.DR.1', label:'DynamoDB point-in-time recovery'},
     {id:'DynamoDB.DR.2', label:'DynamoDB deletion protection'},
     {id:'DynamoDB.DR.3', label:'DynamoDB RPO target (5 min)'},
@@ -1855,6 +1924,7 @@ window.addEventListener('hashchange', ()=>{
 });
 loadData();
 </script>
+<script src="notifications-widget.js"></script>
 <script src="ai-agent-widget.js"></script>
 </body>
 </html>
