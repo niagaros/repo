@@ -32,6 +32,10 @@ interface Engagement {
   start_date: string;
   end_date: string;
   active: boolean;
+  // Separate from `active`: an engagement that ran its course and one that
+  // was ended early both stop granting access, but only the second is
+  // somebody's decision.
+  closed_at: string | null;
 }
 
 interface EvidenceRequest {
@@ -65,6 +69,8 @@ export default function Auditors() {
   const [formError, setFormError] = useState("");
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<Record<string, string>>({});
   const [requestsByEngagement, setRequestsByEngagement] = useState<Record<string, EvidenceRequest[]>>({});
   const [activityByEngagement, setActivityByEngagement] = useState<Record<string, ActivityEntry[]>>({});
 
@@ -102,6 +108,37 @@ export default function Auditors() {
 
   const toggleAccount = (id: string) => {
     setSelectedAccountIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  // Access is computed per request from the end date and this flag, so the
+  // auditor is out on their very next call — there is no stored grant to
+  // withdraw. The confirmation exists because this cannot be undone: a
+  // closed engagement stays closed, and reopening would overwrite the
+  // moment it actually ended.
+  const closeEngagement = async (id: string, name: string) => {
+    if (!window.confirm(
+      `End "${name}" now?\n\nThe auditors on it lose access immediately. ` +
+      `This cannot be undone — you would have to create a new engagement.`
+    )) return;
+
+    setCloseError(prev => ({ ...prev, [id]: "" }));
+    setClosingId(id);
+    try {
+      const resp = await fetch(`${getApiBase()}/auditors/engagements/${id}`, {
+        method: "DELETE",
+        headers: authHeader(),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setCloseError(prev => ({ ...prev, [id]: data.error || "Could not end this engagement." }));
+        return;
+      }
+      await loadEngagements();
+    } catch {
+      setCloseError(prev => ({ ...prev, [id]: "Could not reach the server." }));
+    } finally {
+      setClosingId(null);
+    }
   };
 
   const createEngagement = async () => {
@@ -282,11 +319,29 @@ export default function Auditors() {
                   <div style={{ color: "#4e627a", fontSize: 11.5 }}>ends {en.end_date}</div>
                 </div>
                 {en.active ? (
-                  <span style={badgeStyle("#4ade80", "rgba(22,163,74,0.12)")}>active</span>
+                  <>
+                    <span style={badgeStyle("#4ade80", "rgba(22,163,74,0.12)")}>active</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); closeEngagement(en.id, en.name); }}
+                      disabled={closingId === en.id}
+                      style={{
+                        background: "none", border: "1px solid #374151", color: "#9ca3af",
+                        borderRadius: 6, padding: "4px 10px", fontSize: 11,
+                        cursor: closingId === en.id ? "default" : "pointer",
+                      }}
+                    >
+                      {closingId === en.id ? "Ending…" : "End now"}
+                    </button>
+                  </>
+                ) : en.closed_at ? (
+                  <span style={badgeStyle("#f87171", "rgba(239,68,68,0.12)")}>ended early</span>
                 ) : (
-                  <span style={badgeStyle("#f87171", "rgba(239,68,68,0.12)")}>closed</span>
+                  <span style={badgeStyle("#6b7280", "rgba(107,114,128,0.12)")}>expired</span>
                 )}
               </div>
+              {closeError[en.id] && (
+                <div style={{ color: "#f87171", fontSize: 12, marginTop: 6 }}>{closeError[en.id]}</div>
+              )}
 
               {expandedId === en.id && (
                 <div style={{ marginTop: 12, paddingLeft: 4 }}>
