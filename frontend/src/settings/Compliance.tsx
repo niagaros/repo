@@ -103,7 +103,7 @@ export default function Compliance() {
   const [toggleError, setToggleError] = useState<{ name: string; message: string } | null>(null);
 
   const putFramework = (name: string, f: Partial<Framework>) =>
-    api("/compliance/frameworks", "PUT", {
+    api("/compliance/frameworks", "POST", {
       framework_name: name,
       enabled: f.enabled ?? true,
       version: f.version || null,

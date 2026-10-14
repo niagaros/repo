@@ -754,7 +754,7 @@ def _route(method: str, path: str):
     parts = p.strip("/").split("/")
     simple = {
         ("GET", "/compliance"): handle_get_compliance,
-        ("PUT", "/compliance/frameworks"): handle_save_framework,
+        ("POST", "/compliance/frameworks"): handle_save_framework,
         ("POST", "/compliance/certifications"): handle_add_certification,
         ("GET", "/governance"): handle_get_governance,
         ("POST", "/governance/policies"): handle_create_policy,
@@ -799,10 +799,13 @@ def handle(event: dict, db: Database) -> dict:
 
 def lambda_handler(event, context):
     """
-    Routes (payload format v2.0, API hzf92ft6j7, stage "default"):
-        ANY /compliance, ANY /compliance/{proxy+}
-        ANY /governance, ANY /governance/{proxy+}
-        ANY /training,   ANY /training/{proxy+}
+    Routes (payload format v2.0, API hzf92ft6j7, stage "default"), explicit methods only:
+        GET /compliance, POST /compliance/{proxy+}, DELETE /compliance/{proxy+}
+        GET /governance, POST /governance/{proxy+}
+        GET /training,   POST /training/{proxy+}
+    Never ANY: an ANY route also catches the browser's CORS preflight (OPTIONS), which API Gateway
+    then forwards here instead of answering it, and the browser blocks the real request. Only methods
+    in the API's CORS config (GET, POST, DELETE, PATCH) work from a browser, so no PUT.
     """
     db = None
     try:

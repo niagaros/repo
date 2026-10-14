@@ -46,12 +46,18 @@ reuse that role.
 
 ## 4. API Gateway routes (API `hzf92ft6j7`, payload 2.0)
 
-    ANY /compliance      ANY /compliance/{proxy+}
-    ANY /governance      ANY /governance/{proxy+}
-    ANY /training        ANY /training/{proxy+}
+    GET /compliance      POST /compliance/{proxy+}   DELETE /compliance/{proxy+}
+    GET /governance      POST /governance/{proxy+}
+    GET /training        POST /training/{proxy+}
 
-All six point to `governance-handler`. The handler reads ids from the path
-itself, so greedy routes are fine here (unlike team-handler). CORS is set at
+All seven point to `governance-handler`. The handler reads ids from the path
+itself, so greedy routes are fine here (unlike team-handler).
+
+**Never use `ANY`.** An `ANY` route also matches the browser's CORS preflight
+(`OPTIONS`), so API Gateway forwards it to the Lambda instead of answering it,
+and the browser blocks the real request ("Could not reach Niagaros"). This
+happened on the first deploy (14 Oct 2026). Also only GET/POST/DELETE/PATCH are
+in the API's CORS config, so the handler uses POST, not PUT. CORS is set at
 API level. Add a `lambda:InvokeFunction` permission for
 `apigateway.amazonaws.com` scoped to `arn:aws:execute-api:eu-west-1:225989360315:hzf92ft6j7/*`.
 

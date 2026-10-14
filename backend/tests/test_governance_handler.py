@@ -161,33 +161,33 @@ def test_compliance_starts_empty_with_the_real_framework_catalog(call, team):
 
 
 def test_viewer_cannot_change_frameworks(call, team):
-    s, b = call(team["viewer"], "PUT", "/compliance/frameworks", {"framework_name": "SOC2"})
+    s, b = call(team["viewer"], "POST", "/compliance/frameworks", {"framework_name": "SOC2"})
     assert s == 403
 
 
 def test_only_frameworks_niagaros_can_check_are_accepted(call, team):
-    s, b = call(team["admin"], "PUT", "/compliance/frameworks", {"framework_name": "Made Up Framework"})
+    s, b = call(team["admin"], "POST", "/compliance/frameworks", {"framework_name": "Made Up Framework"})
     assert s == 400
 
 
 def test_framework_owner_must_be_a_team_member(call, team):
-    s, b = call(team["admin"], "PUT", "/compliance/frameworks",
+    s, b = call(team["admin"], "POST", "/compliance/frameworks",
                 {"framework_name": "SOC2", "owner_email": "boss@b.test"})
     assert s == 400 and "member" in b["error"]
 
 
 def test_dates_are_validated(call, team):
-    s, _ = call(team["admin"], "PUT", "/compliance/frameworks",
+    s, _ = call(team["admin"], "POST", "/compliance/frameworks",
                 {"framework_name": "SOC2", "effective_date": "2026-05-01", "expiration_date": "2026-01-01"})
     assert s == 400
 
 
 def test_enabling_a_framework_completes_step_5_and_is_audited(call, team, conn):
-    s, b = call(team["compliance"], "PUT", "/compliance/frameworks", {
+    s, b = call(team["compliance"], "POST", "/compliance/frameworks", {
         "framework_name": "ISO 27001:2022", "enabled": True, "version": "2022", "owner_email": "COMP@a.test",
         "certification_status": "in_progress", "effective_date": "2026-01-01", "expiration_date": "2027-01-01"})
     assert s == 200 and b["step_complete"] is True and b["framework"]["owner_email"] == "comp@a.test"
-    s, b = call(team["compliance"], "PUT", "/compliance/frameworks",
+    s, b = call(team["compliance"], "POST", "/compliance/frameworks",
                 {"framework_name": "ISO 27001:2022", "enabled": True, "certification_status": "certified"})
     assert s == 200
     _, g = call(team["admin"], "GET", "/governance")
