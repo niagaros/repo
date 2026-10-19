@@ -95,16 +95,27 @@ _ARN_SERVICE = re.compile(r"^arn:[^:]*:([^:]*):")
 _RESOURCE_SERVICES = {"sts": {"iam", "sts"}}
 
 
+_S3_OBJECT_ACTION = re.compile(r"^s3:((get|put|delete|restore|abort|replicate)(object|multipartupload)|listmultipartuploadparts)", re.I)
+
+
 def _fits_action(pattern, action):
-    """A statement can only grant an action on resources of that action's service: 'Allow NotAction X on an S3
-    ARN' does not grant IAM actions. Non-ARN or wildcard-service patterns are kept (we do not guess)."""
+    """A statement can only grant an action on resources of that action's type: 'Allow NotAction X on an S3
+    ARN' does not grant IAM actions, and an S3 bucket ARN does not grant object actions (or the reverse).
+    Resource types are checked for S3; other services by namespace. Non-ARN or wildcard patterns are kept."""
     if pattern == "*":
         return True
     m = _ARN_SERVICE.match(pattern)
     if not m or "*" in m.group(1) or "?" in m.group(1):
         return True
     svc = action.split(":")[0].lower()
-    return m.group(1) == svc or m.group(1) in _RESOURCE_SERVICES.get(svc, set())
+    if not (m.group(1) == svc or m.group(1) in _RESOURCE_SERVICES.get(svc, set())):
+        return False
+    if svc == "s3" and pattern.startswith("arn:aws:s3:::"):
+        path = pattern[len("arn:aws:s3:::"):]
+        could_be_object = "/" in path or "*" in path or "?" in path
+        could_be_bucket = "/" not in path
+        return could_be_object if _S3_OBJECT_ACTION.match(action) else could_be_bucket
+    return True
 
 
 def _patterns(st, action):
@@ -190,13 +201,21 @@ def _evaluate_concrete(statements, action, resource, guards):
                 best, evidence = r, [a["source"]]
             elif r == best:
                 evidence.append(a["source"])
+    implicit = []
     for gname, gst in guards or []:
         g = _evaluate_concrete(gst, action, resource, None)
-        if g["result"] in ("denied", "not_allowed"):
-            return {"result": "not_allowed", "evidence": evidence, "notes": notes + [f"blocked by {gname}"],
+        if g["result"] == "denied":
+            return {"result": "denied", "evidence": g["evidence"], "notes": notes + [f"explicitly denied by {gname}"],
                     "scope": [], "blocked_by": gname}
-        if g["result"] == "conditional":
+        if g["result"] == "not_allowed":
+            implicit.append(gname)
+        elif g["result"] == "conditional":
             notes.append(f"{gname} allows it only under a condition")
+    if implicit:
+        # An SCP block cannot be bypassed by a resource policy; a boundary block (for users) can. Report the SCP.
+        by = next((x for x in implicit if x.startswith("service control policy")), implicit[0])
+        return {"result": "not_allowed", "evidence": evidence, "notes": notes + [f"blocked by {x}" for x in implicit],
+                "scope": [], "blocked_by": by}
     if best == "allowed" and notes:
         best = "conditional"
     return {"result": best, "evidence": evidence, "notes": notes, "scope": [resource] if best != "not_allowed" else [],
@@ -486,7 +505,10 @@ def _candidate_targets(mid, identity, identities, roles_by_service, pass_to, pol
     if mid in ("create_policy_version", "set_default_policy_version"):
         for arn in sorted({src.get("policy_arn") for src in (st["source"] for st in identity["_statements"])
                            if src.get("type") == "managed" and src.get("policy_arn") and ":aws:policy/" not in src.get("policy_arn", "")}):
-            out.append(({"arn": arn, "name": arn.split("/")[-1]}, ["administrator access through a rewritten policy"]))
+            g = _self_gains(identity, identity.get("_guards"))
+            if g:
+                out.append(({"arn": arn, "name": arn.split("/")[-1]},
+                            [x.replace("by granting it to itself", "through a rewritten policy") for x in g]))
     elif mid in ("attach_user_policy", "put_user_policy"):
         g = _self_gains(identity, identity.get("_guards"))
         if identity["kind"] == "user" and g:
@@ -513,7 +535,10 @@ def _candidate_targets(mid, identity, identities, roles_by_service, pass_to, pol
         if identity["kind"] == "user":
             for grp in identities:
                 if grp["kind"] == "group" and grp["name"] not in identity.get("groups", []):
-                    g = gains(identity, grp)
+                    # what the group's policies would give THIS user, under the user's own boundary/SCPs
+                    as_member = {"admin": admin_status(grp["_statements"], identity.get("_guards"))[0],
+                                 "capabilities": capabilities(grp["_statements"], identity.get("_guards"))}
+                    g = gains(identity, as_member)
                     if g:
                         out.append(({"arn": grp["arn"], "name": grp["name"]}, g))
     elif mid in ("create_access_key", "create_login_profile", "update_login_profile"):
@@ -656,7 +681,13 @@ def analyze_trust(role, own_account):
     doc = role.get("AssumeRolePolicyDocument") or {}
     if isinstance(doc, str):
         doc = json.loads(doc)
-    for st in _as_list(doc.get("Statement")):
+    def assume_action(kind, value):
+        if kind == "Federated":
+            return "sts:AssumeRoleWithSAML" if "saml-provider" in value else "sts:AssumeRoleWithWebIdentity"
+        return "sts:AssumeRole"
+
+    statements = [st for st in _as_list(doc.get("Statement")) if isinstance(st, dict)]
+    for st in statements:
         conds = _conditions(st.get("Condition"))
         display = [f"{c['op']} {c['key']} = {', '.join(map(str, c['values']))}" for c in conds]
         principal = st.get("Principal")
@@ -668,8 +699,13 @@ def analyze_trust(role, own_account):
                 for v in _as_list(vals):
                     items.append((kind, v))
         for kind, value in items:
+            acts = [a.lower() for a in _as_list(st.get("Action"))]
+            is_deny = st.get("Effect") == "Deny"
+            if not is_deny and not any(_match_action(a, assume_action(kind, value)) for a in acts):
+                continue   # e.g. a statement that only allows sts:TagSession grants no assumption
             entry = {"kind": kind, "principal": value, "conditions": display, "statement": st.get("Sid"),
-                     "effect": st.get("Effect", "Allow"), "conditional": bool(conds)}
+                     "effect": st.get("Effect", "Allow"), "conditional": bool(conds),
+                     "action": assume_action(kind, value), "actions": acts}
             if entry["effect"] == "Deny":
                 entry["class"] = "deny"
                 out.append(entry)
@@ -701,6 +737,21 @@ def analyze_trust(role, own_account):
                                             and [str(v).lower() for v in c["values"]] == ["true"] for c in conds)
             entry["conditional"] = bool(conds)
             out.append(entry)
+    # An unconditional trust Deny for the same principal (or "*") makes an Allow ineffective.
+    denies = [e for e in out if e["class"] == "deny" and not e["conditional"]]
+
+    def principal_covered(d, e):
+        if d["principal"] in ("*", e["principal"]):
+            return True
+        acct = _account_of(d["principal"]) if d["kind"] == "AWS" else None
+        is_account_wide = acct and d["principal"] in (acct, f"arn:aws:iam::{acct}:root")
+        return bool(is_account_wide and e["kind"] == "AWS" and _account_of(e["principal"]) == acct)
+
+    for e in out:
+        if e["class"] == "deny":
+            continue
+        if any(principal_covered(d, e) and any(_match_action(a, e["action"]) for a in d["actions"]) for d in denies):
+            e["denied_by_trust_policy"] = True
     return out
 
 
@@ -718,7 +769,7 @@ def assumable_by(role_trust, principal_arn, own_account, identity_eval):
     needs an identity-policy allow. A Deny in the trust policy wins."""
     for t in role_trust:
         if t["class"] == "deny" and t["principal"] in ("*", principal_arn, own_account, f"arn:aws:iam::{own_account}:root") \
-                and not t.get("conditional"):
+                and not t.get("conditional") and any(_match_action(a, "sts:AssumeRole") for a in t.get("actions", ["sts:assumerole"])):
             return False, None, False
     by = identity_eval.get("blocked_by") or ""
     # A trust policy naming an IAM *user* ARN is not limited by that user's permissions boundary (implicit
@@ -924,6 +975,8 @@ def build_findings(account, identities, root, external_findings, settings, obser
                                    "rollback": "Restore the removed permission from the previous policy version."},
                                   "escalation", key=p["method"]))
         for t in i.get("trust", []):
+            if t.get("denied_by_trust_policy"):
+                continue
             if t["class"] == "public":
                 sev = _apply_rule(settings, "no_public_trust", "critical")
                 if sev:

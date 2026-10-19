@@ -183,6 +183,26 @@ def test_access_analyzer_findings_resolve_only_in_their_own_region(conn, account
     conn.rollback()
 
 
+def test_archived_access_analyzer_finding_is_suppressed_not_resolved(conn, accounts):
+    from collectors.aws.scanner import ciem_engine, ciem_scanner_handler as h
+    fp = ciem_engine.fingerprint(ACCT_AWS, "external_resource_access", "arn:aws:s3:::shared", "aa-9")
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO ciem_findings (cloud_account_id, fingerprint, rule, category, severity, title, details)
+                       VALUES (%s, %s, 'external_trust_controls', 'external_resource_access', 'high', 'shared bucket',
+                               '{"region": "eu-west-1"}')""", (accounts["a"], fp))
+        cur.execute("INSERT INTO ciem_scans (cloud_account_id) VALUES (%s) RETURNING id", (accounts["a"],))
+        sid = cur.fetchone()[0]
+    conn.commit()
+    raw = _raw()
+    ids, findings, summary = ciem_engine.analyze(raw, ACCT_AWS, 90, {})
+    h.store(conn, accounts["a"], sid, ids, findings, summary, raw, h.ALL_CATEGORIES, [], "eu-west-1", [fp])
+    with conn.cursor() as cur:
+        cur.execute("SELECT status, status_reason FROM ciem_findings WHERE fingerprint = %s", (fp,))
+        st, reason = cur.fetchone()
+    conn.rollback()
+    assert st == "suppressed" and "Archived in IAM Access Analyzer" in reason
+
+
 def test_expired_acceptance_reopens_even_if_not_seen_again(conn, accounts):
     with conn.cursor() as cur:
         cur.execute("""INSERT INTO ciem_findings (cloud_account_id, fingerprint, rule, category, severity, title, status,

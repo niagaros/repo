@@ -112,7 +112,7 @@ def _inline_index(raw):
     return idx
 
 
-def store(conn, account_id, scan_id, identities, findings, summary, raw, resolvable, disabled, region=None):
+def store(conn, account_id, scan_id, identities, findings, summary, raw, resolvable, disabled, region=None, archived=()):
     now = datetime.now(timezone.utc)
     docs, inline = _policy_documents(raw), _inline_index(raw)
     new_high = []
@@ -153,6 +153,12 @@ def store(conn, account_id, scan_id, identities, findings, summary, raw, resolva
                 new_high.append(f)
         cur.execute("""UPDATE ciem_findings SET status = 'open', status_reason = 'Re-opened: risk acceptance expired'
                        WHERE cloud_account_id = %s AND status = 'accepted' AND accepted_until < CURRENT_DATE""", (account_id,))
+        if archived:
+            # Archived in IAM Access Analyzer = the customer marked the access as intended. That is not a fix.
+            cur.execute("UPDATE ciem_findings SET status = 'suppressed', resolved_at = NULL, "
+                        "status_reason = 'Archived in IAM Access Analyzer (marked as intended); the access still exists' "
+                        "WHERE cloud_account_id = %s AND fingerprint = ANY(%s) AND status IN ('open', 'in_progress', 'resolved')",
+                        (account_id, list(archived)))
         if disabled:
             cur.execute("""UPDATE ciem_findings SET status = 'suppressed', status_reason = 'Rule switched off in CIEM settings'
                            WHERE cloud_account_id = %s AND status IN ('open', 'in_progress') AND rule = ANY(%s)""",
@@ -164,8 +170,9 @@ def store(conn, account_id, scan_id, identities, findings, summary, raw, resolva
                            status_reason = 'Not present in the latest scan (verified by re-collection)'
                        WHERE cloud_account_id = %s AND status IN ('open', 'in_progress', 'suppressed')
                          AND NOT (fingerprint = ANY(%s)) AND category = ANY(%s) AND NOT (rule = ANY(%s))
+                         AND NOT (fingerprint = ANY(%s))
                          AND (category <> 'external_resource_access' OR details->>'region' = %s)""",
-                    (account_id, list(seen), list(resolvable), list(disabled), region or REGION))
+                    (account_id, list(seen), list(resolvable), list(disabled), list(archived), region or REGION))
         resolved = cur.rowcount
         cur.execute("""DELETE FROM ciem_identities WHERE scan_id IN (
                            SELECT id FROM ciem_scans WHERE cloud_account_id = %s ORDER BY started_at DESC OFFSET %s)""",
@@ -233,8 +240,10 @@ def run(conn, account_id, session, trigger="schedule", region=None):
         complete = all(v.get("ok") for k, v in raw["coverage"].items() if isinstance(v, dict) and k not in ("access_analyzer", "scp"))
         resolvable = resolvable_categories(raw["coverage"])
         disabled = ciem_engine.disabled_rules(rules)
+        archived = [ciem_engine.fingerprint(aws_account, "external_resource_access", x["resource"], x["id"])
+                    for x in raw.get("external_archived") or []]
         new_high, resolved = store(conn, account_id, scan_id, identities, findings, summary, raw, resolvable, disabled,
-                                   region or REGION)
+                                   region or REGION, archived)
         summary["resolvable_categories"] = resolvable
         summary["new_high_or_critical"] = len(new_high)
         summary["resolved_this_scan"] = resolved

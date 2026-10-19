@@ -135,22 +135,30 @@ def collect_access_advisor(iam, arns):
     return results
 
 
-def collect_external_access(session, region):
-    """Active IAM Access Analyzer findings (resources shared outside the zone of trust)."""
+def collect_external_access(session, region, account):
+    """IAM Access Analyzer findings for resources OWNED BY THIS ACCOUNT. An organization analyzer also reports
+    other member accounts' resources; those belong to other tenants and are never taken over.
+    Returns (active, archived) or None when no analyzer is active."""
     aa = session.client("accessanalyzer", region_name=region, config=RETRY)
     analyzers = [a for a in aa.list_analyzers().get("analyzers", []) if a.get("status") == "ACTIVE"
                  and a.get("type") in ("ACCOUNT", "ORGANIZATION")]
     if not analyzers:
         return None
-    out = []
+    out, archived = [], []
     for page in aa.get_paginator("list_findings").paginate(analyzerArn=analyzers[0]["arn"],
-                                                            filter={"status": {"eq": ["ACTIVE"]}}):
+                                                            filter={"status": {"eq": ["ACTIVE", "ARCHIVED"]},
+                                                                    "resourceOwnerAccount": {"eq": [account]}}):
         for f in page.get("findings", []):
+            if f.get("resourceOwnerAccount") != account:
+                continue   # defence in depth: never store another account's resource
+            if f.get("status") == "ARCHIVED":
+                archived.append({"id": f["id"], "resource": f.get("resource"), "resource_type": f.get("resourceType")})
+                continue
             out.append({"id": f["id"], "resource": f.get("resource"), "resource_type": f.get("resourceType"),
                         "principal": f.get("principal"), "actions": f.get("action"), "condition": f.get("condition"),
                         "is_public": bool(f.get("isPublic")), "region": region,
                         "analyzed_at": f.get("analyzedAt").isoformat() if f.get("analyzedAt") else None})
-    return out
+    return out, archived
 
 
 def collect_scps(session, account):
@@ -224,15 +232,15 @@ def collect(session, account, region="eu-west-1"):
         raw["limitations"].append(f"IAM Access Advisor unavailable ({_err(e)}): unused access cannot be determined.")
 
     try:
-        ext = collect_external_access(session, region)
+        ext = collect_external_access(session, region, account)
         if ext is None:
             raw["external_access"] = []
             raw["coverage"]["access_analyzer"] = {"ok": False, "error": "no active analyzer"}
             raw["limitations"].append(f"IAM Access Analyzer is not enabled in {region}: resources shared outside the account "
                                       "(S3 buckets, KMS keys, ...) are not analysed. Enabling it is free for external access findings.")
         else:
-            raw["external_access"] = ext
-            raw["coverage"]["access_analyzer"] = {"ok": True, "findings": len(ext), "region": region}
+            raw["external_access"], raw["external_archived"] = ext
+            raw["coverage"]["access_analyzer"] = {"ok": True, "findings": len(ext[0]), "archived": len(ext[1]), "region": region}
             raw["limitations"].append(f"IAM Access Analyzer findings are from region {region} only.")
     except Exception as e:
         raw["external_access"] = []

@@ -86,8 +86,15 @@ def test_service_wildcards_only_for_unconditional_all_resource_statements():
 
 # ── trust ───────────────────────────────────────────────────────────────────
 
+def _trust_action(principal):
+    fed = principal.get("Federated", "") if isinstance(principal, dict) else ""
+    if not fed:
+        return "sts:AssumeRole"
+    return "sts:AssumeRoleWithSAML" if "saml-provider" in fed else "sts:AssumeRoleWithWebIdentity"
+
+
 def role(name, trust_principal, condition=None, path="/", policies=None, inline=None, tags=None):
-    s = {"Effect": "Allow", "Principal": trust_principal, "Action": "sts:AssumeRole"}
+    s = {"Effect": "Allow", "Principal": trust_principal, "Action": _trust_action(trust_principal)}
     if condition:
         s["Condition"] = condition
     return {"RoleName": name, "Arn": f"arn:aws:iam::{ACCT}:role{path}{name}", "Path": path,
@@ -488,3 +495,110 @@ def test_external_resource_findings_follow_the_rule_switch():
     assert not f
     _, f, _ = E.analyze(raw, ACCT, 90, {"external_trust_controls": {"severity": "critical"}}, now=NOW)
     assert f[0]["severity"] == "critical"
+
+
+
+# ── final review ────────────────────────────────────────────────────────────
+
+def test_trust_statement_for_another_action_grants_no_assumption():
+    r = role("x", {"AWS": f"arn:aws:iam::{ACCT}:user/alice"})
+    r["AssumeRolePolicyDocument"]["Statement"].append({"Effect": "Allow", "Principal": "*", "Action": "sts:TagSession"})
+    t = E.analyze_trust(r, ACCT)
+    assert [x["class"] for x in t] == ["same_account"]
+
+
+def test_public_trust_cancelled_by_trust_deny_is_not_reported():
+    r = role("x", "*")
+    r["AssumeRolePolicyDocument"]["Statement"].append({"Effect": "Deny", "Principal": "*", "Action": "sts:AssumeRole"})
+    raw = {"policies": [], "users": [], "groups": [], "roles": [r]}
+    _, f, _ = E.analyze(raw, ACCT, 90, {}, now=NOW)
+    assert not [x for x in f if x["rule"] == "no_public_trust"]
+
+
+def test_explicit_boundary_deny_blocks_even_a_named_user():
+    ev = E.evaluate(st(ADMIN_DOC), "sts:AssumeRole", f"arn:aws:iam::{ACCT}:role/x",
+                    [("permissions boundary", st(ADMIN_DOC) + st(stmt("Deny", "sts:AssumeRole")))])
+    assert ev["result"] == "denied"
+    trust = E.analyze_trust(role("x", {"AWS": f"arn:aws:iam::{ACCT}:user/alice"}), ACCT)
+    assert not E.assumable_by(trust, f"arn:aws:iam::{ACCT}:user/alice", ACCT, ev)[0]
+
+
+def test_s3_bucket_arn_does_not_grant_object_actions():
+    s = st(stmt("Allow", "s3:*", "arn:aws:s3:::example"))
+    assert E.evaluate(s, "s3:GetObject")["result"] == "not_allowed"
+    assert E.evaluate(s, "s3:DeleteBucket")["result"] == "scoped"
+    s = st(stmt("Allow", "s3:*", "arn:aws:s3:::example/*"))
+    assert E.evaluate(s, "s3:GetObject")["result"] == "scoped" and E.evaluate(s, "s3:DeleteBucket")["result"] == "not_allowed"
+
+
+def test_group_join_and_policy_rewrite_are_capped_by_the_boundary():
+    boundary = [("permissions boundary", st(stmt("Allow", ["iam:AddUserToGroup", "iam:CreatePolicyVersion"])))]
+    c = _ident("c", [stmt("Allow", ["iam:AddUserToGroup", "iam:CreatePolicyVersion"])], guards=boundary)
+    grp = _ident("admins", [ADMIN_DOC], kind="group")
+    assert not E.escalation_paths(c, [c, grp], {})
+
+
+def test_organization_analyzer_never_returns_other_accounts_resources():
+    from collectors.aws.scanner import ciem_collector as C
+
+    class Pager:
+        def __init__(self, pages):
+            self.pages, self.kw = pages, None
+
+        def paginate(self, **kw):
+            self.kw = kw
+            return self.pages
+
+    findings = [{"id": "1", "resource": "arn:aws:s3:::ours", "resourceType": "AWS::S3::Bucket", "status": "ACTIVE", "resourceOwnerAccount": ACCT},
+                {"id": "2", "resource": "arn:aws:s3:::theirs", "resourceType": "AWS::S3::Bucket", "status": "ACTIVE", "resourceOwnerAccount": "999988887777"},
+                {"id": "3", "resource": "arn:aws:s3:::ours-ok", "resourceType": "AWS::S3::Bucket", "status": "ARCHIVED", "resourceOwnerAccount": ACCT}]
+    pager = Pager([{"findings": findings}])
+
+    class AA:
+        def list_analyzers(self):
+            return {"analyzers": [{"arn": "a", "status": "ACTIVE", "type": "ORGANIZATION"}]}
+
+        def get_paginator(self, name):
+            return pager
+
+    class Session:
+        def client(self, *a, **k):
+            return AA()
+
+    active, archived = C.collect_external_access(Session(), "eu-west-1", ACCT)
+    assert [x["resource"] for x in active] == ["arn:aws:s3:::ours"]
+    assert [x["id"] for x in archived] == ["3"]
+    assert pager.kw["filter"]["resourceOwnerAccount"] == {"eq": [ACCT]}   # also filtered server-side
+
+
+def test_trust_deny_only_cancels_the_action_it_covers():
+    gh = f"arn:aws:iam::{ACCT}:oidc-provider/token.actions.githubusercontent.com"
+    r = role("x", {"Federated": gh})
+    r["AssumeRolePolicyDocument"]["Statement"].append({"Effect": "Deny", "Principal": "*", "Action": "sts:AssumeRole"})
+    assert not E.analyze_trust(r, ACCT)[0].get("denied_by_trust_policy")      # web identity still allowed
+    r = role("x", {"Federated": gh})
+    r["AssumeRolePolicyDocument"]["Statement"].append({"Effect": "Deny", "Principal": "*", "Action": "sts:AssumeRoleWithWebIdentity"})
+    assert E.analyze_trust(r, ACCT)[0].get("denied_by_trust_policy")
+
+
+def test_account_wide_trust_deny_covers_roles_in_that_account():
+    r = role("x", {"AWS": "arn:aws:iam::999988887777:role/vendor"})
+    r["AssumeRolePolicyDocument"]["Statement"].append({"Effect": "Deny", "Principal": {"AWS": "arn:aws:iam::999988887777:root"}, "Action": "sts:AssumeRole"})
+    assert E.analyze_trust(r, ACCT)[0].get("denied_by_trust_policy")
+
+
+def test_scp_block_is_reported_even_when_the_boundary_also_blocks():
+    guards = [("permissions boundary", st(stmt("Allow", "s3:*"))),
+              ("service control policy (r-1)", st(ADMIN_DOC) + st(stmt("Deny", "sts:AssumeRole")))]
+    ev = E.evaluate(st(ADMIN_DOC), "sts:AssumeRole", f"arn:aws:iam::{ACCT}:role/x", guards)
+    assert ev["result"] == "denied"
+    guards = [("permissions boundary", st(stmt("Allow", "s3:*"))), ("service control policy (r-1)", st(stmt("Allow", "s3:*")))]
+    ev = E.evaluate(st(ADMIN_DOC), "sts:AssumeRole", f"arn:aws:iam::{ACCT}:role/x", guards)
+    assert ev["blocked_by"].startswith("service control policy")
+    trust = E.analyze_trust(role("x", {"AWS": f"arn:aws:iam::{ACCT}:user/alice"}), ACCT)
+    assert not E.assumable_by(trust, f"arn:aws:iam::{ACCT}:user/alice", ACCT, ev)[0]
+
+
+def test_list_multipart_upload_parts_is_an_object_action():
+    s = st(stmt("Allow", "s3:ListMultipartUploadParts", "arn:aws:s3:::bucket/*"))
+    assert E.evaluate(s, "s3:ListMultipartUploadParts", "arn:aws:s3:::bucket/key")["result"] == "allowed"
