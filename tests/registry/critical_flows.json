@@ -582,6 +582,28 @@
         "backend/src/collectors/aws/scanner/integrations_handler.py",
         "frontend/public/integrations.html"
       ]
+    },
+    {
+      "id": "E2E-CIEM-001",
+      "domain": "Cloud Security",
+      "name": "CIEM: collect IAM entitlements read-only -> effective access, escalation paths, external trust, unused access -> findings with evidence -> status/risk acceptance/review/ticket, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline engine tests + live API isolation",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS IAM (read-only scanner role)",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/ciem_engine.py",
+        "backend/src/collectors/aws/scanner/ciem_collector.py",
+        "backend/src/collectors/aws/scanner/ciem_scanner_handler.py",
+        "backend/src/collectors/aws/scanner/ciem_handler.py",
+        "backend/migrations/032_ciem.sql",
+        "frontend/public/ciem.html"
+      ]
     }
   ]
 }

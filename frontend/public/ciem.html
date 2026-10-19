@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Cloud Entitlements (CIEM)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700;flex-wrap:wrap}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer}
+header a:hover{color:#fff}
+main{max-width:1180px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 14px;max-width:820px;line-height:1.55}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;overflow-x:auto}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+h3{font-size:12.5px;font-weight:700;margin:14px 0 6px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:10px;line-height:1.5}
+input,select,textarea{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;background:#fff}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+button.danger{background:#fff;color:#b91c1c;border:1px solid #fecaca;padding:5px 10px;font-size:11.5px}
+button:disabled{opacity:.55;cursor:default}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid #e5e7eb}
+.tab{background:none;color:#6b7280;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 10px;font-weight:600}
+.tab.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.metric{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+.metric .v{font-size:22px;font-weight:800}
+.metric .l{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.35}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6;vertical-align:top}
+tr.click{cursor:pointer} tr.click:hover td{background:#f9fafb}
+.chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;background:#f3f4f6;color:#374151}
+.sev-critical{background:#fee2e2;color:#991b1b}.sev-high{background:#ffedd5;color:#9a3412}.sev-medium{background:#fef9c3;color:#854d0e}.sev-low{background:#e0f2fe;color:#075985}
+.st-resolved{background:#dcfce7;color:#166534}.st-suppressed{background:#f3f4f6;color:#6b7280}.st-accepted{background:#ede9fe;color:#5b21b6}.st-false_positive{background:#f3f4f6;color:#4b5563}.st-in_progress{background:#dbeafe;color:#1e40af}
+.basis{font-size:10px;color:#6b7280;border:1px dashed #d1d5db;border-radius:4px;padding:0 5px;margin-left:4px}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:12px;line-height:1.5}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.drawer{position:fixed;top:0;right:0;width:min(720px,100%);height:100%;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.15);z-index:20;overflow-y:auto;padding:20px 22px 60px;display:none}
+.drawer.open{display:block}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:19;display:none}.shade.open{display:block}
+pre{background:#0d1017;color:#e2e8f0;border-radius:8px;padding:10px 12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:320px}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:4px 10px;font-size:12px}.kv div:nth-child(odd){color:#6b7280}
+.path{border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12px;line-height:1.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bar{height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden}.bar>div{height:100%;background:#16a34a}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:30}
+@media (max-width:700px){header{padding:12px 16px}main{padding:0 12px 40px}.kv{grid-template-columns:1fr}.hide-sm{display:none}}
+@media print{header,.tabs,button,.filters,.drawer,.shade{display:none!important}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-int">Integrations</a></header>
+<main>
+  <h1>Cloud Entitlements (CIEM)</h1>
+  <div class="sub">Who can do what in your AWS account, how that access was granted, whether it is used, and what to remove.
+    Everything here is read from AWS with your read-only scanner role; Niagaros never changes your permissions.
+    Each result says whether it is <b>observed</b> (read from AWS), <b>inferred</b> or <b>calculated</b>.</div>
+  <div id="banner"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="identities">Identities</button>
+    <button class="tab" data-tab="findings">Findings</button>
+    <button class="tab" data-tab="paths">Escalation paths</button>
+    <button class="tab" data-tab="external">External access</button>
+    <button class="tab" data-tab="reviews">Access reviews</button>
+    <button class="tab" data-tab="settings">Policies &amp; settings</button>
+    <button class="tab" data-tab="reports">Reports &amp; audit</button>
+  </div>
+  <div id="view"><div class="empty">Loading…</div></div>
+</main>
+<div class="shade" id="shade"></div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" tabindex="-1"></div>
+<div class="toast" id="toast"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+const accountId = params.get('account_id');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 3600); };
+const q = () => accountId ? '?account_id=' + encodeURIComponent(accountId) : '';
+const fmt = d => d ? new Date(d).toLocaleString() : '—';
+const day = d => d ? new Date(d).toLocaleDateString() : '—';
+const chip = (cls, text) => `<span class="chip ${cls}">${esc(text)}</span>`;
+const sev = s => chip('sev-' + s, s);
+const basis = b => b ? `<span class="basis" title="observed = read from AWS; inferred = deduced; calculated = derived by Niagaros">${esc(b)}</span>` : '';
+const LABEL = {human:'Human', machine:'Machine', service_linked:'AWS service-linked', external:'External', unknown:'Unknown', group:'Group'};
+document.getElementById('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q();
+document.getElementById('nav-int').onclick = () => location.href = 'integrations.html' + q();
+
+async function api(view, extra) {
+  const u = new URLSearchParams({cloud_account_id: accountId, view, ...(extra || {})});
+  const r = await fetch(API + 'ciem?' + u.toString());
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Could not load this page (HTTP ' + r.status + ').');
+  return b;
+}
+async function post(body) {
+  const r = await fetch(API + 'ciem', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cloud_account_id: accountId, ...body})});
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Something went wrong (HTTP ' + r.status + ').');
+  return b;
+}
+
+let tab = (location.hash || '#overview').slice(1);
+const view = document.getElementById('view');
+const state = {};
+
+function setTab(t) {
+  tab = t; history.replaceState(null, '', '#' + t);
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  render();
+}
+document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+
+async function render() {
+  if (!accountId) { view.innerHTML = '<div class="err">Open this page from the dashboard so Niagaros knows which cloud account to show.</div>'; return; }
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try { await (RENDER[tab] || RENDER.overview)(); }
+  catch (e) { view.innerHTML = `<div class="err">${esc(e.message)} <button class="ghost" data-act="reload">Try again</button></div>`; }
+}
+
+// ── Overview ──────────────────────────────────────────────────────────────
+const RENDER = {};
+RENDER.overview = async () => {
+  const o = await api('overview');
+  const s = o.latest_scan;
+  const last = o.last_attempt;
+  let banner = '';
+  if (last && last.status === 'failed') banner += `<div class="err">The most recent collection on ${esc(fmt(last.started_at))} failed: ${esc(last.error || 'unknown error')}. ${s ? 'Showing the last successful collection.' : ''}</div>`;
+  if (!s) {
+    view.innerHTML = banner + `<div class="card"><h2>No entitlement data yet</h2><div class="note">CIEM runs with every account scan. Start one now; it takes a few minutes.</div><button data-act="scan">Scan this account now</button></div>` + comingLater();
+    return;
+  }
+  const m = s.summary || {}, fs = m.findings_by_severity || {}, lp = m.least_privilege || {};
+  const open = Object.values(o.finding_counts.open || {}).reduce((a, b) => a + b, 0) + Object.values(o.finding_counts.in_progress || {}).reduce((a, b) => a + b, 0);
+  const metric = (v, l) => `<div class="metric"><div class="v">${esc(v ?? '—')}</div><div class="l">${esc(l)}</div></div>`;
+  view.innerHTML = banner + `
+    <div class="card"><div class="row" style="justify-content:space-between"><div>
+      <h2>Last collection: ${esc(fmt(s.finished_at || s.started_at))} ${s.status === 'partial' ? chip('sev-medium', 'partial') : chip('st-resolved', 'complete')}</h2>
+      <div class="note">Observation window for unused access: ${esc(s.observation_days)} days. Engine ${esc(m.engine_version || '')}, compliance mapping ${esc(m.mapping_version || '')}.</div></div>
+      <button data-act="scan">Scan now</button></div>
+      ${(s.limitations || []).length ? `<div class="warn"><b>What this analysis does not cover:</b><ul style="margin:4px 0 0 18px">${s.limitations.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>` : ''}
+    </div>
+    <div class="grid">
+      ${metric(m.identities, 'identities (users and roles)')}${metric(m.human, 'human identities')}${metric(m.machine, 'machine identities')}
+      ${metric(m.service_linked, 'AWS service-linked roles (managed by AWS)')}${metric(m.admins, 'with full administrator access')}${metric(m.privileged, 'privileged identities')}
+      ${metric(m.escalation_paths, 'potential privilege-escalation paths')}${metric(m.external_trusts, 'external / federated trust relationships')}
+      ${metric(m.machine_without_owner, 'machine identities without an owner tag')}${metric(m.unused_unknown, 'identities whose unused access is unknown (no telemetry)')}
+      ${metric(open, 'open findings')}${metric(o.remediation.resolved_last_30_days, 'findings resolved in the last 30 days (verified by re-scan)')}
+      ${metric(lp.pct == null ? '—' : lp.pct + '%', 'least-privilege: ' + (lp.compliant ?? '—') + ' of ' + (lp.total ?? '—') + ' identities without excessive, escalation or unrestricted-trust findings')}
+    </div>
+    <div class="card" style="margin-top:16px"><h2>Open findings by severity</h2>
+      <div class="row">${['critical','high','medium','low'].map(x => `${sev(x)} <b>${esc(((o.finding_counts.open||{})[x]||0) + ((o.finding_counts.in_progress||{})[x]||0))}</b>`).join(' &nbsp; ')}</div>
+      ${o.trend.length > 1 ? `<h3>Trend (last ${o.trend.length} collections)</h3><table><thead><tr><th>Collected</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Least-privilege</th></tr></thead><tbody>
+        ${o.trend.map(t => `<tr><td>${esc(fmt(t.at))}</td>${['critical','high','medium','low'].map(x => `<td>${esc((t.findings_by_severity||{})[x] ?? '—')}</td>`).join('')}<td>${t.least_privilege_pct == null ? '—' : esc(t.least_privilege_pct) + '%'}</td></tr>`).join('')}</tbody></table>` : ''}
+    </div>
+    <div class="card"><h2>Highest-risk identities</h2><div class="note">The score is a prioritisation aid; the reasons next to it are what matter.</div>
+      <table><thead><tr><th>Identity</th><th>Type</th><th>Risk</th><th class="hide-sm">Why</th></tr></thead><tbody>
+      ${o.top_identities.map(i => `<tr class="click" data-identity="${esc(i.arn)}"><td><b>${esc(i.name)}</b></td><td>${esc(LABEL[i.classification] || i.classification)}</td><td>${sev(i.risk_severity)} ${esc(i.risk_score)}</td><td class="hide-sm">${esc((i.risk_reasons || []).map(r => r.reason).join('; '))}</td></tr>`).join('')}
+      </tbody></table></div>` + comingLater();
+};
+
+function comingLater() {
+  return `<div class="card" style="background:transparent;border-style:dashed"><h2>Coming later</h2><div class="note" style="margin:0">
+    Azure, Google Cloud, Oracle Cloud, Alibaba Cloud and Kubernetes; identity providers (Entra ID, Okta, Google Workspace) for ownership context;
+    just-in-time access; and making permission changes in your account (Niagaros is read-only by design). These are not shown because
+    Niagaros has no connection to them yet. Ask the AI Agent about anything on this page.</div></div>`;
+}
+
+// ── Identities ────────────────────────────────────────────────────────────
+RENDER.identities = async () => {
+  const d = await api('identities');
+  state.identities = d.identities;
+  if (!d.latest_scan) { view.innerHTML = '<div class="empty">No collection yet.</div>'; return; }
+  view.innerHTML = `<div class="card"><h2>Identities</h2><div class="note">From the collection of ${esc(fmt(d.latest_scan.finished_at))}. Click an identity for its policies, effective access, trust, credentials and unused services.</div>
+    <div class="filters"><input id="f-q" placeholder="Search name or ARN" aria-label="Search identities">
+      <select id="f-type" aria-label="Type"><option value="">All types</option>${Object.entries(LABEL).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
+      <select id="f-risk" aria-label="Risk"><option value="">All risk levels</option>${['critical','high','medium','low'].map(x => `<option>${x}</option>`).join('')}</select>
+      <label class="note" style="margin:0"><input type="checkbox" id="f-admin"> Administrators only</label></div>
+    <div id="id-table"></div></div>`;
+  const draw = () => {
+    const qv = document.getElementById('f-q').value.toLowerCase(), t = document.getElementById('f-type').value,
+          r = document.getElementById('f-risk').value, adm = document.getElementById('f-admin').checked;
+    const rows = state.identities.filter(i => (!qv || (i.name + i.arn).toLowerCase().includes(qv)) && (!t || i.classification === t)
+      && (!r || i.risk_severity === r) && (!adm || i.admin));
+    document.getElementById('id-table').innerHTML = rows.length ? `<table><thead><tr><th>Identity</th><th>Kind</th><th>Type</th><th>Risk</th><th class="hide-sm">Admin</th><th class="hide-sm">Owner</th><th class="hide-sm">Last activity</th><th>Open findings</th></tr></thead><tbody>
+      ${rows.map(i => `<tr class="click" data-identity="${esc(i.arn)}"><td><b>${esc(i.name)}</b></td><td>${esc(i.kind)}</td>
+        <td>${esc(LABEL[i.classification] || i.classification)}${basis(i.classification_basis)}</td><td>${i.kind === 'group' ? '—' : sev(i.risk_severity) + ' ' + esc(i.risk_score)}</td>
+        <td class="hide-sm">${i.admin ? chip('sev-high', i.admin === 'admin' ? 'full' : 'near-full') : ''}</td><td class="hide-sm">${esc(i.owner || '—')}</td>
+        <td class="hide-sm">${esc(day(i.role_last_used || i.password_last_used))}</td><td>${esc(i.open_findings)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No identity matches these filters.</div>';
+  };
+  ['f-q', 'f-type', 'f-risk', 'f-admin'].forEach(id => document.getElementById(id).addEventListener('input', draw));
+  draw();
+};
+
+async function openIdentity(arn) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const d = await api('identity', {arn});
+    const i = d.identity;
+    const un = i.unused || {};
+    const caps = i.capabilities || [];
+    drawer.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(i.name)}</h2><button class="ghost" data-act="close">Close</button></div>
+      <div class="note" style="word-break:break-all">${esc(i.arn)}</div>
+      <div class="kv"><div>Kind</div><div>${esc(i.kind)}</div>
+        <div>Type</div><div>${esc(LABEL[i.classification] || i.classification)}${basis(i.classification_basis)} — ${esc(i.classification_reason || '')}</div>
+        <div>Risk</div><div>${sev(i.risk_severity)} ${esc(i.risk_score)} <span class="basis">calculated</span></div>
+        <div>Owner</div><div>${esc(i.owner || 'No owner tag')}</div>
+        <div>Created</div><div>${esc(day(i.created))}</div>
+        ${i.last_used !== undefined ? `<div>Role last used</div><div>${esc(fmt(i.last_used))} ${esc(i.last_used_region || '')}</div>` : ''}
+        ${i.boundary_arn ? `<div>Permissions boundary</div><div>${esc(i.boundary_arn)}</div>` : ''}
+        ${i.groups && i.groups.length ? `<div>Groups</div><div>${esc(i.groups.join(', '))}</div>` : ''}
+        ${i.members ? `<div>Members</div><div>${esc(i.members.join(', ') || '—')}</div>` : ''}</div>
+      <h3>Why this risk</h3><ul style="margin-left:18px;font-size:12px">${(i.risk_reasons || []).map(r => `<li>${esc(r.reason)} (+${esc(r.points)})</li>`).join('') || '<li>No risk factors.</li>'}</ul>
+      ${d.findings.length ? `<h3>Findings</h3><table><tbody>${d.findings.map(f => `<tr class="click" data-finding="${esc(f.id)}"><td>${sev(f.severity)}</td><td>${esc(f.title)}</td><td>${chip('st-' + f.status, f.status)}</td></tr>`).join('')}</tbody></table>` : ''}
+      <h3>Effective access <span class="basis">calculated</span></h3>
+      ${i.admin ? `<div class="warn">${i.admin === 'admin' ? 'Full administrator access' : 'Near-full administrator access'} — evidence: ${esc((i.admin_evidence || []).map(src).join('; '))}</div>` : ''}
+      ${caps.length ? `<table><thead><tr><th>Can</th><th>Result</th><th>Granted by</th></tr></thead><tbody>${caps.map(c => `<tr><td>${esc(c.label)}</td><td>${esc(c.result)}${c.result === 'scoped' && (c.scope || []).length ? '<div class="note" style="word-break:break-all">on ' + esc(c.scope.join(', ')) + '</div>' : ''}${c.notes && c.notes.length ? ' <span class="note">(' + esc(c.notes.join('; ')) + ')</span>' : ''}</td><td>${esc((c.evidence || []).map(src).join('; '))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No sensitive capabilities.</div>'}
+      <div class="note">“scoped” = only on specific resources; “conditional” = only when a policy condition holds.</div>
+      ${(i.limitations || []).length ? `<div class="warn">${i.limitations.map(esc).join('<br>')}</div>` : ''}
+      ${(i.escalation || []).length ? `<h3>Potential privilege-escalation paths</h3>${i.escalation.map(pathHtml).join('')}` : ''}
+      ${(i.can_assume || []).length ? `<h3>Can assume these roles</h3><table><tbody>${i.can_assume.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.how)}${c.conditional ? ' (conditional)' : ''}</td><td>${c.target_admin ? chip('sev-high', 'admin role') : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${(i.trust || []).length ? `<h3>Who can assume this role <span class="basis">observed</span></h3><table><tbody>${i.trust.map(t => `<tr><td>${esc(t.kind)}</td><td style="word-break:break-all">${esc(t.principal)}</td><td>${esc(t.class)}</td><td>${esc((t.conditions || []).join(', ') || 'no conditions')}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${i.credentials && i.kind === 'user' ? `<h3>Credentials <span class="basis">observed</span></h3><div class="kv"><div>Console password</div><div>${i.credentials.password_enabled ? 'yes, last used ' + esc(fmt(i.credentials.password_last_used)) : 'no'}</div>
+         <div>MFA</div><div>${i.credentials.mfa_active ? 'yes' : 'no'}</div>${(i.credentials.keys || []).map(k => `<div>Access key ${esc(k.slot)}</div><div>${k.active ? 'active' : 'inactive'}, ${esc(k.age_days ?? '?')} days old, last used ${esc(k.last_used ? fmt(k.last_used) : 'no recorded use')}</div>`).join('')}</div>` : ''}
+      <h3>Unused access <span class="basis">observed</span></h3>
+      ${un.status === 'evaluated' ? `<div class="note">${esc(un.unused.length)} of ${esc(un.granted_services)} granted services had no recorded use in ${esc(un.observation_days)} days. ${esc(un.tracking_note || '')}</div>
+         ${un.unused.length ? `<table><thead><tr><th>Service</th><th>Status</th><th>Last used</th></tr></thead><tbody>${un.unused.slice(0, 80).map(s => `<tr><td>${esc(s.name || s.service)}</td><td>${esc(s.state === 'never_observed' ? 'never observed' : 'not used in window')}</td><td>${esc(s.last_authenticated ? day(s.last_authenticated) : '—')}</td></tr>`).join('')}</tbody></table>` : ''}`
+        : `<div class="note">Unknown: ${esc(un.reason || 'not evaluated')}. Niagaros does not call access “unused” without activity data.</div>`}
+      <h3>Policies</h3>${(i.policies || []).map(p => { const doc = (i.policy_documents || {})[p]; return `<div style="margin-bottom:8px"><b style="font-size:12px">${esc(p)}</b>${doc ? (doc.inline ? ' <span class="note">inline</span>' : ' <span class="note">customer-managed ' + esc(doc.version || '') + '</span>') + `<pre>${esc(JSON.stringify(doc.document, null, 2))}</pre>` : ' <span class="note">AWS-managed policy (public document)</span>'}</div>`; }).join('') || '<div class="empty">No policies.</div>'}
+      ${d.risk_history.length > 1 ? `<h3>Risk over time</h3><div class="note">${d.risk_history.map(h => esc(day(h.at)) + ': ' + esc(h.risk_score)).join(' · ')}</div>` : ''}`;
+  } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; }
+}
+const src = s => (s.policy || '?') + (s.via && s.via !== 'direct' ? ' via ' + s.via : '') + (s.statement ? ' ' + s.statement : '');
+function pathHtml(p) {
+  return `<div class="path"><b>${esc(p.title)}</b> ${chip(p.confidence === 'high' ? 'sev-high' : p.confidence === 'medium' ? 'sev-medium' : 'sev-low', 'confidence: ' + p.confidence)}
+    <div>${esc(p.how)}</div>${(p.gains || []).length ? `<div class="note" style="margin:4px 0 0"><b>Would gain:</b> ${esc(p.gains.join('; '))}</div>` : ''}<div class="note" style="margin:4px 0 0">Needs: ${esc((p.required_permissions || []).join(' + '))}
+    ${p.result_per_action && Object.keys(p.result_per_action).length ? ' (' + esc(Object.entries(p.result_per_action).map(([a, r]) => a + ': ' + r).join(', ')) + ')' : ''}</div>
+    ${(p.targets || []).length ? `<div class="note" style="margin:2px 0 0;word-break:break-all">Leads to: ${esc(p.targets.join(', '))}</div>` : ''}
+    ${(p.prerequisites || []).length ? `<div class="note" style="margin:2px 0 0">Prerequisites: ${esc(p.prerequisites.join('; '))}</div>` : ''}
+    <div class="note" style="margin:2px 0 0">A potential path, not a confirmed exploit.</div></div>`;
+}
+
+// ── Findings ──────────────────────────────────────────────────────────────
+RENDER.findings = async () => {
+  const d = await api('findings');
+  state.findings = d.findings;
+  view.innerHTML = `<div class="card"><h2>Findings</h2><div class="note">A finding is resolved only when a later scan no longer sees it. Accepting a risk needs a reason and an end date, after which it re-opens.</div>
+    <div class="filters"><select id="f-st" aria-label="Status"><option value="active">Open and in progress</option><option value="">All statuses</option>${['open','in_progress','accepted','false_positive','resolved','suppressed'].map(x => `<option value="${x}">${x.replace('_', ' ')}</option>`).join('')}</select>
+      <select id="f-sev" aria-label="Severity"><option value="">All severities</option>${['critical','high','medium','low'].map(x => `<option>${x}</option>`).join('')}</select>
+      <select id="f-cat" aria-label="Category"><option value="">All categories</option>${[...new Set(d.findings.map(f => f.category))].sort().map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
+    <div id="f-table"></div></div>`;
+  const draw = () => {
+    const st = document.getElementById('f-st').value, sv = document.getElementById('f-sev').value, c = document.getElementById('f-cat').value;
+    const rows = state.findings.filter(f => (st === 'active' ? ['open', 'in_progress'].includes(f.status) : (!st || f.status === st)) && (!sv || f.severity === sv) && (!c || f.category === c));
+    document.getElementById('f-table').innerHTML = rows.length ? `<table><thead><tr><th>Severity</th><th>Finding</th><th class="hide-sm">Category</th><th>Status</th><th class="hide-sm">First seen</th></tr></thead><tbody>
+      ${rows.map(f => `<tr class="click" data-finding="${esc(f.id)}"><td>${sev(f.severity)}</td><td>${esc(f.title)}${f.ticket ? ' ' + chip('st-in_progress', f.ticket.key || 'ticket') : ''}</td><td class="hide-sm">${esc(f.category.replace(/_/g, ' '))}</td><td>${chip('st-' + f.status, f.status.replace('_', ' '))}</td><td class="hide-sm">${esc(day(f.first_seen))}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">No findings match these filters.</div>';
+  };
+  ['f-st', 'f-sev', 'f-cat'].forEach(id => document.getElementById(id).addEventListener('input', draw));
+  draw();
+};
+
+async function openFinding(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const f = (await api('finding', {finding_id: id})).finding;
+    const r = f.recommendation || {}, det = f.details || {};
+    const canChange = !['resolved', 'suppressed'].includes(f.status);
+    drawer.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(f.title)}</h2><button class="ghost" data-act="close">Close</button></div>
+      <div class="row" style="margin:6px 0 10px">${sev(f.severity)} ${chip('st-' + f.status, f.status.replace('_', ' '))} ${basis(det.basis)}</div>
+      <div class="kv"><div>Identity / resource</div><div style="word-break:break-all">${f.identity_arn ? `<a href="#" data-identity="${esc(f.identity_arn)}">${esc(f.identity_arn)}</a>` : '—'}</div>
+        <div>First seen</div><div>${esc(fmt(f.first_seen))}</div><div>Last seen</div><div>${esc(fmt(f.last_seen))}</div>
+        ${f.status_reason ? `<div>Status note</div><div>${esc(f.status_reason)}${f.status_by ? ' — ' + esc(f.status_by) : ''}${f.accepted_until ? ' (until ' + esc(f.accepted_until) + ')' : ''}</div>` : ''}
+        ${f.resolved_at ? `<div>Resolved</div><div>${esc(fmt(f.resolved_at))}</div>` : ''}</div>
+      <h3>Evidence</h3>
+      ${det.path ? pathHtml(det.path) : ''}
+      ${det.trust ? `<div class="kv"><div>Trusted principal</div><div style="word-break:break-all">${esc(det.trust.principal)}</div><div>Conditions</div><div>${esc((det.trust.conditions || []).join(', ') || 'none')}</div></div>${det.why ? `<div class="note" style="margin-top:6px">${esc(det.why)}</div>` : ''}` : ''}
+      ${det.evidence ? `<div class="note">Granted by: ${esc(det.evidence.map(src).join('; '))}</div>` : ''}
+      ${det.unused ? `<div class="note">${esc(det.unused.length)} unused services (window ${esc(det.observation_days)} days): ${esc(det.unused.map(u => u.service).join(', '))}</div>` : ''}
+      ${det.caution ? `<div class="warn">${esc(det.caution)}</div>` : ''}
+      ${det.key ? `<div class="note">Key ${esc(det.key.slot)}: ${esc(det.key.age_days)} days old, last used ${esc(det.key.last_used ? fmt(det.key.last_used) : 'no recorded use')}</div>` : ''}
+      ${det.note ? `<div class="note">${esc(det.note)}</div>` : ''}
+      ${det.source ? `<div class="note">Source: ${esc(det.source)}; principal ${esc(JSON.stringify(det.principal || {}))}</div>` : ''}
+      ${(det.limitations || []).length ? `<div class="warn">${det.limitations.map(esc).join('<br>')}</div>` : ''}
+      <h3>Recommendation</h3><div class="kv"><div>Now</div><div>${esc(r.current)}</div><div>Change to</div><div>${esc(r.proposed)}</div>
+        <div>Why</div><div>${esc(r.reason)}</div><div>Possible impact</div><div>${esc(r.impact)}</div><div>Confidence</div><div>${esc(r.confidence)}</div>
+        <div>Approval</div><div>${esc(r.approvals)}</div><div>Rollback</div><div>${esc(r.rollback)}</div></div>
+      ${r.proposed_policy ? `<div class="note" style="margin-top:6px">Starting-point policy (review before use):</div><pre>${esc(JSON.stringify(r.proposed_policy, null, 2))}</pre>` : ''}
+      <h3>Compliance</h3><div class="note">Indicates which controls this finding puts at risk; on its own it is not proof of non-compliance.</div>
+      <table><tbody>${(f.compliance || []).map(c => `<tr><td>${esc(c.framework)}</td><td>${esc(c.control)}</td><td>${esc(c.title)}</td></tr>`).join('')}</tbody></table>
+      ${canChange ? `<h3>Follow-up</h3>
+        <div class="row"><select id="st-new" aria-label="New status"><option value="in_progress">In progress</option><option value="accepted">Accept the risk</option><option value="false_positive">False positive</option><option value="open">Open</option></select>
+          <input id="st-reason" placeholder="Reason" style="flex:1;min-width:180px"><input id="st-until" type="date" aria-label="Accepted until" title="Accepted until (max one year)">
+          <button data-act="status" data-id="${esc(f.id)}">Save</button></div>
+        ${f.ticket ? `<div class="note" style="margin-top:10px">Ticket: ${f.ticket.url ? `<a href="${esc(f.ticket.url)}" target="_blank" rel="noopener">${esc(f.ticket.key)}</a>` : esc(f.ticket.key)} (${esc(f.ticket.provider)}, status ${esc(f.ticket.status || 'created')}) <button class="ghost" data-act="ticket-refresh" data-id="${esc(f.id)}">Refresh status</button></div>`
+          : f.integrations.length ? `<div class="row" style="margin-top:10px"><select id="tk-int" aria-label="Integration">${f.integrations.map(x => `<option value="${esc(x.id)}">${esc(x.provider)} ${esc(x.project || '(no project)')}</option>`).join('')}</select><button class="ghost" data-act="ticket" data-id="${esc(f.id)}">Create ticket</button></div>`
+          : `<div class="note" style="margin-top:10px">Connect Jira or Monday on the <a href="integrations.html${esc(q())}">Integrations</a> page to create tickets.</div>`}` : (f.status === 'suppressed' ? '<div class="note" style="margin-top:12px">The rule behind this finding is switched off under Policies &amp; settings. Nothing was fixed; it re-opens when the rule is switched on again.</div>' : '<div class="note" style="margin-top:12px">Resolved by the latest scan. It re-opens automatically if it comes back.</div>')}`;
+  } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; }
+}
+
+// ── Escalation paths & external access ────────────────────────────────────
+RENDER.paths = async () => {
+  const d = await api('paths');
+  const withPaths = d.paths.filter(p => p.escalation.length);
+  view.innerHTML = `<div class="card"><h2>Potential privilege-escalation paths</h2><div class="note">Combinations of permissions that, according to well-documented AWS techniques, could let an identity gain more access. Each shows what it needs, where it leads and how confident Niagaros is. None of these is a confirmed exploit.</div>
+    ${withPaths.length ? withPaths.map(p => `<h3><a href="#" data-identity="${esc(p.arn)}">${esc(p.name)}</a> <span class="note">${esc(p.kind)}</span></h3>${p.escalation.map(pathHtml).join('')}`).join('') : '<div class="empty">No escalation paths found.</div>'}</div>
+    <div class="card"><h2>Role assumption</h2><div class="note">Which identities can assume which roles in this account.</div>
+    ${d.paths.filter(p => p.can_assume.length).length ? `<table><thead><tr><th>Identity</th><th>Can assume</th><th>How</th></tr></thead><tbody>${d.paths.filter(p => p.can_assume.length).map(p => p.can_assume.map(c => `<tr><td>${esc(p.name)}</td><td>${esc(c.name)} ${c.target_admin ? chip('sev-high', 'admin role') : ''}</td><td>${esc(c.how)}${c.conditional ? ' (conditional)' : ''}</td></tr>`).join('')).join('')}</tbody></table>` : '<div class="empty">No role assumption within the account.</div>'}</div>`;
+};
+RENDER.external = async () => {
+  const d = await api('external');
+  const cov = d.coverage || {};
+  view.innerHTML = `<div class="card"><h2>Who outside this account can assume your roles</h2><div class="note">From the roles' trust policies <span class="basis">observed</span>.</div>
+    ${d.trusts.length ? `<table><thead><tr><th>Role</th><th>Trusted</th><th>Type</th><th>Controls</th></tr></thead><tbody>${d.trusts.map(t => `<tr><td><a href="#" data-identity="${esc(t.role_arn)}">${esc(t.role)}</a></td><td style="word-break:break-all">${esc(t.principal)}</td><td>${esc(t.class.replace(/_/g, ' '))}</td><td>${esc((t.conditions || []).join(', ') || 'none')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No role trusts principals outside this account.</div>'}</div>
+    <div class="card"><h2>Resources shared outside the account</h2><div class="note">From IAM Access Analyzer <span class="basis">observed</span>.</div>
+    ${cov.ok === false ? `<div class="warn">IAM Access Analyzer was not available (${esc(cov.error || '')}). Enable it in AWS to see S3 buckets, KMS keys and other resources shared outside the account.</div>` : ''}
+    ${d.resources.length ? `<table><tbody>${d.resources.map(x => `<tr class="click" data-finding="${esc(x.id)}"><td>${sev(x.severity)}</td><td>${esc(x.title)}</td><td>${chip('st-' + x.status, x.status)}</td></tr>`).join('')}</tbody></table>` : cov.ok ? '<div class="empty">No active external-access findings.</div>' : ''}</div>`;
+};
+
+// ── Reviews ───────────────────────────────────────────────────────────────
+RENDER.reviews = async () => {
+  const d = await api('reviews');
+  const due = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+  view.innerHTML = `<div class="card"><h2>Start an access review</h2><div class="note">The reviewer decides per identity whether its access stays. They get a notification now, and again when the review is overdue.</div>
+    <div class="row"><input id="rv-name" placeholder="Name, e.g. Q4 privileged access" style="flex:1;min-width:200px">
+      <select id="rv-scope" aria-label="Scope"><option value="privileged">Privileged identities</option><option value="machine">Machine identities</option><option value="human">Human identities</option><option value="all">All identities</option></select>
+      <input id="rv-email" type="email" placeholder="Reviewer email"><input id="rv-due" type="date" value="${due}" aria-label="Due date"><button data-act="review-create">Start review</button></div></div>
+    <div class="card"><h2>Reviews</h2>${d.reviews.length ? `<table><thead><tr><th>Name</th><th>Scope</th><th>Reviewer</th><th>Due</th><th>Progress</th><th>Status</th></tr></thead><tbody>
+      ${d.reviews.map(r => `<tr class="click" data-review="${esc(r.id)}"><td><b>${esc(r.name)}</b></td><td>${esc(r.scope)}</td><td>${esc(r.reviewer_email)}</td><td>${esc(r.due_date)}</td>
+        <td style="min-width:110px"><div class="bar"><div style="width:${r.items ? Math.round(100 * r.decided / r.items) : 0}%"></div></div><span class="note">${esc(r.decided)}/${esc(r.items)}</span></td>
+        <td>${r.overdue ? chip('sev-high', 'overdue') : chip(r.status === 'completed' ? 'st-resolved' : 'st-in_progress', r.status)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No reviews yet.</div>'}</div>`;
+};
+async function openReview(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const d = await api('review', {review_id: id});
+    const open = d.review.status === 'open';
+    drawer.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(d.review.name)}</h2><button class="ghost" data-act="close">Close</button></div>
+      <div class="note">Reviewer ${esc(d.review.reviewer_email)} · due ${esc(d.review.due_date)} · ${esc(d.review.status)}</div>
+      <table><thead><tr><th>Identity</th><th>At review time</th><th>Decision</th></tr></thead><tbody>${d.items.map(it => `<tr><td><a href="#" data-identity="${esc(it.identity_arn)}">${esc(it.identity_name)}</a></td>
+        <td class="note">${esc(LABEL[it.snapshot.classification] || it.snapshot.classification)}${it.snapshot.admin ? ', admin' : ''}, risk ${esc(it.snapshot.risk_score)}</td>
+        <td>${it.decision ? `${chip(it.decision === 'keep' ? 'st-resolved' : 'sev-medium', it.decision)} <span class="note">${esc(it.note || '')} — ${esc(it.decided_by)}</span>`
+          : open ? `<div class="row"><select data-decision="${esc(it.id)}" aria-label="Decision"><option value="keep">Keep</option><option value="reduce">Reduce</option><option value="remove">Remove</option></select>
+             <input data-note="${esc(it.id)}" placeholder="What should change" style="min-width:140px"><button class="ghost" data-act="decide" data-review="${esc(id)}" data-item="${esc(it.id)}">Save</button></div>` : '—'}</td></tr>`).join('')}</tbody></table>`;
+  } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; }
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────
+RENDER.settings = async () => {
+  const d = await api('settings');
+  view.innerHTML = `<div class="card"><h2>Entitlement policies</h2><div class="note">Rules every scan checks. Switch a rule off or change its severity; it applies from the next scan.${d.updated_by ? ' Last changed by ' + esc(d.updated_by) + ' on ' + esc(fmt(d.updated_at)) + '.' : ''}</div>
+    <table><thead><tr><th>Rule</th><th>On</th><th>Severity</th></tr></thead><tbody>${d.rules.map(r => `<tr><td>${esc(r.title)}</td><td><input type="checkbox" data-rule-on="${esc(r.id)}" ${r.enabled ? 'checked' : ''} aria-label="Enabled"></td>
+      <td><select data-rule-sev="${esc(r.id)}" aria-label="Severity">${['critical','high','medium','low'].map(s => `<option ${s === r.severity ? 'selected' : ''}>${s}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>
+    <h3>Unused-access observation window</h3><div class="row"><select id="obs" aria-label="Observation window">${d.observation_choices.map(x => `<option value="${x}" ${x === d.observation_days ? 'selected' : ''}>${x} days</option>`).join('')}</select>
+      <span class="note" style="margin:0">Longer windows catch rare jobs (DR, yearly tasks) and give fewer false “unused” results.</span></div>
+    <div style="margin-top:14px"><button data-act="settings-save">Save</button></div></div>`;
+};
+
+// ── Reports & audit ───────────────────────────────────────────────────────
+RENDER.reports = async () => {
+  const [a, sc] = await Promise.all([api('audit'), api('scans')]);
+  view.innerHTML = `<div class="card"><h2>Exports</h2><div class="note">Exports contain only this account and are recorded in the audit trail.</div>
+    <div class="row">${['findings', 'identities', 'audit'].map(w => `<button class="ghost" data-act="export" data-what="${w}" data-format="csv">${w} (CSV)</button><button class="ghost" data-act="export" data-what="${w}" data-format="json">${w} (JSON)</button>`).join('')}
+    <button class="ghost" data-act="print">Overview as PDF (print)</button></div></div>
+    <div class="card"><h2>Collections</h2><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Findings (C/H/M/L)</th><th class="hide-sm">Notes</th></tr></thead><tbody>
+      ${sc.scans.map(s => `<tr><td>${esc(fmt(s.started_at))}</td><td>${esc(s.trigger)}</td><td>${chip(s.status === 'succeeded' ? 'st-resolved' : s.status === 'failed' ? 'sev-critical' : 'sev-medium', s.status)}</td>
+        <td>${s.findings_by_severity ? esc(['critical','high','medium','low'].map(x => s.findings_by_severity[x] ?? 0).join(' / ')) : '—'}</td><td class="hide-sm note">${esc(s.error || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">No collections yet.</td></tr>'}</tbody></table></div>
+    <div class="card"><h2>Audit trail</h2><table><thead><tr><th>When</th><th>Who</th><th>What</th><th class="hide-sm">Details</th></tr></thead><tbody>
+      ${a.audit.map(x => `<tr><td>${esc(fmt(x.at))}</td><td>${esc(x.actor)}</td><td>${esc(x.action.replace(/_/g, ' '))}</td><td class="hide-sm note" style="word-break:break-all">${esc(JSON.stringify(x.details))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Nothing recorded yet.</td></tr>'}</tbody></table></div>`;
+};
+
+// ── drawer + actions (event delegation; no data inside onclick strings) ──
+const drawer = document.getElementById('drawer'), shade = document.getElementById('shade');
+function openDrawer(html) { drawer.innerHTML = html; drawer.classList.add('open'); shade.classList.add('open'); drawer.focus(); }
+function closeDrawer() { drawer.classList.remove('open'); shade.classList.remove('open'); }
+shade.onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+document.addEventListener('click', async e => {
+  const idEl = e.target.closest('[data-identity]');
+  if (idEl) { e.preventDefault(); return openIdentity(idEl.dataset.identity); }
+  const fEl = e.target.closest('[data-finding]');
+  if (fEl) { e.preventDefault(); return openFinding(fEl.dataset.finding); }
+  const rEl = e.target.closest('tr[data-review]');
+  if (rEl) return openReview(rEl.dataset.review);
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  try {
+    if (act === 'close') return closeDrawer();
+    if (act === 'reload') return render();
+    if (act === 'print') return window.print();
+    b.disabled = true;
+    if (act === 'scan') {
+      const r = await fetch(API + 'scan', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'scan', cloud_account_id: accountId})});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Could not start a scan.');
+      toast('Scan started. Results appear here in a few minutes.');
+    } else if (act === 'status') {
+      await post({action: 'set_finding_status', finding_id: b.dataset.id, status: document.getElementById('st-new').value,
+                  reason: document.getElementById('st-reason').value, accepted_until: document.getElementById('st-until').value || null});
+      toast('Saved.'); closeDrawer(); render();
+    } else if (act === 'ticket') {
+      const r = await post({action: 'create_ticket', finding_id: b.dataset.id, integration_id: document.getElementById('tk-int').value});
+      toast('Ticket ' + (r.ticket.key || '') + ' created.'); openFinding(b.dataset.id);
+    } else if (act === 'ticket-refresh') {
+      const r = await post({action: 'refresh_ticket', finding_id: b.dataset.id});
+      toast('Ticket status: ' + (r.ticket.status || 'unknown')); openFinding(b.dataset.id);
+    } else if (act === 'review-create') {
+      const r = await post({action: 'create_review', name: document.getElementById('rv-name').value, scope: document.getElementById('rv-scope').value,
+                            reviewer_email: document.getElementById('rv-email').value, due_date: document.getElementById('rv-due').value});
+      toast('Review started with ' + r.items + ' identities.'); render();
+    } else if (act === 'decide') {
+      const item = b.dataset.item;
+      const r = await post({action: 'decide_review_item', review_id: b.dataset.review, item_id: item,
+                            decision: document.querySelector(`[data-decision="${CSS.escape(item)}"]`).value,
+                            note: document.querySelector(`[data-note="${CSS.escape(item)}"]`).value});
+      toast(r.completed ? 'Review completed.' : r.remaining + ' left.'); openReview(b.dataset.review); if (tab === 'reviews') render();
+    } else if (act === 'settings-save') {
+      const rules = {};
+      document.querySelectorAll('[data-rule-on]').forEach(cb => { rules[cb.dataset.ruleOn] = {enabled: cb.checked, severity: document.querySelector(`[data-rule-sev="${CSS.escape(cb.dataset.ruleOn)}"]`).value}; });
+      const r = await post({action: 'save_settings', observation_days: Number(document.getElementById('obs').value), rules});
+      toast('Saved. ' + (r.note || '')); render();
+    } else if (act === 'export') {
+      const u = new URLSearchParams({cloud_account_id: accountId, view: 'export', what: b.dataset.what, format: b.dataset.format});
+      const r = await fetch(API + 'ciem?' + u.toString());
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Export failed.'); }
+      const blob = b.dataset.format === 'csv' ? await r.blob() : new Blob([JSON.stringify(await r.json(), null, 2)], {type: 'application/json'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `niagaros-ciem-${b.dataset.what}.${b.dataset.format}`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+  } catch (err) { toast(err.message); }
+  finally { b.disabled = false; }
+});
+
+if (!['overview','identities','findings','paths','external','reviews','settings','reports'].includes(tab)) tab = 'overview';
+setTab(tab);
+</script>
+<script src="notifications-widget.js"></script>
+<script src="ai-agent-widget.js"></script>
+</body>
+</html>

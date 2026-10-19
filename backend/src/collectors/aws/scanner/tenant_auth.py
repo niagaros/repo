@@ -34,6 +34,24 @@ def _is_uuid(v):
     return isinstance(v, str) and bool(_UUID_RE.match(v))
 
 
+def _issued_by_our_pool(token):
+    """cognito-idp:GetUser accepts a valid access token from ANY user pool, and anyone can create a pool and
+    give themselves any email. When COGNITO_USER_POOL_ID is configured, the token's `iss` must be that pool
+    (GetUser then verifies the signature for exactly that pool). Without the variable the old behaviour stays,
+    so handlers deployed without it are not changed silently."""
+    pool = os.environ.get("COGNITO_USER_POOL_ID", "")
+    if not pool:
+        return True
+    try:
+        import base64
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except Exception:
+        return False
+    return (claims.get("iss") == f"https://cognito-idp.{pool.split('_')[0]}.amazonaws.com/{pool}"
+            and claims.get("token_use") == "access")
+
+
 def authenticate(event):
     """Returns the caller's verified email, or None when the token is missing/invalid/expired."""
     headers = (event or {}).get("headers") or {}
@@ -41,7 +59,7 @@ def authenticate(event):
     if not auth.startswith("Bearer "):
         return None
     token = auth[7:].strip()
-    if not token:
+    if not token or not _issued_by_our_pool(token):
         return None
     try:
         cognito = boto3.client("cognito-idp", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
