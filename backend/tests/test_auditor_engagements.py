@@ -226,14 +226,41 @@ class TestDatabaseEngagementMethods:
             "details": {"cloud_account_id": "acct-1"}, "created_at": "2026-01-01T00:00:00",
         }]
 
-    def test_get_cloud_account_compliance_found(self):
+    def test_get_cloud_account_compliance_reads_the_latest_snapshot(self):
+        """The evidence comes from compliance_snapshots, which one scan writes
+        as a whole. It used to come from cloud_accounts.compliance_score, a
+        column written by whichever collector finished last — which is how an
+        auditor came to be shown 100 out of 100 while the scan of that same
+        moment had recorded eleven failures."""
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
-        cur.fetchone.return_value = ("Prod AWS", {"score": 82}, "2026-01-01T00:00:00")
+        cur.fetchone.side_effect = [
+            ("Prod AWS",),
+            (118, 107, 11, {"CRITICAL": {"passed": 13, "failed": 1}}, "2026-01-01T00:00:00", "scan"),
+        ]
 
         result = db.get_cloud_account_compliance("acct-1")
 
-        assert result == {"account_name": "Prod AWS", "compliance_score": {"score": 82}, "last_scan_at": "2026-01-01T00:00:00"}
+        assert result["account_name"] == "Prod AWS"
+        assert result["total_checks"] == 118
+        assert result["passed"] == 107
+        assert result["failed"] == 11
+        assert result["by_severity"] == {"CRITICAL": {"passed": 13, "failed": 1}}
+        assert result["measured_at"] == "2026-01-01T00:00:00"
+
+    def test_get_cloud_account_compliance_without_a_scan_reports_nothing(self):
+        """No snapshot means no evidence. Half-filling the record from another
+        source is what caused the contradiction this replaced."""
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.side_effect = [("Prod AWS",), None]
+
+        result = db.get_cloud_account_compliance("acct-1")
+
+        assert result["account_name"] == "Prod AWS"
+        assert result["total_checks"] is None
+        assert result["failed"] is None
+        assert result["measured_at"] is None
 
     def test_get_cloud_account_compliance_not_found(self):
         db, mock_conn = self._make_db()
@@ -241,6 +268,19 @@ class TestDatabaseEngagementMethods:
         cur.fetchone.return_value = None
 
         assert db.get_cloud_account_compliance("does-not-exist") is None
+
+    def test_get_cloud_account_compliance_never_reads_the_old_column(self):
+        """The column is still there and still being written by the collectors;
+        this guards against quietly going back to it."""
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.side_effect = [("Prod AWS",), None]
+
+        db.get_cloud_account_compliance("acct-1")
+
+        uitgevoerd = " ".join(str(c) for c in cur.execute.call_args_list)
+        assert "compliance_score" not in uitgevoerd
+        assert "compliance_snapshots" in uitgevoerd
 
 
 # ── api/auditor_handler.py ────────────────────────────────────────────
