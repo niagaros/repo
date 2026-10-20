@@ -12,9 +12,9 @@ import { useRequireAuth } from "../settings/useRequireAuth";
 // Auditors) have real backend signals to check today. Step 4 (Workspace)
 // now has a page and one working category, ticketing, so it is clickable —
 // but completion of it is not yet derived from a backend signal the way the
-// first three are, so it does not tick itself off. Steps 5, 6 and 7 have no
-// page or API behind them at all and are shown as "In progress" rather than
-// faked as clickable or complete.
+// first three are, so it does not tick itself off. Steps 5, 6 and 7
+// (Compliance, Governance, Training) are completed from governance-handler's
+// step_complete, which it derives from the organization's own data.
 // (Note: the existing /settings/github page is a source-code scanner
 // connection, not the Jira/ServiceNow-style "Connect Workspace" step #268
 // describes. It is linked from the workspace hub rather than counted as it.)
@@ -90,19 +90,19 @@ const STEPS: Step[] = [
     n: 5, id: "compliance",
     title: "Configure Compliance",
     description: "Select and configure the compliance frameworks that apply to your organization.",
-    href: "/settings/compliance", available: false,
+    href: "/settings/compliance", available: true,
   },
   {
     n: 6, id: "governance",
     title: "Configure Governance",
     description: "Set up policies, ownership and review cycles for your security posture.",
-    href: "/settings/governance", available: false,
+    href: "/settings/governance", available: true,
   },
   {
     n: 7, id: "training",
     title: "Complete Security Training",
-    description: "Assign and track baseline security awareness training.",
-    href: "/settings/training", available: false,
+    description: "Every team member reads and acknowledges your published security policies.",
+    href: "/settings/training", available: true,
   },
 ];
 
@@ -123,6 +123,11 @@ export default function OnboardingHome() {
   // stuck here" without it.
   const [progress, setProgress] = useState<ProgressResponse | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Steps 5–7 (#281, #282, training) are served by governance-handler, which reports
+  // step_complete from the organization's own data; this page only displays it.
+  const [setupStates, setSetupStates] = useState<Record<string, StepState>>({
+    compliance: "loading", governance: "loading", training: "loading",
+  });
 
   const token = () => localStorage.getItem("niagaros_token") || "";
   const authHeader = () => ({ Authorization: `Bearer ${token()}` });
@@ -146,8 +151,25 @@ export default function OnboardingHome() {
     })();
   }, [authLoading, email]);
 
+  useEffect(() => {
+    if (authLoading || !email) return;
+    (["compliance", "governance", "training"] as const).forEach(async (id) => {
+      let state: StepState = "not_done";
+      try {
+        const resp = await fetch(`${getApiBase()}/${id}`, {
+          cache: "no-store", headers: authHeader(), signal: AbortSignal.timeout(10000),
+        });
+        if (resp.ok) state = (await resp.json()).step_complete ? "done" : "not_done";
+      } catch {
+        state = "not_done";
+      }
+      setSetupStates(prev => ({ ...prev, [id]: state }));
+    });
+  }, [authLoading, email]);
+
   const stateFor = (step: Step): StepState => {
     if (!step.available) return "unavailable";
+    if (step.id in setupStates) return setupStates[step.id];
     const found = progress?.steps.find(s => s.step === step.id);
     return found?.done ? "done" : "not_done";
   };
@@ -155,7 +177,7 @@ export default function OnboardingHome() {
   const doneCount = STEPS.filter(s => stateFor(s) === "done").length;
   const progressPct = Math.round((doneCount / STEPS.length) * 100);
 
-  if (authLoading || (!progress && !loadFailed)) return (
+  if (authLoading || (!progress && !loadFailed) || Object.values(setupStates).includes("loading")) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#080b12", color: "#64748b", fontSize: 14 }}>
       Loading…
     </div>
