@@ -5,6 +5,11 @@ import "@aws-amplify/ui-react/styles.css";
 import "./App.css";
 import AwsConnectWizard, { S } from "./settings/shared/AwsConnectWizard";
 import { redirectToMfaSetupIfRequired } from "./mfa/enforceMfaPolicy";
+import {
+  acceptPendingInvite,
+  redirectAuditorToPortal,
+  organizationAlreadyHasInfrastructure,
+} from "./auth/postLoginRouting";
 
 function getApiBase(): string {
   return (window as any).__NIAGAROS_CONFIG__?.REACT_APP_API_BASE_URL || "";
@@ -228,6 +233,17 @@ function AppContent() {
       // dashboard data and flash the wrong screen first.
       if (token && await redirectToMfaSetupIfRequired(token)) return;
 
+      // Dit is het punt waar een uitgenodigde binnenkomt, en tot nu toe liep
+      // iedereen vanaf hier door naar de AWS-wizard. Eerst uitzoeken waar deze
+      // persoon hoort — het platform weet dat al, dus er valt niets te vragen.
+      if (token) {
+        // De uitnodiging werd alleen op de instellingenpagina's geaccepteerd,
+        // en daar komt een nieuwe gebruiker nooit vanzelf.
+        await acceptPendingInvite(token);
+        // Een auditor hoort in zijn portaal en niet in deze stroom.
+        if (await redirectAuditorToPortal(token)) return;
+      }
+
       const resp = await fetch(`${getApiBase()}/get-dashboard-data?email=${encodeURIComponent(email)}`, {
         cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -238,6 +254,16 @@ function AppContent() {
       // body just doesn't happen to set needs_onboarding, landing on the dashboard with no account id.
       if (!resp.ok) throw new Error(data.error || `Could not load your account (HTTP ${resp.status}).`);
       if (data.needs_onboarding) {
+        // "Geen eigen cloudaccount" is niet hetzelfde als "moet er een
+        // koppelen". Een uitgenodigd teamlid heeft er geen op zijn naam, maar
+        // zijn collega wel — en die kreeg tot nu toe de AWS-wizard te zien
+        // voor een organisatie die al gekoppeld was. Staat stap 1 van zijn
+        // organisatie al op afgerond, dan hoort hij in het onboardingoverzicht
+        // en niet in de wizard.
+        if (token && await organizationAlreadyHasInfrastructure(token)) {
+          window.location.href = "/onboarding";
+          return;
+        }
         setAppState({ kind: "onboarding" });
       } else {
         const accountId = data.accounts?.[0]?.id || "";
