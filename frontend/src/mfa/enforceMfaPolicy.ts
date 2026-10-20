@@ -8,23 +8,30 @@ function getApiBase(): string {
 // false rather than throwing, so a missing backend never locks everyone
 // out of the entire app.
 //
-// One caller reaches the 401 branch by design rather than by accident, and
-// that is worth stating because the code cannot tell the two apart. An
-// auditor has no row in the audited organization's `users` table, so /team
-// turns them away, and they end up here as "no MFA required".
+// An auditor is not covered by the MFA policy of the organization they are
+// auditing, and that is intended rather than overlooked. An organization's
+// MFA policy is a setting an admin makes for their own people; an auditor is
+// not one of them, works for the firm that was hired, and may serve several
+// organizations at once — so whichever one invited them first would otherwise
+// decide what applies to their personal account. Decided on 20 October 2026
+// and written down here, because an outcome nobody states starts to look like
+// one nobody considered.
 //
-// That is the intended outcome. An organization's MFA policy is a setting an
-// admin makes for their own people; an auditor is not one of them, works for
-// the firm that was hired rather than for the organization, and may serve
-// several organizations at once — so whichever one invited them first would
-// otherwise decide what applies to their personal account. Decided on
-// 20 October 2026 and recorded here, because the alternative is that it keeps
-// looking like something nobody considered.
+// Worth being exact about how that comes out, because the mechanism changed
+// underneath this comment. Since the PostConfirmation trigger landed, every
+// confirmed Cognito user gets a `users` row, and migration 002 puts them in an
+// organization of their own as its admin. So /team answers an auditor with
+// 200, not 401, and the policy read here is their OWN organization's — empty,
+// and mfa_required false by default (migration 004). They are not outside the
+// mechanism; they are inside a different organization's copy of it. One
+// consequence: an auditor who turns MFA on for their own organization does get
+// prompted, which is the right answer — that is their choice about their
+// account, not the audited organization reaching across into it.
 //
-// What this branch does NOT distinguish is a backend that is simply down.
-// Then everyone skips the check, which is the deliberate trade-off in the
-// paragraph above: a platform that locks every user out during an outage is
-// worse. Noted as a residual, same as the static dashboard below.
+// What this function does NOT distinguish is a backend that is simply down.
+// Then everyone skips the check. That is the deliberate trade-off in the
+// best-effort note above: a platform that locks every user out during an
+// outage is worse. Noted as a residual, same as the static dashboard below.
 async function orgRequiresMfa(token: string): Promise<boolean> {
   try {
     const resp = await fetch(`${getApiBase()}/team`, { headers: { Authorization: `Bearer ${token}` } });
