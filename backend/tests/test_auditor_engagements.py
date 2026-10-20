@@ -418,6 +418,56 @@ class TestHandleListEngagements:
         assert resp["statusCode"] == 403
 
 
+class TestAuditorSession:
+    """The routing question — does this person have a running engagement? —
+    asked without leaving a trace.
+
+    Issue #266, acceptance criterion #5 is what makes these tests matter. The
+    activity dashboard has to show logins, and it is only truthful if one
+    visit produces one row. The frontend asks this question on every page
+    load to decide where someone belongs; when it asked /auditor/scope for
+    that, each visit was counted twice, because the portal itself asks the
+    same route again once it opens."""
+
+    def test_active_engagement_is_accepted(self):
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            resp = ah.handle_auditor_session({}, db)
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"]) == {"has_engagement": True}
+
+    def test_no_active_engagement_is_unauthorized(self):
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = None
+        with patch.object(ah, "_get_authenticated_email", return_value="nobody@firm.com"):
+            resp = ah.handle_auditor_session({}, db)
+        assert resp["statusCode"] == 401
+
+    def test_logs_nothing(self):
+        """The whole reason this route exists. If it ever starts recording
+        something, one visit to the portal counts as two again."""
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            ah.handle_auditor_session({}, db)
+        db.log_engagement_activity.assert_not_called()
+
+    def test_reveals_nothing_about_the_organization(self):
+        """Whoever asks has not been placed yet, so the answer stays a bare
+        yes — no engagement name, no end date, no cloud accounts."""
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            resp = ah.handle_auditor_session({}, db)
+        assert set(json.loads(resp["body"])) == {"has_engagement"}
+        db.list_engagement_scope.assert_not_called()
+
+
 class TestGetAuditorRejectsClosedOrUnknown:
     """Issue #266, acceptance criterion #3's real mechanism."""
 
@@ -701,6 +751,13 @@ class TestLambdaHandlerRouting:
         with patch.object(ah, "Database") as MockDatabase:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = ah.lambda_handler(self._event("GET", "/auditor/scope"), None)
+        assert resp["statusCode"] == 401
+
+    def test_auditor_session_route_dispatches_correctly(self):
+        import api.auditor_handler as ah
+        with patch.object(ah, "Database") as MockDatabase:
+            MockDatabase.return_value.get_user_by_email.return_value = ADMIN
+            resp = ah.lambda_handler(self._event("GET", "/auditor/session"), None)
         assert resp["statusCode"] == 401
 
     def test_download_evidence_route_dispatches_with_path_param(self):

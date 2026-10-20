@@ -47,16 +47,22 @@ export async function acceptPendingInvite(token: string): Promise<void> {
 /**
  * Stuurt een auditor naar zijn portaal en meldt of dat is gebeurd.
  *
- * /auditor/scope is hier een schone scheidslijn: 200 betekent een lopend
+ * /auditor/session is hier een schone scheidslijn: 200 betekent een lopend
  * engagement, en al het andere — geen engagement, afgelopen, vroegtijdig
  * gesloten — geeft 401. Dat oordeel komt van de achterkant; hier wordt alleen
  * op gerouteerd.
+ *
+ * Dit vroeg aanvankelijk /auditor/scope, en dat was fout. Die route legt een
+ * login vast, bewust, als de ene plek waar een bezoek aan het portaal wordt
+ * geteld. Deze functie draait bij elke paginalading, waarna het portaal zelf
+ * dezelfde route nog eens aanroept — twee regels in het auditspoor voor één
+ * bezoek. /auditor/session beantwoordt dezelfde vraag en legt niets vast.
  */
 export async function redirectAuditorToPortal(token: string): Promise<boolean> {
   // Zelf al op het portaal: niets doen, anders stuurt dit zichzelf rond.
   if (window.location.pathname.startsWith("/auditor")) return false;
   try {
-    const resp = await fetch(`${getApiBase()}/auditor/scope`, {
+    const resp = await fetch(`${getApiBase()}/auditor/session`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });

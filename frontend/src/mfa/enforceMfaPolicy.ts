@@ -7,6 +7,24 @@ function getApiBase(): string {
 // Best-effort — a failed fetch (e.g. /team not deployed yet) resolves to
 // false rather than throwing, so a missing backend never locks everyone
 // out of the entire app.
+//
+// One caller reaches the 401 branch by design rather than by accident, and
+// that is worth stating because the code cannot tell the two apart. An
+// auditor has no row in the audited organization's `users` table, so /team
+// turns them away, and they end up here as "no MFA required".
+//
+// That is the intended outcome. An organization's MFA policy is a setting an
+// admin makes for their own people; an auditor is not one of them, works for
+// the firm that was hired rather than for the organization, and may serve
+// several organizations at once — so whichever one invited them first would
+// otherwise decide what applies to their personal account. Decided on
+// 20 October 2026 and recorded here, because the alternative is that it keeps
+// looking like something nobody considered.
+//
+// What this branch does NOT distinguish is a backend that is simply down.
+// Then everyone skips the check, which is the deliberate trade-off in the
+// paragraph above: a platform that locks every user out during an outage is
+// worse. Noted as a residual, same as the static dashboard below.
 async function orgRequiresMfa(token: string): Promise<boolean> {
   try {
     const resp = await fetch(`${getApiBase()}/team`, { headers: { Authorization: `Bearer ${token}` } });
