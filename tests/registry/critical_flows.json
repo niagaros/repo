@@ -604,6 +604,29 @@
         "backend/migrations/032_ciem.sql",
         "frontend/public/ciem.html"
       ]
+    },
+    {
+      "id": "E2E-AIINV-001",
+      "domain": "AI Security",
+      "name": "AI Inventory: discover AI assets read-only in AWS and GitHub -> provenance and verification level -> relationships and impact -> findings with evidence -> governance, approval, lifecycle and change history, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline engine tests + PostgreSQL store/API tests + browser",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS Bedrock, SageMaker, Lambda, OpenSearch Serverless, CloudWatch (read-only scanner role)",
+        "GitHub organisation integration",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/ai_inventory_engine.py",
+        "backend/src/collectors/aws/scanner/ai_inventory_collector.py",
+        "backend/src/collectors/aws/scanner/ai_inventory_scanner_handler.py",
+        "backend/src/collectors/aws/scanner/ai_inventory_handler.py",
+        "backend/migrations/033_ai_inventory.sql",
+        "frontend/public/ai_inventory.html"
+      ]
     }
   ]
 }

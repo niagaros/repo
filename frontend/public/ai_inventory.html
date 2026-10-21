@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — AI Inventory</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700;flex-wrap:wrap}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer}
+header a:hover{color:#fff}
+main{max-width:1180px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 14px;max-width:820px;line-height:1.55}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;overflow-x:auto}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+h3{font-size:12.5px;font-weight:700;margin:14px 0 6px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:10px;line-height:1.5}
+input,select,textarea{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;background:#fff}
+textarea{width:100%;min-height:90px}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+button.danger{background:#fff;color:#b91c1c;border:1px solid #fecaca;padding:5px 10px;font-size:11.5px}
+button:disabled{opacity:.55;cursor:default}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid #e5e7eb}
+.tab{background:none;color:#6b7280;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 10px;font-weight:600}
+.tab.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.metric{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+.metric .v{font-size:22px;font-weight:800}
+.metric .l{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.35}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6;vertical-align:top}
+tr.click{cursor:pointer} tr.click:hover td{background:#f9fafb}
+.chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;background:#f3f4f6;color:#374151}
+.sev-critical{background:#fee2e2;color:#991b1b}.sev-high{background:#ffedd5;color:#9a3412}.sev-medium{background:#fef9c3;color:#854d0e}.sev-low,.sev-info{background:#e0f2fe;color:#075985}
+.st-resolved,.ap-approved,.v-verified{background:#dcfce7;color:#166534}.st-accepted,.ap-exception{background:#ede9fe;color:#5b21b6}.st-false_positive{background:#f3f4f6;color:#4b5563}.st-in_progress{background:#dbeafe;color:#1e40af}
+.ap-restricted{background:#fef9c3;color:#854d0e}.ap-rejected{background:#fee2e2;color:#991b1b}.ap-unreviewed{background:#f3f4f6;color:#6b7280}
+.v-observed{background:#dbeafe;color:#1e40af}.v-discovered{background:#e0f2fe;color:#075985}.v-declared{background:#f3f4f6;color:#4b5563}
+.lc-stale{background:#fef9c3;color:#854d0e}.lc-inactive,.lc-retired,.lc-deprecated{background:#f3f4f6;color:#6b7280}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:12px;line-height:1.5}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.drawer{position:fixed;top:0;right:0;width:min(760px,100%);height:100%;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.15);z-index:20;overflow-y:auto;padding:20px 22px 60px;display:none}
+.drawer.open{display:block}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:19;display:none}.shade.open{display:block}
+pre{background:#0d1017;color:#e2e8f0;border-radius:8px;padding:10px 12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:320px}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:4px 10px;font-size:12px}.kv div:nth-child(odd){color:#6b7280}
+.form{display:grid;grid-template-columns:160px 1fr;gap:8px 12px;align-items:center;font-size:12px}.form label{color:#6b7280}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bar{height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;min-width:80px}.bar>div{height:100%;background:#16a34a}
+.graph{width:100%;overflow-x:auto;border:1px solid #e5e7eb;border-radius:10px;background:#fafbfc}
+.graph svg text{font-family:Inter,sans-serif;font-size:10.5px}
+.graph .node{cursor:pointer}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:30;max-width:90vw}
+@media (max-width:700px){header{padding:12px 16px}main{padding:0 12px 40px}.kv,.form{grid-template-columns:1fr}.hide-sm{display:none}}
+@media print{header,.tabs,button,.filters,.drawer,.shade{display:none!important}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-ciem">Cloud Entitlements</a><a id="nav-int">Integrations</a></header>
+<main>
+  <h1>AI Inventory</h1>
+  <div class="sub">Every AI application, agent, model, provider, MCP server, tool, knowledge base and AI identity Niagaros can find in your
+    AWS account and connected GitHub organisation — with where it came from and how sure that is.
+    Each item says whether it is <b>declared</b> (in code or configuration), <b>discovered</b> (listed by AWS), <b>observed</b> (usage evidence) or <b>verified</b> (reviewed by your team).
+    Niagaros only reads; it never changes your AI systems.</div>
+  <div id="banner"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="assets">Assets</button>
+    <button class="tab" data-tab="shadow">Shadow AI</button>
+    <button class="tab" data-tab="graph">Relationships</button>
+    <button class="tab" data-tab="findings">Findings</button>
+    <button class="tab" data-tab="changes">Changes</button>
+    <button class="tab" data-tab="register">Register &amp; import</button>
+    <button class="tab" data-tab="settings">Settings</button>
+    <button class="tab" data-tab="reports">Reports &amp; audit</button>
+  </div>
+  <div id="view"><div class="empty">Loading…</div></div>
+</main>
+<div class="shade" id="shade"></div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" tabindex="-1"></div>
+<div class="toast" id="toast"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+const accountId = params.get('account_id');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 4200); };
+const q = () => accountId ? '?account_id=' + encodeURIComponent(accountId) : '';
+const fmt = d => d ? new Date(d).toLocaleString() : '—';
+const day = d => d ? new Date(d).toLocaleDateString() : '—';
+const chip = (cls, text) => `<span class="chip ${cls}">${esc(text)}</span>`;
+const sev = s => chip('sev-' + s, s);
+const VER_HELP = {declared: 'Found in source code or configuration; it may not be deployed', discovered: 'Listed by AWS: it exists or is configured',
+  observed: 'Usage evidence, e.g. invocation metrics', verified: 'Reviewed and approved by your team', unknown: 'Unknown'};
+const ver = v => `<span class="chip v-${esc(v)}" title="${esc(VER_HELP[v] || '')}">${esc(v)}</span>`;
+const appr = a => chip('ap-' + a, a);
+const life = l => l === 'active' ? '' : chip('lc-' + l, l);
+const ENVS = ['unknown','production','staging','development','test'], CRITS = ['unknown','low','medium','high','critical'];
+const APPROVALS = ['unreviewed','approved','restricted','rejected','exception'];
+const REL_TYPES = ['USES_MODEL','SERVED_BY','CALLS_PROVIDER','DEPLOYED_ON','CONNECTS_TO_MCP_SERVER','DEPENDS_ON','PROTECTED_BY_GUARDRAIL',
+  'RETRIEVES_FROM','USES_PROMPT','EXPOSES_TOOL','AUTHENTICATES_AS','PROCESSES_DATA','OWNED_BY_APPLICATION'];
+const relLabel = t => t.toLowerCase().replace(/_/g, ' ');
+const opts = (list, sel, labels) => list.map(x => `<option value="${esc(x)}" ${x === sel ? 'selected' : ''}>${esc((labels || {})[x] || x)}</option>`).join('');
+document.getElementById('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q();
+document.getElementById('nav-ciem').onclick = () => location.href = 'ciem.html' + q();
+document.getElementById('nav-int').onclick = () => location.href = 'integrations.html' + q();
+
+async function api(view, extra) {
+  const u = new URLSearchParams({cloud_account_id: accountId, view, ...(extra || {})});
+  const r = await fetch(API + 'ai-inventory?' + u.toString());
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Could not load this page (HTTP ' + r.status + ').');
+  return b;
+}
+async function post(body) {
+  const r = await fetch(API + 'ai-inventory', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cloud_account_id: accountId, ...body})});
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Something went wrong (HTTP ' + r.status + ').');
+  return b;
+}
+
+const TABS = ['overview','assets','shadow','graph','findings','changes','register','settings','reports'];
+let tab = (location.hash || '#overview').slice(1);
+const view = document.getElementById('view');
+const state = {types: {}};
+
+function setTab(t) {
+  tab = t; history.replaceState(null, '', '#' + t);
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  render();
+}
+document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+
+async function render() {
+  if (!accountId) { view.innerHTML = '<div class="err">Open this page from the dashboard so Niagaros knows which cloud account to show.</div>'; return; }
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try { await (RENDER[tab] || RENDER.overview)(); }
+  catch (e) { view.innerHTML = `<div class="err">${esc(e.message)} <button class="ghost" data-act="reload">Try again</button></div>`; }
+}
+const metric = (v, l, sub) => `<div class="metric"><div class="v">${esc(v ?? '—')}</div><div class="l">${esc(l)}</div>${sub || ''}</div>`;
+const pctBar = (n, d) => d ? `<div class="bar" style="margin-top:6px"><div style="width:${Math.round(100 * n / d)}%"></div></div>` : '';
+
+// ── Overview ──────────────────────────────────────────────────────────────
+const RENDER = {};
+RENDER.overview = async () => {
+  const o = await api('overview');
+  const s = o.latest_scan, last = o.last_attempt;
+  let banner = '';
+  if (last && last.status === 'failed') banner += `<div class="err">The most recent inventory run on ${esc(fmt(last.started_at))} failed: ${esc(last.error || 'unknown error')}. ${s ? 'Showing the last successful run.' : ''}</div>`;
+  if (last && last.status === 'running') banner += `<div class="warn">An inventory run started ${esc(fmt(last.started_at))} is still going. Refresh in a minute.</div>`;
+  if (!s && !o.assets_total) {
+    view.innerHTML = banner + `<div class="card"><h2>No AI inventory yet</h2><div class="note">The AI inventory runs with every account scan. Start one now; it usually takes under a minute. You can also register AI systems by hand under “Register &amp; import”.</div><button data-act="scan">Inventory this account now</button></div>` + comingLater();
+    return;
+  }
+  const m = (s && s.summary) || {}, g = o.governance, sr = m.sources_read || {};
+  const open = ['open', 'in_progress'].reduce((n, st) => n + Object.values(o.findings[st] || {}).reduce((a, b) => a + b, 0), 0);
+  view.innerHTML = banner + `
+    <div class="card"><div class="row" style="justify-content:space-between"><div>
+      <h2>Last inventory run: ${s ? esc(fmt(s.finished_at || s.started_at)) + ' ' + (s.status === 'partial' ? chip('sev-medium', 'partial') : chip('st-resolved', 'complete')) : 'none yet'}</h2>
+      <div class="note">${s ? `AWS services read: ${esc((sr.aws_parts || []).length)} of 9 · GitHub ${sr.github_connected ? 'connected, ' + esc((sr.repositories || []).length) + ' repositories read in full' : 'not connected'} · engine ${esc(m.engine_version || '')}, mapping ${esc(m.mapping_version || '')}` : ''}</div></div>
+      <button data-act="scan">Run inventory now</button></div>
+      ${s && (s.limitations || []).length ? `<div class="warn"><b>What this inventory does not cover:</b><ul style="margin:4px 0 0 18px">${s.limitations.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>` : ''}
+    </div>
+    <div class="grid">
+      ${metric(o.assets_total, 'AI assets (excluding retired)')}
+      ${metric(o.shadow_ai, 'in use but not reviewed yet (shadow AI)')}
+      ${metric(open, 'open findings')}
+      ${metric(o.changes_30d.high_impact, 'high-impact changes in the last 30 days', `<div class="l">${esc(o.changes_30d.total)} changes in total</div>`)}
+      ${metric(o.identities, 'AI workload identities (IAM roles, governed in CIEM)')}
+    </div>
+    <div class="card" style="margin-top:16px"><h2>Governance coverage</h2><div class="note">Out of ${esc(g.denominator)} assets. ${esc(g.note)}</div>
+      <div class="grid">
+        ${[['with_owner','with an owner'],['with_purpose','with a business purpose'],['with_environment','with an environment'],['with_criticality','with a criticality'],['reviewed','reviewed (approved, restricted, rejected or exception)'],['approved','approved']]
+          .map(([k, l]) => metric(g[k] + ' / ' + g.denominator, l, pctBar(g[k], g.denominator))).join('')}
+        ${metric(g.review_overdue, 'past their review date')}${metric(g.exceptions_expired, 'exceptions past their end date')}
+      </div></div>
+    <div class="card"><h2>What was found</h2>
+      <table><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>${Object.entries(o.by_type_ids).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr class="click" data-filter-type="${esc(k)}"><td>${esc(typeLabel(k))}</td><td>${esc(n)}</td></tr>`).join('') || '<tr><td colspan="2" class="empty">Nothing yet.</td></tr>'}</tbody></table>
+      <h3>How sure is it</h3><div class="row">${Object.entries(o.by_verification).map(([k, n]) => `${ver(k)} <b>${esc(n)}</b>`).join(' &nbsp; ') || '—'}</div>
+      <div class="note" style="margin-top:6px">${Object.entries(o.verification_levels).map(([k, v]) => `<b>${esc(k)}</b>: ${esc(v)}`).join(' · ')}</div>
+      <h3>Lifecycle</h3><div class="row">${Object.entries(o.by_lifecycle).map(([k, n]) => `${chip('lc-' + k, k)} <b>${esc(n)}</b>`).join(' &nbsp; ')}</div>
+      <div class="note" style="margin-top:6px">“stale” means the source that reported it was read again and no longer shows it; after the period set under Settings it becomes “inactive”. Nothing is retired automatically.</div>
+    </div>
+    <div class="card"><h2>Open findings by severity</h2>
+      <div class="row">${['critical','high','medium','low'].map(x => `${sev(x)} <b>${esc(((o.findings.open||{})[x]||0) + ((o.findings.in_progress||{})[x]||0))}</b>`).join(' &nbsp; ')}</div>
+      ${o.trend.length > 1 ? `<h3>Trend (last ${o.trend.length} runs)</h3><table><thead><tr><th>Run</th><th>Assets</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th></tr></thead><tbody>
+        ${o.trend.map(t => `<tr><td>${esc(fmt(t.at))}</td><td>${esc(t.assets ?? '—')}</td>${['critical','high','medium','low'].map(x => `<td>${esc((t.findings_by_severity||{})[x] ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody></table>` : ''}
+    </div>` + comingLater();
+};
+const typeLabel = k => (state.types && state.types[k]) || TYPE_LABELS[k] || k;
+const TYPE_LABELS = {application:'AI application', agent:'AI agent', model:'AI model', model_provider:'Model provider', model_deployment:'Model deployment',
+  guardrail:'Guardrail', mcp_server:'MCP server', tool:'Tool', prompt:'Prompt / system instruction', rag_pipeline:'RAG pipeline / knowledge base',
+  vector_database:'Vector database', dataset:'Dataset', framework:'AI framework / SDK', ai_endpoint:'AI endpoint', ai_identity:'AI identity',
+  ai_infrastructure:'AI infrastructure', workflow:'AI workflow', evaluation:'Evaluation system', memory:'AI memory', artifact:'Model artifact'};
+
+function comingLater() {
+  return `<div class="card" style="background:transparent;border-style:dashed"><h2>Not covered yet</h2><div class="note" style="margin:0">
+    Azure, Google Cloud and other clouds; SaaS AI tools used by employees (ChatGPT, Copilot, …) via an identity provider or browser telemetry;
+    model registries such as Hugging Face or MLflow; runtime traffic to AI providers; and GitLab or Bitbucket repositories.
+    These are not shown because Niagaros has no connection to them yet — register such systems by hand so they are still governed.</div></div>`;
+}
+
+// ── Assets ────────────────────────────────────────────────────────────────
+state.filters = {};
+RENDER.assets = async () => {
+  const f = state.filters;
+  const d = await api('assets', Object.fromEntries(Object.entries(f).filter(([, v]) => v)));
+  state.types = d.types;
+  view.innerHTML = `<div class="card"><h2>AI assets</h2><div class="note">Click an asset for its sources, relationships, impact, changes and findings, and to record owner, purpose and approval.</div>
+    <div class="filters">
+      <input id="f-q" placeholder="Search name, key or owner" value="${esc(f.q || '')}" aria-label="Search">
+      <select id="f-type" aria-label="Type"><option value="">All types</option>${opts(Object.keys(d.types), f.type, d.types)}</select>
+      <select id="f-verification" aria-label="Verification"><option value="">Any verification</option>${opts(['declared','discovered','observed','verified'], f.verification)}</select>
+      <select id="f-approval" aria-label="Approval"><option value="">Any approval</option>${opts(APPROVALS, f.approval)}</select>
+      <select id="f-lifecycle" aria-label="Lifecycle"><option value="">Any lifecycle</option>${opts(['active','stale','inactive','deprecated','retired'], f.lifecycle)}</select>
+      <select id="f-environment" aria-label="Environment"><option value="">Any environment</option>${opts(ENVS, f.environment)}</select>
+      <label class="note" style="margin:0"><input type="checkbox" id="f-no_owner" ${f.no_owner ? 'checked' : ''}> Without owner</label>
+      <button class="ghost" data-act="filter">Apply</button></div>
+    ${d.truncated ? '<div class="warn">Showing the first 1000 assets; narrow the filters.</div>' : ''}
+    ${d.assets.length ? `<table><thead><tr><th>Asset</th><th>Type</th><th>Verification</th><th>Approval</th><th class="hide-sm">Owner</th><th class="hide-sm">Environment</th><th class="hide-sm">Last seen</th><th>Findings</th></tr></thead><tbody>
+      ${d.assets.map(a => `<tr class="click" data-asset="${esc(a.id)}"><td><b>${esc(a.name)}</b> ${life(a.lifecycle_status)} ${a.origin !== 'discovered' ? chip('', a.origin) : ''}<div class="note" style="margin:0;word-break:break-all">${esc(a.provider || '')}</div></td>
+        <td>${esc(a.type_label)}</td><td>${ver(a.verification)}</td><td>${appr(a.approval_status)}</td><td class="hide-sm">${esc(a.owner || '—')}</td>
+        <td class="hide-sm">${esc(a.environment)}</td><td class="hide-sm">${esc(a.origin === 'discovered' ? day(a.last_seen) : '—')}</td><td>${a.open_findings ? chip('sev-high', a.open_findings) : '0'}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">No asset matches these filters.</div>'}</div>`;
+};
+function readFilters() {
+  const f = {};
+  ['q','type','verification','approval','lifecycle','environment'].forEach(k => { const v = document.getElementById('f-' + k).value; if (v) f[k] = v; });
+  if (document.getElementById('f-no_owner').checked) f.no_owner = '1';
+  state.filters = f;
+}
+
+// ── Asset drawer ──────────────────────────────────────────────────────────
+const drawer = document.getElementById('drawer'), shade = document.getElementById('shade');
+function openDrawer(html) { drawer.innerHTML = html; drawer.classList.add('open'); shade.classList.add('open'); drawer.focus(); }
+function closeDrawer() { drawer.classList.remove('open'); shade.classList.remove('open'); }
+shade.onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+async function openAsset(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const a = await api('asset', {asset_id: id});
+    state.asset = a;
+    const meta = Object.entries(a.metadata || {}).filter(([, v]) => v !== null && v !== '' && !(Array.isArray(v) && !v.length));
+    const relRow = r => `<tr><td>${r.direction === 'out' ? relLabel(r.type) + ' →' : '← ' + relLabel(r.type)}</td>
+      <td><a href="#" data-asset="${esc(r.other.id)}">${esc(r.other.name)}</a> <span class="note">${esc(r.other.type_label)}</span></td>
+      <td>${ver(r.verification)} <span class="note">${esc(r.confidence)} confidence</span></td>
+      <td class="hide-sm note" style="word-break:break-all">${esc((r.sources || []).join(', '))}${r.note ? '<br>' + esc(r.note) : ''}</td>
+      <td>${r.origin === 'manual' ? `<button class="danger" data-act="unlink" data-id="${esc(r.id)}">Remove</button>` : ''}</td></tr>`;
+    const imp = a.impact;
+    drawer.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(a.name)}</h2><button class="ghost" data-act="close">Close</button></div>
+      <div class="row" style="margin:4px 0 10px">${esc(a.type_label)} ${ver(a.verification)} ${appr(a.approval_status)} ${life(a.lifecycle_status)} ${a.origin !== 'discovered' ? chip('', a.origin) : ''}</div>
+      <div class="kv"><div>Key</div><div style="word-break:break-all">${esc(a.asset_key)}</div><div>Provider</div><div>${esc(a.provider || '—')}</div>
+        <div>First seen</div><div>${esc(fmt(a.first_seen))}</div><div>Last seen</div><div>${esc(a.origin === 'discovered' ? fmt(a.last_seen) : '— (registered by hand)')}</div>
+        <div>Last synced</div><div>${esc(fmt(a.last_synced))}</div><div>Last verified</div><div>${esc(fmt(a.last_verified))}${a.approval_by ? ' by ' + esc(a.approval_by) : ''}</div></div>
+      <h3>Governance</h3><div class="note">Filled in by your team; scans never overwrite these fields. Approving, restricting or rejecting marks the asset as reviewed (verified).</div>
+      ${a.approval_status !== 'unreviewed' && a.verification !== 'verified' ? '<div class="warn">This asset changed in a risk-relevant way after it was reviewed, so the review no longer covers it. Check the change history and save to confirm the decision again.</div>' : ''}
+      <div class="form">
+        <label for="g-owner">Owner</label><input id="g-owner" value="${esc(a.owner || '')}" placeholder="Name or email">
+        <label for="g-purpose">Business purpose</label><textarea id="g-purpose" style="min-height:60px">${esc(a.business_purpose || '')}</textarea>
+        <label for="g-env">Environment</label><select id="g-env">${opts(ENVS, a.environment)}</select>
+        <label for="g-crit">Criticality</label><select id="g-crit">${opts(CRITS, a.criticality)}</select>
+        <label for="g-review">Next review</label><input id="g-review" type="date" value="${esc(a.next_review_at || '')}">
+        <label for="g-life">Lifecycle</label><select id="g-life">${opts(['active','deprecated','retired'], ['active','deprecated','retired'].includes(a.lifecycle_status) ? a.lifecycle_status : 'active')}</select>
+        <label for="g-appr">Approval</label><select id="g-appr">${opts(APPROVALS, a.approval_status)}</select>
+        <label for="g-reason">Reason</label><input id="g-reason" value="${esc(a.approval_reason || '')}" placeholder="Required for restricted, rejected or exception">
+        <label for="g-until">Exception until</label><input id="g-until" type="date" value="${esc(a.approval_until || '')}">
+      </div>
+      <div class="row" style="margin-top:10px"><button data-act="save-asset" data-id="${esc(a.id)}">Save</button>
+        ${a.origin !== 'discovered' ? `<button class="danger" data-act="delete-asset" data-id="${esc(a.id)}">Delete this asset</button>` : ''}</div>
+      ${meta.length ? `<h3>Technical details</h3><div class="kv">${meta.map(([k, v]) => `<div>${esc(k.replace(/_/g, ' '))}</div><div style="word-break:break-all">${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</div>`).join('')}</div>` : ''}
+      <h3>Relationships</h3>${a.relationships.length ? `<table><tbody>${a.relationships.map(relRow).join('')}</tbody></table>` : '<div class="empty">None found.</div>'}
+      <div class="row" style="margin-top:8px"><select id="ln-type" aria-label="Relationship type">${opts(REL_TYPES, 'USES_MODEL', Object.fromEntries(REL_TYPES.map(t => [t, relLabel(t)])))}</select>
+        <select id="ln-target" aria-label="Linked asset" style="max-width:260px"><option value="">Choose an asset…</option></select>
+        <input id="ln-note" placeholder="Note (optional)"><button class="ghost" data-act="link" data-id="${esc(a.id)}">Add link</button></div>
+      <h3>Impact analysis</h3><div class="note">${esc(imp.note)}</div>
+      <div class="kv"><div>Uses (downstream)</div><div>${imp.downstream.map(x => `<a href="#" data-asset="${esc(x.id)}">${esc(x.name)}</a> <span class="note">${esc(relLabel(x.via))}, ${x.hops} hop${x.hops > 1 ? 's' : ''}</span>`).join('<br>') || '—'}</div>
+        <div>Affected if it changes (upstream)</div><div>${imp.upstream.map(x => `<a href="#" data-asset="${esc(x.id)}">${esc(x.name)}</a> <span class="note">${esc(relLabel(x.via))}, ${x.hops} hop${x.hops > 1 ? 's' : ''}</span>`).join('<br>') || '—'}</div></div>
+      <h3>Findings</h3>${a.findings.length ? `<table><tbody>${a.findings.map(f => `<tr class="click" data-finding="${esc(f.id)}"><td>${sev(f.severity)}</td><td>${esc(f.title)}</td><td>${chip('st-' + f.status, f.status)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No findings.</div>'}
+      <h3>Where it was seen</h3>${a.observations.length ? `<table><thead><tr><th>When</th><th>Source</th><th>Reference</th><th>Level</th></tr></thead><tbody>${a.observations.map(o => `<tr><td>${esc(fmt(o.at))}</td><td style="word-break:break-all">${esc(o.source)}</td><td style="word-break:break-all">${esc(o.ref || '')}</td><td>${ver(o.verification)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Registered by hand; no scan has reported it.</div>'}
+      <h3>Change history</h3>${a.changes.length ? `<table><tbody>${a.changes.map(c => `<tr><td>${esc(fmt(c.at))}</td><td>${esc(c.type.replace(/_/g, ' '))} ${c.risk_impact ? sev(c.risk_impact) : ''}<div class="note" style="margin:0">${esc(c.actor || c.source)}</div></td><td class="note" style="word-break:break-all">${changeText(c)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No changes recorded.</div>'}`;
+    fillLinkTargets(a.id);
+  } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; }
+}
+function changeText(c) {
+  const p = c.previous || {}, n = c.new || {};
+  const keys = Array.from(new Set([...Object.keys(p), ...Object.keys(n)]));
+  return keys.map(k => `${esc(k.replace(/_/g, ' '))}: ${esc(JSON.stringify(p[k] ?? null))} → ${esc(JSON.stringify(n[k] ?? null))}`).join('<br>');
+}
+async function fillLinkTargets(selfId) {
+  try {
+    if (!state.allAssets) state.allAssets = (await api('assets')).assets;
+    const sel = document.getElementById('ln-target');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Choose an asset…</option>' + state.allAssets.filter(x => x.id !== selfId)
+      .map(x => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.type_label)})</option>`).join('');
+  } catch (e) { /* the link form stays empty; the rest of the drawer works */ }
+}
+
+// ── Shadow AI ─────────────────────────────────────────────────────────────
+RENDER.shadow = async () => {
+  const d = await api('shadow');
+  view.innerHTML = `<div class="card"><h2>Shadow AI</h2><div class="note">${esc(d.definition)}</div>
+    ${d.items.length ? `<table><thead><tr><th>Asset</th><th>Type</th><th>Verification</th><th class="hide-sm">First seen</th><th class="hide-sm">Found in</th><th></th></tr></thead><tbody>
+      ${d.items.map(a => `<tr class="click" data-asset="${esc(a.id)}"><td><b>${esc(a.name)}</b> ${life(a.lifecycle_status)}</td><td>${esc(a.type_label)}</td><td>${ver(a.verification)}</td>
+        <td class="hide-sm">${esc(day(a.first_seen))}</td><td class="hide-sm note" style="word-break:break-all">${esc((a.metadata || {}).repository || a.provider || '')}</td><td><button class="ghost" data-asset="${esc(a.id)}">Review</button></td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">Everything that was found has been reviewed.</div>'}
+    <div class="note" style="margin-top:10px">Approved providers: ${d.approved_providers.length ? esc(d.approved_providers.join(', ')) : 'none set — set them under Settings so providers outside the list become findings.'}</div></div>`;
+};
+
+// ── Relationship graph ────────────────────────────────────────────────────
+const COLS = [['application','agent','workflow'], ['tool','prompt','mcp_server','framework','guardrail'], ['model','rag_pipeline','vector_database','dataset','memory'],
+  ['model_provider','model_deployment','ai_endpoint'], ['ai_infrastructure','ai_identity','evaluation','artifact']];
+RENDER.graph = async () => {
+  const d = await api('graph');
+  if (!d.nodes.length) { view.innerHTML = '<div class="card"><div class="empty">No assets yet.</div></div>'; return; }
+  const colOf = t => { const i = COLS.findIndex(c => c.includes(t)); return i < 0 ? 4 : i; };
+  const byCol = COLS.map(() => []);
+  d.nodes.forEach(n => byCol[colOf(n.asset_type)].push(n));
+  byCol.forEach(c => c.sort((a, b) => a.asset_type.localeCompare(b.asset_type) || a.name.localeCompare(b.name)));
+  const W = 210, H = 30, PAD = 24, colW = 260;
+  const pos = {};
+  byCol.forEach((c, ci) => c.forEach((n, ri) => { pos[n.id] = {x: PAD + ci * colW, y: PAD + 20 + ri * (H + 10)}; }));
+  const height = PAD * 2 + 20 + Math.max(...byCol.map(c => c.length)) * (H + 10);
+  const width = PAD * 2 + COLS.length * colW;
+  const heads = ['Applications & agents', 'Tools, prompts, MCP, SDKs', 'Models & knowledge', 'Providers & endpoints', 'Infrastructure & identities'];
+  const edge = e => { const a = pos[e.source], b = pos[e.target]; if (!a || !b) return '';
+    const x1 = a.x + (b.x >= a.x ? W : 0), x2 = b.x + (b.x >= a.x ? 0 : W), y1 = a.y + H / 2, y2 = b.y + H / 2, mx = (x1 + x2) / 2;
+    return `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="${e.verification === 'declared' ? '#cbd5e1' : '#60a5fa'}" stroke-width="1.4" ${e.origin === 'manual' ? 'stroke-dasharray="4 3"' : ''} marker-end="url(#arr)"><title>${esc(relLabel(e.type))} (${esc(e.verification)}, ${esc(e.confidence)})</title></path>`; };
+  const fill = n => n.approval_status === 'approved' ? '#dcfce7' : n.approval_status === 'rejected' ? '#fee2e2' : n.approval_status === 'unreviewed' ? '#fff' : '#fef9c3';
+  view.innerHTML = `<div class="card"><h2>Relationships</h2><div class="note">How the AI assets connect. Blue lines come from AWS or usage evidence, grey lines from code or configuration (declared), dashed lines were added by hand.
+    Box colour: green approved, yellow restricted or exception, red rejected, white not reviewed. Click an asset for its impact analysis.</div>
+    <div class="graph"><svg width="${width}" height="${height}" role="img" aria-label="AI asset relationship graph">
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker></defs>
+      ${heads.map((h, i) => `<text x="${PAD + i * colW}" y="${PAD}" font-weight="700" fill="#6b7280">${esc(h)}</text>`).join('')}
+      ${d.edges.map(edge).join('')}
+      ${d.nodes.map(n => { const p = pos[n.id]; return `<g class="node" data-asset="${esc(n.id)}" tabindex="0"><rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="7" fill="${fill(n)}" stroke="${n.lifecycle_status === 'active' ? '#94a3b8' : '#e5e7eb'}"/>
+        <text x="${p.x + 8}" y="${p.y + 13}" fill="#111827" font-weight="600">${esc(n.name.length > 30 ? n.name.slice(0, 29) + '…' : n.name)}</text>
+        <text x="${p.x + 8}" y="${p.y + 25}" fill="#6b7280">${esc(n.type_label)}${n.lifecycle_status !== 'active' ? ' · ' + esc(n.lifecycle_status) : ''}</text><title>${esc(n.name)}</title></g>`; }).join('')}
+    </svg></div>
+    <div class="note" style="margin-top:8px">${d.nodes.length} assets, ${d.edges.length} relationships.</div></div>`;
+};
+
+// ── Findings ──────────────────────────────────────────────────────────────
+RENDER.findings = async () => {
+  const st = state.fstatus || '';
+  const d = await api('findings', st ? {status: st} : {});
+  state.findings = d;
+  view.innerHTML = `<div class="card"><h2>Findings</h2><div class="note">Risks found in the inventory, each with its evidence. A finding is only marked resolved when the next run no longer sees it in a source that was read successfully.</div>
+    <div class="filters"><select id="f-status" aria-label="Status"><option value="">All statuses</option>${opts(['open','in_progress','accepted','false_positive','resolved'], st)}</select><button class="ghost" data-act="fstatus">Apply</button></div>
+    ${d.findings.length ? `<table><thead><tr><th>Severity</th><th>Finding</th><th class="hide-sm">Asset</th><th>Status</th><th class="hide-sm">First seen</th></tr></thead><tbody>
+      ${d.findings.map(f => `<tr class="click" data-finding="${esc(f.id)}"><td>${sev(f.severity)}</td><td>${esc(f.title)}</td><td class="hide-sm">${esc(f.asset ? f.asset.name : '—')}</td><td>${chip('st-' + f.status, f.status.replace('_', ' '))}</td><td class="hide-sm">${esc(day(f.first_seen))}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">No findings.</div>'}</div>`;
+};
+async function openFinding(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    if (!state.findings || !state.findings.findings.find(x => x.id === id)) state.findings = await api('findings');
+    const f = state.findings.findings.find(x => x.id === id);
+    if (!f) throw new Error('finding not found');
+    const r = f.recommendation || {}, det = f.details || {};
+    const integrations = state.findings.integrations || [];
+    const canChange = f.status !== 'resolved';
+    drawer.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(f.title)}</h2><button class="ghost" data-act="close">Close</button></div>
+      <div class="row" style="margin:4px 0 10px">${sev(f.severity)} ${chip('st-' + f.status, f.status.replace('_', ' '))} <span class="note" style="margin:0">first seen ${esc(fmt(f.first_seen))}, last seen ${esc(fmt(f.last_seen))}</span></div>
+      ${f.asset ? `<div class="note">Asset: <a href="#" data-asset="${esc(f.asset.id)}">${esc(f.asset.name)}</a> (${esc(f.asset.type_label)})</div>` : ''}
+      ${f.status_reason ? `<div class="note">Status note: ${esc(f.status_reason)}${f.status_by ? ' — ' + esc(f.status_by) : ''}${f.accepted_until ? ', until ' + esc(f.accepted_until) : ''}</div>` : ''}
+      <h3>Evidence</h3><div class="kv">${Object.entries(det).map(([k, v]) => `<div>${esc(k.replace(/_/g, ' '))}</div><div style="word-break:break-all">${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</div>`).join('')}</div>
+      <h3>Recommendation</h3><div class="kv"><div>Now</div><div>${esc(r.current)}</div><div>Change to</div><div>${esc(r.proposed)}</div>
+        <div>Why</div><div>${esc(r.reason)}</div><div>Possible impact</div><div>${esc(r.impact)}</div><div>Confidence</div><div>${esc(r.confidence)}</div>
+        <div>Approval</div><div>${esc(r.approvals)}</div><div>Rollback</div><div>${esc(r.rollback)}</div></div>
+      <h3>Compliance</h3><div class="note">Indicates which controls this finding puts at risk; on its own it is not proof of non-compliance.</div>
+      <table><tbody>${(f.compliance || []).map(c => `<tr><td>${esc(c.framework)}</td><td>${esc(c.control)}</td><td>${esc(c.title)}</td></tr>`).join('')}</tbody></table>
+      ${canChange ? `<h3>Follow-up</h3>
+        <div class="row"><select id="st-new" aria-label="New status"><option value="in_progress">In progress</option><option value="accepted">Accept the risk</option><option value="false_positive">False positive</option><option value="open">Open</option></select>
+          <input id="st-reason" placeholder="Reason" style="flex:1;min-width:180px"><input id="st-until" type="date" aria-label="Accepted until" title="Accepted until (max one year)">
+          <button data-act="status" data-id="${esc(f.id)}">Save</button></div>
+        ${f.ticket ? `<div class="note" style="margin-top:10px">Ticket: ${f.ticket.url ? `<a href="${esc(f.ticket.url)}" target="_blank" rel="noopener">${esc(f.ticket.key)}</a>` : esc(f.ticket.key)} (${esc(f.ticket.provider)}, status ${esc(f.ticket.status || 'created')}) <button class="ghost" data-act="ticket-refresh" data-id="${esc(f.id)}">Refresh status</button></div>`
+          : integrations.length ? `<div class="row" style="margin-top:10px"><select id="tk-int" aria-label="Integration">${integrations.map(x => `<option value="${esc(x.id)}">${esc(x.provider)} ${esc(x.project || '(no project)')}</option>`).join('')}</select><button class="ghost" data-act="ticket" data-id="${esc(f.id)}">Create ticket</button></div>`
+          : `<div class="note" style="margin-top:10px">Connect Jira or Monday on the <a href="integrations.html${esc(q())}">Integrations</a> page to create tickets.</div>`}`
+        : '<div class="note" style="margin-top:12px">Resolved by the latest run. It re-opens automatically if it comes back.</div>'}`;
+  } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; }
+}
+
+// ── Changes ───────────────────────────────────────────────────────────────
+RENDER.changes = async () => {
+  const days = state.cdays || '30';
+  const d = await api('changes', {days});
+  view.innerHTML = `<div class="card"><h2>Changes</h2><div class="note">New assets, configuration changes found by scans, lifecycle changes and governance edits, with the previous and new value.</div>
+    <div class="filters"><select id="c-days" aria-label="Period">${opts(['7','30','90','365'], days, {'7':'Last 7 days','30':'Last 30 days','90':'Last 90 days','365':'Last year'})}</select><button class="ghost" data-act="cdays">Apply</button></div>
+    ${d.changes.length ? `<table><thead><tr><th>When</th><th>Asset</th><th>Change</th><th class="hide-sm">Details</th><th>By</th></tr></thead><tbody>
+      ${d.changes.map(c => `<tr><td>${esc(fmt(c.at))}</td><td>${c.asset.id ? `<a href="#" data-asset="${esc(c.asset.id)}">${esc(c.asset.name)}</a>` : esc(c.asset.name)}<div class="note" style="margin:0">${esc(c.asset.type_label)}</div></td>
+        <td>${esc(c.type.replace(/_/g, ' '))} ${c.risk_impact ? sev(c.risk_impact) : ''}</td><td class="hide-sm note" style="word-break:break-all">${changeText(c)}</td><td>${esc(c.actor || c.source)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">No changes in this period.</div>'}</div>`;
+};
+
+// ── Register & import ─────────────────────────────────────────────────────
+RENDER.register = async () => {
+  view.innerHTML = `<div class="card"><h2>Register an AI system</h2><div class="note">For AI that Niagaros cannot discover (SaaS tools, systems in other clouds, vendor products). Registered assets are marked “declared” until your team reviews them.</div>
+    <div class="form">
+      <label for="r-name">Name</label><input id="r-name" placeholder="e.g. Customer support chatbot">
+      <label for="r-type">Type</label><select id="r-type">${opts(Object.keys(TYPE_LABELS), 'application', TYPE_LABELS)}</select>
+      <label for="r-provider">Provider / vendor</label><input id="r-provider" placeholder="e.g. OpenAI, Microsoft">
+      <label for="r-desc">Description</label><textarea id="r-desc" style="min-height:60px"></textarea>
+      <label for="r-owner">Owner</label><input id="r-owner">
+      <label for="r-purpose">Business purpose</label><input id="r-purpose">
+      <label for="r-env">Environment</label><select id="r-env">${opts(ENVS, 'unknown')}</select>
+      <label for="r-crit">Criticality</label><select id="r-crit">${opts(CRITS, 'unknown')}</select>
+    </div><div style="margin-top:12px"><button data-act="register">Register</button></div></div>
+    <div class="card"><h2>Import from CSV</h2><div class="note">Columns: <code>name, asset_type, provider, description, owner, business_purpose, environment, criticality</code>. Up to 500 rows; if one row is invalid, nothing is imported. asset_type is one of: ${esc(Object.keys(TYPE_LABELS).join(', '))}.</div>
+      <input type="file" id="imp-file" accept=".csv,text/csv" aria-label="CSV file"> <button class="ghost" data-act="import">Import</button>
+      <div id="imp-preview" class="note" style="margin-top:8px"></div></div>`;
+};
+function parseCsv(text) {
+  const rows = []; let row = [], cell = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) { if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') inQ = false; else cell += ch; }
+    else if (ch === '"') inQ = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); cell = ''; if (row.some(c => c.trim())) rows.push(row); row = []; }
+    else cell += ch;
+  }
+  row.push(cell); if (row.some(c => c.trim())) rows.push(row);
+  if (!rows.length) return [];
+  const head = rows[0].map(h => h.trim().toLowerCase());
+  return rows.slice(1).map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] || '').trim()]).filter(([h, v]) => h && v)));
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────
+RENDER.settings = async () => {
+  const d = await api('settings');
+  view.innerHTML = `<div class="card"><h2>Approved AI providers</h2><div class="note">Providers your organisation has reviewed (data-processing terms, security). When at least one is ticked, every other provider found in use becomes a finding.${d.updated_by ? ' Last changed by ' + esc(d.updated_by) + ' on ' + esc(fmt(d.updated_at)) + '.' : ''}</div>
+    <div class="grid">${d.providers.map(p => `<label class="note" style="margin:0"><input type="checkbox" data-provider="${esc(p.id)}" ${d.approved_providers.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}</div>
+    <h3>GitHub repositories</h3><div class="note">${d.github_org ? `Connected organisation: <b>${esc(d.github_org)}</b>. Leave empty to scan the 40 most recently pushed repositories, or list repository names (one per line) to limit the scan.` : 'No GitHub organisation is connected, so source code is not inventoried. Connect GitHub under Settings → Integrations.'}</div>
+    <textarea id="s-repos" placeholder="repo-name or owner/repo-name">${esc((d.github_repos || []).join('\n'))}</textarea>
+    <h3>Inactive after</h3><div class="row"><input id="s-days" type="number" min="7" max="365" value="${esc(d.inactive_after_days)}" style="width:90px"> <span class="note" style="margin:0">days without being seen (only counted when the source was read successfully).</span></div>
+    <div style="margin-top:14px"><button data-act="settings-save">Save</button></div></div>`;
+};
+
+// ── Reports & audit ───────────────────────────────────────────────────────
+RENDER.reports = async () => {
+  const [a, sc] = await Promise.all([api('audit'), api('scans')]);
+  view.innerHTML = `<div class="card"><h2>Exports</h2><div class="note">Exports contain only this account and are recorded in the audit trail.</div>
+    <div class="row">${['assets', 'relationships', 'findings', 'changes', 'audit'].map(w => `<button class="ghost" data-act="export" data-what="${w}" data-format="csv">${w} (CSV)</button><button class="ghost" data-act="export" data-what="${w}" data-format="json">${w} (JSON)</button>`).join('')}
+    <button class="ghost" data-act="print">Overview as PDF (print)</button></div></div>
+    <div class="card"><h2>Inventory runs</h2><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Assets</th><th class="hide-sm">Notes</th></tr></thead><tbody>
+      ${sc.scans.map(s => `<tr><td>${esc(fmt(s.started_at))}</td><td>${esc(s.trigger)}</td><td>${chip(s.status === 'succeeded' ? 'st-resolved' : s.status === 'failed' ? 'sev-critical' : 'sev-medium', s.status)}</td>
+        <td>${esc((s.summary || {}).assets ?? '—')}</td><td class="hide-sm note">${esc(s.error || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">No runs yet.</td></tr>'}</tbody></table></div>
+    <div class="card"><h2>Audit trail</h2><table><thead><tr><th>When</th><th>Who</th><th>What</th><th class="hide-sm">Details</th></tr></thead><tbody>
+      ${a.audit.map(x => `<tr><td>${esc(fmt(x.at))}</td><td>${esc(x.actor)}</td><td>${esc(x.action.replace(/_/g, ' '))}</td><td class="hide-sm note" style="word-break:break-all">${esc(JSON.stringify(x.details))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Nothing recorded yet.</td></tr>'}</tbody></table></div>`;
+};
+
+// ── actions (event delegation; no data inside onclick strings) ───────────
+const val = id => document.getElementById(id).value;
+document.addEventListener('click', async e => {
+  const typeEl = e.target.closest('[data-filter-type]');
+  if (typeEl) { state.filters = {type: typeEl.dataset.filterType}; return setTab('assets'); }
+  const aEl = e.target.closest('[data-asset]');
+  if (aEl && !e.target.closest('[data-act]')) { e.preventDefault(); return openAsset(aEl.dataset.asset); }
+  const fEl = e.target.closest('[data-finding]');
+  if (fEl) { e.preventDefault(); return openFinding(fEl.dataset.finding); }
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  try {
+    if (act === 'close') return closeDrawer();
+    if (act === 'reload') return render();
+    if (act === 'print') return window.print();
+    if (act === 'filter') { readFilters(); return render(); }
+    if (act === 'fstatus') { state.fstatus = val('f-status'); return render(); }
+    if (act === 'cdays') { state.cdays = val('c-days'); return render(); }
+    b.disabled = true;
+    if (act === 'scan') {
+      const r = await post({action: 'run_scan'});
+      toast(r.note || 'Inventory started.');
+    } else if (act === 'save-asset') {
+      const a = state.asset, body = {action: 'update_asset', asset_id: b.dataset.id};
+      const set = (k, v, old) => { if ((v || null) !== (old || null)) body[k] = v || null; };
+      set('owner', val('g-owner').trim(), a.owner); set('business_purpose', val('g-purpose').trim(), a.business_purpose);
+      if (val('g-env') !== a.environment) body.environment = val('g-env');
+      if (val('g-crit') !== a.criticality) body.criticality = val('g-crit');
+      set('next_review_at', val('g-review'), a.next_review_at);
+      if (val('g-life') !== a.lifecycle_status && !(['stale','inactive'].includes(a.lifecycle_status) && val('g-life') === 'active')) body.lifecycle_status = val('g-life');
+      const reconfirm = val('g-appr') !== 'unreviewed' && a.verification !== 'verified';   // review lapsed after a change
+      if (reconfirm || val('g-appr') !== a.approval_status || val('g-reason').trim() !== (a.approval_reason || '') || val('g-until') !== (a.approval_until || '')) {
+        body.approval_status = val('g-appr'); body.approval_reason = val('g-reason').trim() || null; body.approval_until = val('g-until') || null;
+      }
+      if (Object.keys(body).length === 2) { toast('Nothing changed.'); return; }
+      await post(body);
+      toast('Saved.'); state.allAssets = null; openAsset(b.dataset.id); if (['assets','shadow','overview','graph'].includes(tab)) render();
+    } else if (act === 'delete-asset') {
+      if (!confirm('Delete this asset and its manual links? This cannot be undone.')) return;
+      await post({action: 'delete_asset', asset_id: b.dataset.id});
+      toast('Deleted.'); state.allAssets = null; closeDrawer(); render();
+    } else if (act === 'link') {
+      if (!val('ln-target')) { toast('Choose an asset to link to.'); return; }
+      await post({action: 'link_assets', source_asset_id: b.dataset.id, target_asset_id: val('ln-target'), rel_type: val('ln-type'), note: val('ln-note') || null});
+      toast('Link added.'); openAsset(b.dataset.id);
+    } else if (act === 'unlink') {
+      await post({action: 'unlink_assets', relationship_id: b.dataset.id});
+      toast('Link removed.'); openAsset(state.asset.id);
+    } else if (act === 'status') {
+      await post({action: 'set_finding_status', finding_id: b.dataset.id, status: val('st-new'), reason: val('st-reason') || null, accepted_until: val('st-until') || null});
+      toast('Saved.'); state.findings = null; closeDrawer(); render();
+    } else if (act === 'ticket') {
+      const r = await post({action: 'create_ticket', finding_id: b.dataset.id, integration_id: val('tk-int')});
+      toast('Ticket ' + (r.ticket.key || '') + ' created.'); state.findings = null; openFinding(b.dataset.id);
+    } else if (act === 'ticket-refresh') {
+      const r = await post({action: 'refresh_ticket', finding_id: b.dataset.id});
+      toast('Ticket status: ' + (r.ticket.status || 'unknown')); state.findings = null; openFinding(b.dataset.id);
+    } else if (act === 'register') {
+      const body = {action: 'register_asset', name: val('r-name'), asset_type: val('r-type'), provider: val('r-provider') || null, description: val('r-desc') || null,
+                    owner: val('r-owner') || null, business_purpose: val('r-purpose') || null, environment: val('r-env'), criticality: val('r-crit')};
+      const r = await post(body);
+      toast('Registered.'); state.allAssets = null; openAsset(r.asset_id);
+    } else if (act === 'import') {
+      const file = document.getElementById('imp-file').files[0];
+      if (!file) { toast('Choose a CSV file first.'); return; }
+      if (file.size > 2e6) { toast('The file is larger than 2 MB.'); return; }
+      const rows = parseCsv(await file.text());
+      if (!rows.length) { toast('No rows found in the file.'); return; }
+      const r = await post({action: 'import_assets', rows});
+      document.getElementById('imp-preview').textContent = r.imported + ' assets imported.'; state.allAssets = null;
+    } else if (act === 'settings-save') {
+      const approved = Array.from(document.querySelectorAll('[data-provider]')).filter(x => x.checked).map(x => x.dataset.provider);
+      const repos = val('s-repos').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      const r = await post({action: 'save_settings', approved_providers: approved, github_repos: repos, inactive_after_days: Number(val('s-days'))});
+      toast('Saved. ' + (r.note || '')); render();
+    } else if (act === 'export') {
+      const u = new URLSearchParams({cloud_account_id: accountId, view: 'export', what: b.dataset.what, format: b.dataset.format});
+      const r = await fetch(API + 'ai-inventory?' + u.toString());
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Export failed.'); }
+      const blob = b.dataset.format === 'csv' ? await r.blob() : new Blob([JSON.stringify(await r.json(), null, 2)], {type: 'application/json'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `niagaros-ai-inventory-${b.dataset.what}.${b.dataset.format}`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+  } catch (err) { toast(err.message); }
+  finally { b.disabled = false; }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.closest && e.target.closest('g.node[data-asset]')) openAsset(e.target.closest('g.node').dataset.asset); });
+
+if (!TABS.includes(tab)) tab = 'overview';
+setTab(tab);
+</script>
+<script src="notifications-widget.js"></script>
+<script src="ai-agent-widget.js"></script>
+</body>
+</html>
