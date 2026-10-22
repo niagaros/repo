@@ -23,7 +23,7 @@ import psycopg2
 from psycopg2.extras import Json
 
 from collectors.aws.scanner import ai_inventory_engine as E
-from collectors.aws.scanner.ai_inventory_collector import collect_aws, collect_github
+from collectors.aws.scanner.ai_inventory_collector import collect_aws_regions, collect_github
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -36,7 +36,9 @@ AWS_PARTS = ("bedrock_guardrails", "bedrock_models", "bedrock_invocation_logging
 RULE_PARTS = {"agent_without_guardrail": {"bedrock_agents"}, "notebook_internet_and_root": {"sagemaker"},
               "ai_key_in_lambda_env": {"lambda_functions"},
               "bedrock_invocation_logging_off": {"bedrock_invocation_logging", "bedrock_agents", "bedrock_knowledge_bases",
-                                                 "bedrock_usage_metrics", "bedrock_models"}}
+                                                 "bedrock_usage_metrics", "bedrock_models"},
+              "privileged_ai_tool": {"bedrock_agents", "lambda_functions"}}
+GOVERNANCE_RULE = "production_asset_without_owner"   # from your own governance data: always re-evaluated
 
 
 def _get_connection():
@@ -106,10 +108,20 @@ def _source_read(key, from_github, read, rule=None, code_dependent=False):
         return False
     if code_dependent and not read["github_complete"]:
         return False
+    if key.startswith(("aws:", "prompt:", "tool:")):
+        arn = key.split(":", 1)[1]
+        parts = arn.split(":")
+        region = parts[3] if len(parts) > 4 and parts[0] == "arn" else ""
+        by_region = read.get("aws_parts_by_region") or {}
+        if region:
+            if region not in by_region:
+                return False             # that region was not read in this run: nothing can be concluded about it
+            have = by_region[region]
+        else:
+            have = read["aws_parts"]
+        return (RULE_PARTS.get(rule) or _aws_parts(key)) <= have
     if rule in RULE_PARTS:
         return RULE_PARTS[rule] <= read["aws_parts"]
-    if key.startswith(("aws:", "prompt:", "tool:")):
-        return _aws_parts(key) <= read["aws_parts"]
     repo = _repo_of(key)
     if repo:
         return repo in read["repos"]
@@ -250,6 +262,24 @@ def store(conn, account_id, scan_id, assets, rels, findings, read, inactive_afte
                            VALUES (%s, %s, 'relationship_removed', %s, NULL, 'scan', %s)""",
                         (account_id, s_id, J({"relationship": rtype, "target": t_name}),
                          "high" if rtype == "PROTECTED_BY_GUARDRAIL" else "low"))
+        cur.execute("""SELECT asset_key, name, asset_type, criticality FROM ai_assets WHERE cloud_account_id = %s AND environment = 'production'
+                       AND owner IS NULL AND asset_type <> 'ai_identity' AND lifecycle_status IN ('active', 'stale')""", (account_id,))
+        for key, name, atype, crit in cur.fetchall():
+            ids.setdefault(key, None)
+            findings = findings + [{
+                "fingerprint": E.fingerprint(GOVERNANCE_RULE, key), "rule": GOVERNANCE_RULE, "asset_key": key,
+                "severity": "high" if crit in ("high", "critical") else "medium",
+                "title": f"Production {E.ASSET_TYPES.get(atype, atype).lower()} {name} has no owner",
+                "details": {"basis": "governance (your inventory data)", "environment": "production", "criticality": crit,
+                            "note": "Ownership is required for production AI assets."},
+                "recommendation": {"current": "No owner recorded", "proposed": "Record the accountable owner on the asset",
+                                   "reason": "Without an owner nobody reviews changes, incidents or risk acceptances for this AI system.",
+                                   "impact": "None", "confidence": "high", "approvals": "AI governance owner", "rollback": "Not applicable."},
+                "compliance": E.compliance_for("governance")}]
+        if None in ids.values():
+            cur.execute("SELECT asset_key, id FROM ai_assets WHERE cloud_account_id = %s AND asset_key = ANY(%s)",
+                        (account_id, [k for k, v in ids.items() if v is None]))
+            ids.update(dict(cur.fetchall()))
         seen = set()
         for f in findings:
             seen.add(f["fingerprint"])
@@ -284,7 +314,12 @@ def store(conn, account_id, scan_id, assets, rels, findings, read, inactive_afte
         for fid, rule, key, from_github, code_dep in cur.fetchall():
             if key is None:
                 continue  # the asset was removed by hand; nothing to re-check against
-            if rule == "ai_workload_overprivileged" and not read.get("ciem"):
+            if rule in ("ai_workload_overprivileged", "privileged_ai_tool") and not read.get("ciem"):
+                continue
+            if rule == GOVERNANCE_RULE:
+                to_resolve.append(fid)
+                continue
+            if rule == "vulnerable_ai_dependency" and _repo_of(key) not in read.get("dependabot_repos", set()):
                 continue
             if _source_read(key, from_github, read, rule, code_dependent=bool(code_dep) and rule != "ai_key_in_lambda_env"):
                 to_resolve.append(fid)
@@ -337,20 +372,28 @@ def run(conn, account_id, session, trigger="schedule", region=None):
         approved, include, inactive_days = (srow[0], srow[1], srow[2]) if srow else ([], [], 30)
         cur.execute("SELECT org_name, github_token_secret FROM github_integrations WHERE cloud_account_id = %s", (account_id,))
         gh = cur.fetchone()
-        cur.execute("""SELECT i.arn, i.risk_score, i.risk_severity, i.admin, i.data->'risk_reasons' FROM ciem_identities i
+        cur.execute("""SELECT i.arn, i.risk_score, i.risk_severity, i.admin, i.data->'risk_reasons', i.data->'capabilities' FROM ciem_identities i
                        WHERE i.scan_id = (SELECT id FROM ciem_scans WHERE cloud_account_id = %s AND status IN ('succeeded', 'partial')
                                           ORDER BY started_at DESC LIMIT 1) AND i.kind = 'role'""", (account_id,))
-        ciem = {arn: {"risk_score": sc, "risk_severity": sv, "admin": adm, "risk_reasons": [r.get("reason") for r in (rr or [])]}
-                for arn, sc, sv, adm, rr in cur.fetchall()}
+        ciem = {arn: {"risk_score": sc, "risk_severity": sv, "admin": adm, "risk_reasons": [r.get("reason") for r in (rr or [])],
+                      "capabilities": [{"id": c.get("id"), "label": c.get("label"), "result": c.get("result")} for c in (caps or [])]}
+                for arn, sc, sv, adm, rr, caps in cur.fetchall()}
     conn.commit()
     coverage, limitations = {}, []
     read = {"aws_parts": set(), "repos": set(), "github_complete": False, "ciem": bool(ciem)}
     try:
         aws_account = session.client("sts").get_caller_identity()["Account"]
-        aws = collect_aws(session, aws_account, region)
-        coverage["aws"] = aws["coverage"]
-        limitations += aws["limitations"]
-        read["aws_parts"] = {k for k, v in aws["coverage"].items() if v.get("ok")}
+        aws_list, regions, region_limits = collect_aws_regions(session, aws_account, region)
+        coverage["aws"] = {a["region"]: a["coverage"] for a in aws_list}
+        limitations += region_limits
+        for a in aws_list:
+            limitations += a["limitations"]
+        # per region which collector parts were read; region-less assets need the part in every region
+        read["aws_parts_by_region"] = {a["region"]: {k for k, v in a["coverage"].items() if v.get("ok")} for a in aws_list}
+        read["aws_parts"] = set.intersection(*read["aws_parts_by_region"].values()) if aws_list else set()
+        if region_limits:
+            read["aws_parts"] = set()    # the region list is unknown: region-less assets may live elsewhere
+        summary_regions = regions
         repos = []
         if gh:
             try:
@@ -359,6 +402,7 @@ def run(conn, account_id, session, trigger="schedule", region=None):
                 coverage["github"] = g["coverage"]
                 limitations += g["limitations"]
                 read["repos"] = {n for n, v in g["coverage"].items() if v.get("ok") and not v.get("truncated")}
+                read["dependabot_repos"] = {r["full_name"] for r in repos if (r.get("dependabot") or {}).get("status") == "ok"}
                 read["github_complete"] = bool(g.get("complete"))
             except Exception as e:
                 coverage["github"] = {"error": type(e).__name__}
@@ -368,8 +412,9 @@ def run(conn, account_id, session, trigger="schedule", region=None):
                                "leaked keys) is not inventoried. Connect GitHub under Settings.")
         if not ciem:
             limitations.append("No CIEM scan yet: the permissions of AI workload identities are not assessed.")
-        read["lambda_env_unreadable"] = set(aws.get("lambda_env_unreadable") or [])
-        assets, rels, findings, summary = E.build(aws_account, aws, repos, ciem, {"approved_providers": approved})
+        read["lambda_env_unreadable"] = {arn for a in aws_list for arn in a.get("lambda_env_unreadable") or []}
+        assets, rels, findings, summary = E.build(aws_account, aws_list, repos, ciem, {"approved_providers": approved})
+        summary["regions"] = summary_regions
         unparsed = {e.get("repo") for e in summary.get("files_not_parsed") or []}
         if unparsed:
             # a configuration file that could not be parsed was not read: its repository is not read in full
@@ -378,6 +423,12 @@ def run(conn, account_id, session, trigger="schedule", region=None):
             limitations.append(f"{len(summary['files_not_parsed'])} configuration file(s) could not be parsed; "
                                "what they declare is kept from earlier runs until they can be read.")
         new_assets, new_high, resolved = store(conn, account_id, scan_id, assets, rels, findings, read, inactive_days)
+        with conn.cursor() as cur:   # governance findings are added in store(): count them in this run's totals too
+            cur.execute("""SELECT severity, count(*) FROM ai_inventory_findings WHERE cloud_account_id = %s AND rule = %s
+                           AND status IN ('open', 'in_progress') GROUP BY 1""", (account_id, GOVERNANCE_RULE))
+            for sev, n in cur.fetchall():
+                summary["findings_by_severity"][sev] = summary["findings_by_severity"].get(sev, 0) + n
+        conn.commit()
         complete = set(AWS_PARTS) <= read["aws_parts"] and (not gh or read["github_complete"])
         summary.update({"new_assets": len(new_assets), "resolved_this_scan": resolved,
                         "sources_read": {"aws_parts": sorted(read["aws_parts"]), "repositories": sorted(read["repos"]),

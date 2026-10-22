@@ -358,3 +358,88 @@ def test_jsonc_mcp_config_is_read_and_broken_config_is_reported():
     assert any(a["asset_type"] == "mcp_server" for a in assets) and not summary["files_not_parsed"]
     _, _, _, summary = E.build(ACCT, None, [repo({"mcp.json": '{"mcpServers": {'})], {})
     assert summary["files_not_parsed"] == [{"repo": "acme/app", "path": "mcp.json", "error": "JSONDecodeError"}]
+
+
+# ── completeness: regions, guardrail health, tools, delegation, Dependabot ───
+
+def test_several_regions_are_inventoried_side_by_side():
+    eu = aws(bedrock_usage={"amazon.titan-embed-text-v2:0": 3})
+    us = aws(bedrock_usage={"anthropic.claude-3-5-sonnet-20240620-v1:0": 7})
+    us["region"] = "us-east-1"
+    assets, _, findings, _ = E.build(ACCT, [eu, us], [], {})
+    keys = by_key(assets)
+    assert "model:amazon.titan-embed-text-v2:0" in keys and "model:anthropic.claude-3-5-sonnet-20240620-v1:0" in keys
+    logging = [f for f in findings if f["rule"] == "bedrock_invocation_logging_off"]
+    assert len(logging) == 2 and len({f["fingerprint"] for f in logging}) == 2     # one per region
+
+
+def test_guardrail_health_follows_its_status():
+    g_ok = {"arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:guardrail/a", "name": "ok", "status": "READY"}
+    g_bad = {"arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:guardrail/b", "name": "bad", "status": "FAILED"}
+    g_unk = {"arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:guardrail/c", "name": "unk"}
+    a = by_key(E.build(ACCT, aws(guardrails=[g_ok, g_bad, g_unk]), [], {})[0])
+    assert [a[f"aws:{g['arn']}"]["metadata"]["guardrail_state"] for g in (g_ok, g_bad, g_unk)] == ["configured", "degraded", "unknown"]
+
+
+def test_tool_side_effects_come_from_the_executor_role_not_the_name():
+    fn_arn = f"arn:aws:lambda:eu-west-1:{ACCT}:function:refunds"
+    fn = {"arn": fn_arn, "name": "refunds", "handler": "x.handler", "role_arn": ROLE, "ai_env_names": [], "ai_env_plaintext_secrets": []}
+    agent = {"arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:agent/AG9", "name": "support", "role_arn": None, "guardrail": {"id": "g", "arn": None},
+             "knowledge_bases": [], "action_groups": [{"id": "AG", "name": "lookup_order", "executor": fn_arn + ":$LATEST", "state": "ENABLED"}]}
+    ciem = {ROLE: {"risk_score": 50, "admin": None, "capabilities": [{"id": "destructive", "label": "Delete infrastructure or data", "result": "allowed"},
+                                                                     {"id": "data_read", "label": "Read stored data (S3, DynamoDB)", "result": "scoped"},
+                                                                     {"id": "iam_write", "label": "Change IAM identities or permissions", "result": "denied"}]}}
+    assets, rels, findings, _ = E.build(ACCT, aws(agents=[agent], functions=[fn]), [], ciem)
+    tool = next(a for a in assets if a["asset_type"] == "tool")
+    assert tool["metadata"]["side_effect"].startswith("can change or delete resources: Delete infrastructure")
+    assert (tool["asset_key"], f"aws:{fn_arn}") in rels_of(rels, "EXECUTED_BY")
+    f = next(x for x in findings if x["rule"] == "privileged_ai_tool")
+    assert "lookup_order" in f["title"] and f["details"]["capabilities"] == ["Delete infrastructure or data"]
+    assets, _, findings, _ = E.build(ACCT, aws(agents=[agent], functions=[fn]), [], {})
+    assert next(a for a in assets if a["asset_type"] == "tool")["metadata"]["side_effect"].startswith("unknown")
+    assert not [x for x in findings if x["rule"] == "privileged_ai_tool"]
+
+
+def test_supervisor_agents_delegate_to_collaborators():
+    sup = {"arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:agent/SUP", "name": "router", "role_arn": None, "guardrail": {"id": "g"}, "knowledge_bases": [],
+           "action_groups": [], "collaboration": "SUPERVISOR",
+           "collaborators": [{"name": "billing", "alias_arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:agent-alias/BIL/TSTALIAS", "relay_history": "TO_COLLABORATOR"}]}
+    bil = {"arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:agent/BIL", "name": "billing", "role_arn": None, "guardrail": {"id": "g"}, "knowledge_bases": [], "action_groups": []}
+    assets, rels, _, _ = E.build(ACCT, aws(agents=[sup, bil]), [], {})
+    assert (f"aws:{sup['arn']}", f"aws:{bil['arn']}") in rels_of(rels, "DELEGATES_TO")
+    assert len([a for a in assets if a["asset_type"] == "agent"]) == 2          # distinct identities, not merged
+
+
+def test_dependabot_alerts_on_ai_packages_become_findings_with_impact():
+    r = repo({"requirements.txt": "langchain==0.0.200\nflask\n"})
+    r["dependabot"] = {"status": "ok", "alerts": [
+        {"package": "langchain", "ecosystem": "pip", "manifest": "requirements.txt", "ghsa": "GHSA-xxxx", "cve": "CVE-2023-1", "summary": "RCE",
+         "severity": "critical", "fixed_in": "0.0.236", "url": "https://github.com/x"},
+        {"package": "flask", "ecosystem": "pip", "manifest": "requirements.txt", "ghsa": "GHSA-yyyy", "cve": None, "summary": "x",
+         "severity": "high", "fixed_in": "2.3.2", "url": "https://github.com/y"}]}
+    _, _, findings, _ = E.build(ACCT, None, [r], {})
+    vul = [f for f in findings if f["rule"] == "vulnerable_ai_dependency"]
+    assert len(vul) == 1 and vul[0]["severity"] == "critical" and vul[0]["recommendation"]["proposed"] == "Upgrade to 0.0.236 or later"
+    assert vul[0]["asset_key"] == "github:acme/app"
+
+
+def test_tool_risk_uses_the_role_of_the_invoked_alias_not_latest():
+    fn_arn = f"arn:aws:lambda:eu-west-1:{ACCT}:function:refunds"
+    admin_role = f"arn:aws:iam::{ACCT}:role/old-admin"
+    fn = {"arn": fn_arn, "name": "refunds", "handler": "x.handler", "role_arn": ROLE, "ai_env_names": [], "ai_env_plaintext_secrets": []}
+    agent = {"arn": f"arn:aws:bedrock:eu-west-1:{ACCT}:agent/AGX", "name": "support", "role_arn": None, "guardrail": {"id": "g"}, "knowledge_bases": [],
+             "action_groups": [{"id": "AG", "name": "refund", "executor": fn_arn + ":prod", "executor_role": admin_role, "state": "ENABLED"}]}
+    ciem = {ROLE: {"admin": None, "capabilities": []}, admin_role: {"admin": "admin", "capabilities": []}}
+    _, _, findings, _ = E.build(ACCT, aws(agents=[agent], functions=[fn]), [], ciem)
+    f = next(x for x in findings if x["rule"] == "privileged_ai_tool")
+    assert f["details"]["role_arn"] == admin_role
+
+
+def test_unknown_operation_means_not_offered_but_other_errors_stay_errors():
+    from botocore.exceptions import ClientError
+    from collectors.aws.scanner.ai_inventory_collector import _unknown_operation
+    err = lambda code, msg: ClientError({"Error": {"Code": code, "Message": msg}}, "ListCustomModels")
+    assert _unknown_operation(err("ValidationException", "Unknown operation"))
+    assert _unknown_operation(err("UnknownOperationException", "Unknown Operation"))
+    assert not _unknown_operation(err("AccessDeniedException", "not authorized"))
+    assert not _unknown_operation(err("ValidationException", "bad parameter"))

@@ -602,3 +602,52 @@ def test_scp_block_is_reported_even_when_the_boundary_also_blocks():
 def test_list_multipart_upload_parts_is_an_object_action():
     s = st(stmt("Allow", "s3:ListMultipartUploadParts", "arn:aws:s3:::bucket/*"))
     assert E.evaluate(s, "s3:ListMultipartUploadParts", "arn:aws:s3:::bucket/key")["result"] == "allowed"
+
+
+# ── organisation policies ──────────────────────────────────────────────────
+
+POL = {"id": "no-iam", "name": "No IAM changes", "severity": "high", "applies_to": "all", "forbidden_actions": ["iam:CreateUser"], "except_names": ["platform-*"]}
+
+
+def _org_ident(name, doc, guards=None, cls="human"):
+    return {"arn": f"arn:aws:iam::{ACCT}:user/{name}", "name": name, "kind": "user", "classification": cls, "_statements": st(doc), "_guards": guards}
+
+
+@pytest.mark.parametrize("bad,reason", [({"id": "X Y"}, "Policy id"), ({"forbidden_actions": ["CreateUser"]}, "forbidden_actions"),
+                                         ({"severity": "urgent"}, "Severity"), ({"applies_to": "robots"}, "applies_to")])
+def test_organisation_policy_validation(bad, reason):
+    with pytest.raises(ValueError, match=reason):
+        E.validate_custom_policy({**POL, **bad})
+
+
+def test_organisation_policy_uses_the_full_policy_engine():
+    pol = E.validate_custom_policy(POL)
+    boundary = [("boundary", st({"Version": "2012-10-17", "Statement": [{"Effect": "Deny", "Action": "iam:*", "Resource": "*"}]}, "pb"))]
+    ids = [_org_ident("alice", ADMIN_DOC), _org_ident("bob", ADMIN_DOC, guards=boundary), _org_ident("platform-ci", ADMIN_DOC, cls="machine"),
+           _org_ident("carol", stmt("Allow", "s3:GetObject"))]
+    out = E.custom_policy_findings(ACCT, ids, [pol])
+    assert [f["identity_name"] for f in out] == ["alice"]                   # bob blocked by his boundary, platform-* excepted, carol not granted
+    f = out[0]
+    assert f["rule"] == "custom:no-iam" and f["category"] == "policy_violation" and f["details"]["granted"][0]["result"] == "allowed"
+
+
+def test_organisation_policy_scope_by_identity_type():
+    pol = E.validate_custom_policy({**POL, "applies_to": "machine", "except_names": []})
+    ids = [_org_ident("alice", ADMIN_DOC), _org_ident("robot", ADMIN_DOC, cls="machine")]
+    assert [f["identity_name"] for f in E.custom_policy_findings(ACCT, ids, [pol])] == ["robot"]
+
+
+def test_wildcard_policy_catches_a_concrete_grant_and_respects_denies():
+    pol = E.validate_custom_policy({**POL, "forbidden_actions": ["iam:*"], "except_names": []})
+    one = _org_ident("dev", stmt("Allow", "iam:CreateUser"))
+    denied = _org_ident("ops", {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "iam:*", "Resource": "*"},
+                                                                       {"Effect": "Deny", "Action": "iam:*", "Resource": "*"}]})
+    reader = _org_ident("ro", stmt("Allow", "s3:GetObject"))
+    out = {f["identity_name"]: f for f in E.custom_policy_findings(ACCT, [one, denied, reader], [pol])}
+    assert set(out) == {"dev"} and out["dev"]["details"]["granted"][0]["action"].lower() == "iam:createuser"
+
+
+def test_wildcard_policy_catches_an_overlapping_wildcard_grant():
+    pol = E.validate_custom_policy({**POL, "forbidden_actions": ["logs:*"], "except_names": []})
+    out = E.custom_policy_findings(ACCT, [_org_ident("app", stmt("Allow", "logs:Put*"))], [pol])
+    assert len(out) == 1 and out[0]["details"]["granted"][0]["pattern"] == "logs:*"

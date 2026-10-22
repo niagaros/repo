@@ -32,7 +32,13 @@ J = lambda o: Json(o, dumps=lambda x: json.dumps(x, default=str))
 RETRY = Config(retries={"max_attempts": 6, "mode": "adaptive"})
 MAX_PAGES_PER_EVENT = 10
 RESCAN_FUNCTIONS = {"ciem_finding": os.environ.get("CIEM_SCANNER_FUNCTION", "ciem-scanner"),
-                    "ai_inventory_finding": os.environ.get("AI_INVENTORY_SCANNER_FUNCTION", "ai-inventory-scanner")}
+                    "ai_inventory_finding": os.environ.get("AI_INVENTORY_SCANNER_FUNCTION", "ai-inventory-scanner"),
+                    # a scan scoped to this one account re-checks the CIS/FSBP findings
+                    "scanner_finding": os.environ.get("ORCHESTRATOR_FUNCTION", "cspm_orchestrator"),
+                    # the Attack Surface Agent re-reads the network configuration itself
+                    "attack_surface": os.environ.get("SECURITY_AGENTS_RUNNER_FUNCTION", "security-agents-scanner")}
+RESCAN_COOLDOWN_HOURS = 6     # the orchestrator also starts the agents: never more than one re-scan per source per 6 hours
+SLA_DAYS = {"critical": 7, "high": 30, "medium": 90, "low": 180, "info": 365}
 # Mapped-framework findings are duplicates of the native ones (see config/database.py); only native findings count.
 try:
     from config.database import MAPPED_FRAMEWORK_NAMES
@@ -142,11 +148,11 @@ def publish(cur, wf, run_id, items):
         row = cur.fetchone()
         if row is None:
             cur.execute("""INSERT INTO sa_work_items (cloud_account_id, fingerprint, agent_id, category, source_type, source_id, title, severity,
-                                                      confidence, priority, priority_reasons, basis, evidence, assets, recommendation, attack_path, validation)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                                                      confidence, priority, priority_reasons, basis, evidence, assets, recommendation, attack_path, validation, due_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_DATE + %s) RETURNING id""",
                         (wf.account, it["fingerprint"], it["agent_id"], it["category"], it["source_type"], it["source_id"], it["title"][:500],
                          it["severity"], it["confidence"], it["priority"], J(it["priority_reasons"]), it["basis"], J(it["evidence"]),
-                         J(it["assets"]), J(it["recommendation"]), J(it.get("attack_path")), J(it["validation"])))
+                         J(it["assets"]), J(it["recommendation"]), J(it.get("attack_path")), J(it["validation"]), SLA_DAYS.get(it["severity"], 90)))
             iid = cur.fetchone()[0]
             _event(cur, wf.account, iid, None, "new", it["agent_id"], "agent", "Published by the agent")
             wf.evidence(cur, run_id, iid, it["source_type"], it["source_id"], it["evidence"],
@@ -195,6 +201,18 @@ def red_inputs(cur, account):
     ai = [dict(zip(("id", "rule", "severity", "title", "details", "recommendation", "status", "asset_key", "asset_name"), r))
           for r in cur.fetchall()]
     return identities, ciem, scanner, ai
+
+
+def surface_state(cur, account, last_seen):
+    cur.execute("""SELECT started_at, completed_at FROM sa_runs WHERE cloud_account_id = %s AND agent_id = 'red-attack-surface'
+                   AND status = 'succeeded' ORDER BY started_at DESC LIMIT 1""", (account,))
+    r = cur.fetchone()
+    if not r:
+        return {"present": None, "status": "no complete attack-surface read yet", "checked_at": None}
+    started, completed = r
+    if last_seen and last_seen >= started:
+        return {"present": True, "status": "still reachable", "checked_at": completed}
+    return {"present": False, "status": "no longer reachable from the internet", "checked_at": completed}
 
 
 def source_state(cur, account, source_type, source_id):
@@ -250,6 +268,146 @@ def collect_cloudtrail(session, region, since):
     return events, coverage, calls, end
 
 
+def enabled_regions(session, home):
+    try:
+        regions = sorted(r["RegionName"] for r in session.client("ec2", region_name=home, config=RETRY).describe_regions(AllRegions=False)["Regions"])
+        return (regions, None) if regions else ([home], f"No enabled regions were returned; only {home} was read.")
+    except Exception as e:  # noqa: BLE001
+        return [home], f"The enabled regions could not be listed ({type(e).__name__}); only {home} was read."
+
+
+def _code(e):
+    return getattr(e, "response", {}).get("Error", {}).get("Code") or type(e).__name__
+
+
+def collect_surface(session, regions):
+    """Read-only network exposure per region: security groups, instances (with their role), RDS, Lambda function URLs."""
+    from concurrent.futures import ThreadPoolExecutor
+    iam = session.client("iam", config=RETRY)
+    profiles = {}
+
+    def role_of(profile_arn):
+        if not profile_arn:
+            return None
+        if profile_arn not in profiles:
+            try:
+                roles = iam.get_instance_profile(InstanceProfileName=profile_arn.split("/")[-1])["InstanceProfile"]["Roles"]
+                profiles[profile_arn] = roles[0]["Arn"] if roles else None
+            except Exception:  # noqa: BLE001
+                profiles[profile_arn] = None
+        return profiles[profile_arn]
+
+    def one(region):
+        out, cov = {"security_groups": {}, "instances": [], "databases": [], "function_urls": []}, {}
+        ec2 = session.client("ec2", region_name=region, config=RETRY)
+        try:
+            for page in ec2.get_paginator("describe_security_groups").paginate():
+                for g in page["SecurityGroups"]:
+                    out["security_groups"][g["GroupId"]] = {"name": g.get("GroupName"), "rules": g.get("IpPermissions", [])}
+            for page in ec2.get_paginator("describe_instances").paginate():
+                for res in page["Reservations"]:
+                    for i in res["Instances"]:
+                        ipv6 = [a["Ipv6Address"] for n in i.get("NetworkInterfaces", []) for a in n.get("Ipv6Addresses", []) if a.get("Ipv6Address")]
+                        out["instances"].append({"id": i["InstanceId"], "state": (i.get("State") or {}).get("Name"), "public_ip": i.get("PublicIpAddress"),
+                                                 "ipv6": ipv6,
+                                                 "security_groups": [g["GroupId"] for g in i.get("SecurityGroups", [])],
+                                                 "role_arn": role_of((i.get("IamInstanceProfile") or {}).get("Arn")),
+                                                 "name": next((t["Value"] for t in i.get("Tags", []) if t["Key"] == "Name"), None)})
+            cov["ec2"] = {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            cov["ec2"] = {"ok": False, "error": _code(e)}
+        try:
+            rds = session.client("rds", region_name=region, config=RETRY)
+            for page in rds.get_paginator("describe_db_instances").paginate():
+                for d in page["DBInstances"]:
+                    out["databases"].append({"id": d["DBInstanceIdentifier"], "arn": d.get("DBInstanceArn"), "public": d.get("PubliclyAccessible"),
+                                             "engine": d.get("Engine"), "port": (d.get("Endpoint") or {}).get("Port"),
+                                             "encrypted": d.get("StorageEncrypted"),
+                                             "security_groups": [g["VpcSecurityGroupId"] for g in d.get("VpcSecurityGroups", [])]})
+            cov["rds"] = {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            cov["rds"] = {"ok": False, "error": _code(e)}
+        try:
+            lam = session.client("lambda", region_name=region, config=RETRY)
+            for page in lam.get_paginator("list_functions").paginate():
+                for f in page["Functions"]:
+                    marker = None
+                    while True:
+                        r = lam.list_function_url_configs(FunctionName=f["FunctionName"], **({"Marker": marker} if marker else {}))
+                        for u in r.get("FunctionUrlConfigs", []):
+                            out["function_urls"].append({"function": f["FunctionName"], "arn": f["FunctionArn"], "url": u.get("FunctionUrl"),
+                                                         "auth_type": u.get("AuthType"), "role_arn": f.get("Role")})
+                        marker = r.get("NextMarker")
+                        if not marker:
+                            break
+            cov["lambda_urls"] = {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            cov["lambda_urls"] = {"ok": False, "error": _code(e)}
+        return region, out, cov
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(one, regions))
+    return {r: o for r, o, _ in results}, {r: c for r, _, c in results}
+
+
+def collect_native(session, regions, max_per_region=500):
+    """Active GuardDuty and Security Hub findings per region. Not enabled = coverage gap, reported as such."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(region):
+        gd, sh, cov = [], [], {}
+        try:
+            g = session.client("guardduty", region_name=region, config=RETRY)
+            dets = g.list_detectors().get("DetectorIds", [])
+            if not dets:
+                cov["guardduty"] = {"ok": True, "enabled": False}
+            else:
+                ids, tok = [], None
+                while len(ids) < max_per_region:
+                    r = g.list_findings(DetectorId=dets[0], FindingCriteria={"Criterion": {"service.archived": {"Eq": ["false"]}}},
+                                        MaxResults=50, **({"NextToken": tok} if tok else {}))
+                    ids += r.get("FindingIds", [])
+                    tok = r.get("NextToken")
+                    if not tok:
+                        break
+                for i in range(0, len(ids), 50):
+                    gd += g.get_findings(DetectorId=dets[0], FindingIds=ids[i:i + 50]).get("Findings", [])
+                cov["guardduty"] = {"ok": True, "enabled": True, "findings": len(gd), "truncated": bool(tok)}
+        except Exception as e:  # noqa: BLE001
+            cov["guardduty"] = {"ok": False, "error": _code(e)}
+        try:
+            h = session.client("securityhub", region_name=region, config=RETRY)
+            tok = None
+            while len(sh) < max_per_region:
+                r = h.get_findings(Filters={"RecordState": [{"Value": "ACTIVE", "Comparison": "EQUALS"}],
+                                            "WorkflowStatus": [{"Value": "NEW", "Comparison": "EQUALS"}, {"Value": "NOTIFIED", "Comparison": "EQUALS"}]},
+                                   MaxResults=100, **({"NextToken": tok} if tok else {}))
+                sh += r.get("Findings", [])
+                tok = r.get("NextToken")
+                if not tok:
+                    break
+            cov["securityhub"] = {"ok": True, "enabled": True, "findings": len(sh), "truncated": bool(tok)}
+        except Exception as e:  # noqa: BLE001
+            code = _code(e)
+            cov["securityhub"] = {"ok": True, "enabled": False} if code == "InvalidAccessException" else {"ok": False, "error": code}
+        return gd, sh, region, cov
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(one, regions))
+    return [f for gd, _, _, _ in results for f in gd], [f for _, sh, _, _ in results for f in sh], {r: c for _, _, r, c in results}
+
+
+def collect_cloudtrail_regions(session, regions, since):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda r: (r, collect_cloudtrail(session, r, since)), regions))
+    events_by_region = {r: res[0] for r, res in results}
+    cov = {r: res[1] for r, res in results}
+    calls = sum(res[2] for _, res in results)
+    end = min(res[3] for _, res in results) if results else datetime.now(timezone.utc)
+    return events_by_region, cov, calls, end
+
+
 # ── the workflow ───────────────────────────────────────────────────────────
 
 def run(conn, account_id, session, trigger="schedule", region=None, initiated_by=None, only=None):
@@ -267,9 +425,22 @@ def run(conn, account_id, session, trigger="schedule", region=None, initiated_by
     # ── Red ──
     with conn.cursor() as cur:
         identities, ciem, scanner, ai = red_inputs(cur, account_id)
+        surface_cov, surface_regions_note = {}, None
+
+        def attack_surface():
+            nonlocal surface_cov, surface_regions_note
+            regions, surface_regions_note = enabled_regions(session, region)
+            surface, surface_cov = collect_surface(session, regions)
+            cur.execute("""SELECT arn, admin, data->'capabilities' FROM ciem_identities WHERE scan_id = (
+                               SELECT id FROM ciem_scans WHERE cloud_account_id = %s AND status IN ('succeeded', 'partial') ORDER BY started_at DESC LIMIT 1)""",
+                        (account_id,))
+            roles = {a: {"admin": adm, "capabilities": [{"id": c.get("id"), "label": c.get("label"), "result": c.get("result")} for c in caps or []]}
+                     for a, adm, caps in cur.fetchall()}
+            return E.red_attack_surface(surface, roles)
         inputs = {"red-identity-attack-path": lambda: E.red_identity(identities, ciem),
                   "red-vulnerability-assessment": lambda: E.red_vulnerabilities(scanner),
-                  "red-ai-security": lambda: E.red_ai(ai)}
+                  "red-ai-security": lambda: E.red_ai(ai),
+                  "red-attack-surface": attack_surface}
         for agent_id, produce in inputs.items():
             if agent_id not in active:
                 continue
@@ -291,11 +462,23 @@ def run(conn, account_id, session, trigger="schedule", region=None, initiated_by
                 lim.append("Scanner findings were not read (configuration missing).")
             if agent_id == "red-identity-attack-path" and not identities:
                 lim.append("No CIEM scan yet: entitlement-based attack paths are not analysed.")
+            surface_gaps = sorted(f"{r}:{p}" for r, c in surface_cov.items() for p, v in c.items() if not v.get("ok")) \
+                if agent_id == "red-attack-surface" else []
+            if agent_id == "red-attack-surface":
+                lim.append(f"Read EC2, security groups, RDS and Lambda function URLs in {len(surface_cov)} region(s). Load balancers, "
+                           "API Gateway, CloudFront and EKS are not analysed yet.")
+                if surface_regions_note:
+                    lim.append(surface_regions_note)
+                if surface_gaps:
+                    lim.append(f"Not readable: {', '.join(surface_gaps)}. Exposure there is unknown.")
             lim.append("Analysis only: potential weaknesses from configuration. Nothing was exploited or actively tested.")
             if new and any(i["severity"] in ("critical", "high") for i in new):
                 wf.notifications.append(("red", agent_id, [i for i in new if i["severity"] in ("critical", "high")]))
-            wf.finish(cur, run_id, t0, "succeeded" if pub["decision"] == "allow" else "blocked",
+            status = "blocked" if pub["decision"] != "allow" else (
+                "partial" if agent_id == "red-attack-surface" and (surface_gaps or surface_regions_note) else "succeeded")
+            wf.finish(cur, run_id, t0, status,
                       {"items": len(items), "new": len(new), "reopened": len(reopened), "by_severity": _count(items, "severity")},
+                      coverage=surface_cov if agent_id == "red-attack-surface" else None,
                       limitations=lim, usage={"items_analysed": len(items)})
             summary["runs"][agent_id] = {"items": len(items), "new": len(new)}
     conn.commit()
@@ -323,20 +506,26 @@ def run(conn, account_id, session, trigger="schedule", region=None, initiated_by
                     last_end = cur.fetchone()[0]
                     since_by[agent_id] = max(floor, last_end - timedelta(minutes=15)) if last_end else floor
                 since = min(since_by.values())
+                regions, regions_note = enabled_regions(session, region)
                 try:
-                    events, cov, calls, end = collect_cloudtrail(session, region, since)
+                    events_by_region, cov_by_region, calls, end = collect_cloudtrail_regions(session, regions, since)
                     err = None
                 except Exception as e:  # noqa: BLE001
-                    events, cov, calls, end, err = [], {}, 0, None, type(e).__name__
-                found = E.detect(events, region)
-                gaps = [n for n, c in cov.items() if not c.get("ok")]
-                trunc = [n for n, c in cov.items() if c.get("truncated")]
+                    events_by_region, cov_by_region, calls, end, err = {}, {}, 0, None, type(e).__name__
+                found = [d for r, evs in events_by_region.items() for d in E.detect(evs, r)]
+                events = [e for evs in events_by_region.values() for e in evs]
+                # an event type counts as a gap when it was unreadable in any region
+                gaps = sorted({n for c in cov_by_region.values() for n, v in c.items() if not v.get("ok")})
+                trunc = sorted({n for c in cov_by_region.values() for n, v in c.items() if v.get("truncated")})
+                cov = {n: {"ok": n not in gaps, "truncated": n in trunc} for n in E.DETECTION_EVENTS}
                 for agent_id, run_id, t0 in allowed:
                     my_since = since_by[agent_id]
                     mine = [d for d in found if d["agent_id"] == agent_id and E._as_dt(d["last_event_at"]) >= my_since]
                     needed = {n for d in E.DETECTIONS if d["agent"] == agent_id for n in d["events"]}
                     my_gaps = sorted(needed & set(gaps))
-                    lim = [f"CloudTrail management events in {region} only, from {my_since.isoformat()} (LookupEvents keeps 90 days)."]
+                    lim = [f"CloudTrail management events in {len(regions)} region(s), from {my_since.isoformat()} (LookupEvents keeps 90 days)."]
+                    if regions_note:
+                        lim.append(regions_note)
                     if err:
                         lim.append("CloudTrail could not be read: no conclusion about threats is possible for this period.")
                     if my_gaps:
@@ -347,7 +536,7 @@ def run(conn, account_id, session, trigger="schedule", region=None, initiated_by
                     stored = store_detections(cur, wf, run_id, mine) if publish_ok else []
                     detections += stored
                     my_trunc = bool(needed & set(trunc))
-                    status = "failed" if err else ("partial" if my_gaps or my_trunc or not publish_ok else "succeeded")
+                    status = "failed" if err else ("partial" if my_gaps or my_trunc or regions_note or not publish_ok else "succeeded")
                     wf.finish(cur, run_id, t0, status, {"detections": len(mine), "new": len([d for d in stored if d["_new"]]),
                                                         "events_read": len(events)},
                               coverage={"window_start": my_since.isoformat(),
@@ -355,6 +544,43 @@ def run(conn, account_id, session, trigger="schedule", region=None, initiated_by
                                         "event_names": {n: cov.get(n) for n in sorted(needed)}},
                               limitations=lim, usage={"api_calls": calls, "events": len(events)})
                     summary["runs"][agent_id] = {"detections": len(mine), "status": status}
+        conn.commit()
+    # ── AWS-native detections (GuardDuty, Security Hub) ──
+    if "blue-aws-detections" in active:
+        with conn.cursor() as cur:
+            agent_id = "blue-aws-detections"
+            run_id, t0 = wf.start(cur, agent_id)
+            if all(wf.check(cur, run_id, agent_id, a)["decision"] == "allow" for a in ("read_telemetry", "analyze")):
+                regions, regions_note = enabled_regions(session, region)
+                gd, sh, ncov = collect_native(session, regions)
+                found = E.blue_aws_native(gd, sh)
+                publish_ok = wf.check(cur, run_id, agent_id, "publish_work_item")["decision"] == "allow"
+                stored = store_detections(cur, wf, run_id, found) if publish_ok else []
+                detections += stored
+                off_gd = sorted(r for r, c in ncov.items() if c.get("guardduty", {}).get("enabled") is False)
+                off_sh = sorted(r for r, c in ncov.items() if c.get("securityhub", {}).get("enabled") is False)
+                errs = sorted(f"{r}:{s}" for r, c in ncov.items() for s, v in c.items() if not v.get("ok"))
+                truncated = sorted(f"{r}:{s}" for r, c in ncov.items() for s, v in c.items() if v.get("truncated"))
+                lim = []
+                if truncated:
+                    lim.append(f"More than 500 active findings in {', '.join(truncated)}; the first 500 were imported.")
+                if off_gd:
+                    lim.append(f"Amazon GuardDuty is not enabled in {len(off_gd)} of {len(regions)} region(s) ({', '.join(off_gd[:6])}"
+                               f"{'…' if len(off_gd) > 6 else ''}): threats there are not detected by GuardDuty. Enabling it is recommended.")
+                if off_sh:
+                    lim.append(f"AWS Security Hub is not enabled in {len(off_sh)} region(s).")
+                if errs:
+                    lim.append(f"Not readable: {', '.join(errs[:10])}.")
+                if regions_note:
+                    lim.append(regions_note)
+                status = "partial" if errs or truncated or regions_note or not publish_ok else "succeeded"
+                wf.finish(cur, run_id, t0, status, {"detections": len(found), "new": len([d for d in stored if d.get("_new")]),
+                                                    "guardduty_regions": len(regions) - len(off_gd), "securityhub_regions": len(regions) - len(off_sh)},
+                          coverage={"regions": ncov}, limitations=lim)
+                summary["runs"][agent_id] = {"detections": len(found), "status": status}
+            else:
+                wf.finish(cur, run_id, t0, "blocked")
+                summary["runs"][agent_id] = "blocked"
         conn.commit()
     # ── Incident triage ──
     if "blue-incident-triage" in active:
@@ -407,11 +633,16 @@ def _count(items, key):
 def store_detections(cur, wf, run_id, found):
     stored = []
     for d in found:
+        cur.execute("SELECT severity FROM sa_detections WHERE cloud_account_id = %s AND fingerprint = %s", (wf.account, d["fingerprint"]))
+        prev = cur.fetchone()
+        previous = prev[0] if prev else None
         cur.execute("""INSERT INTO sa_detections (cloud_account_id, fingerprint, run_id, rule, agent_id, severity, title, mitre, principal, resources,
                                                   source_ip, region, first_event_at, last_event_at, event_count, event_ids, event_names, why, respond)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (cloud_account_id, fingerprint) DO UPDATE SET last_event_at = GREATEST(sa_detections.last_event_at, EXCLUDED.last_event_at),
-                           event_count = GREATEST(sa_detections.event_count, EXCLUDED.event_count), event_ids = EXCLUDED.event_ids
+                           event_count = GREATEST(sa_detections.event_count, EXCLUDED.event_count), event_ids = EXCLUDED.event_ids,
+                           severity = EXCLUDED.severity, title = EXCLUDED.title, why = EXCLUDED.why, respond = EXCLUDED.respond,
+                           resources = EXCLUDED.resources
                        RETURNING id, (xmax = 0)""",
                     (wf.account, d["fingerprint"], run_id, d["rule"], d["agent_id"], d["severity"], d["title"], d["mitre"], d["principal"],
                      J(d["resources"]), d["source_ip"], d["region"], d["first_event_at"], d["last_event_at"], d["event_count"],
@@ -419,22 +650,24 @@ def store_detections(cur, wf, run_id, found):
         did, is_new = cur.fetchone()
         d["_id"], d["_new"] = did, is_new
         if is_new:
-            wf.evidence(cur, run_id, None, "cloudtrail_events", f"CloudTrail {d['region']}: {', '.join(d['event_ids'][:5])}",
+            wf.evidence(cur, run_id, None, "cloudtrail_events" if not d["rule"].startswith(("guardduty:", "securityhub:")) else "aws_finding",
+                        f"{d['basis']} {d['region']}: {', '.join(str(x) for x in d['event_ids'][:5])}",
                         {"rule": d["rule"], "event_ids": d["event_ids"], "principal": d["principal"]}, "observed")
-            if d["severity"] in ("critical", "high", "medium"):
-                score, why = E.priority(d["severity"], "high", None, None, True)
-                item = {"fingerprint": E.fingerprint("detection", d["fingerprint"]), "agent_id": d["agent_id"], "category": "blue",
-                        "source_type": "detection", "source_id": str(did), "title": f"{d['title']} ({d['principal'].split('/')[-1]})",
-                        "severity": d["severity"], "confidence": "high", "basis": d["basis"],
-                        "evidence": {"rule": d["rule"], "mitre": d["mitre"], "event_ids": d["event_ids"], "first_event_at": d["first_event_at"],
-                                     "event_count": d["event_count"], "source_ip": d["source_ip"]},
-                        "assets": [{"type": "aws_identity", "ref": d["principal"]}] + [{"type": "aws_resource", "ref": r} for r in d["resources"][:5]],
-                        "recommendation": {"current": d["why"], "proposed": d["respond"],
-                                           "reason": "Observed in CloudTrail; whether it was malicious is for you to confirm.",
-                                           "rollback": "Not applicable (investigation)."},
-                        "priority": score, "priority_reasons": why,
-                        "validation": {"status": "observed", "note": "The events happened (CloudTrail). Intent is not established."}}
-                publish(cur, wf, run_id, [item])
+        raised = previous is not None and E.SEV_POINTS.get(d["severity"], 0) > E.SEV_POINTS.get(previous, 0)
+        if d["severity"] in ("critical", "high", "medium") and (is_new or raised):   # new, or raised to an actionable level
+            score, why = E.priority(d["severity"], "high", None, None, True)
+            item = {"fingerprint": E.fingerprint("detection", d["fingerprint"]), "agent_id": d["agent_id"], "category": "blue",
+                    "source_type": "detection", "source_id": str(did), "title": f"{d['title']} ({d['principal'].split('/')[-1]})",
+                    "severity": d["severity"], "confidence": "high", "basis": d["basis"],
+                    "evidence": {"rule": d["rule"], "mitre": d["mitre"], "event_ids": d["event_ids"], "first_event_at": d["first_event_at"],
+                                 "event_count": d["event_count"], "source_ip": d["source_ip"]},
+                    "assets": [{"type": "aws_identity", "ref": d["principal"]}] + [{"type": "aws_resource", "ref": r} for r in d["resources"][:5]],
+                    "recommendation": {"current": d["why"], "proposed": d["respond"],
+                                       "reason": f"Observed ({d['basis']}); whether it was malicious is for you to confirm.",
+                                       "rollback": "Not applicable (investigation)."},
+                    "priority": score, "priority_reasons": why,
+                    "validation": {"status": "observed", "note": "The events happened (CloudTrail). Intent is not established."}}
+            publish(cur, wf, run_id, [item])
         stored.append(d)
     return stored
 
@@ -480,13 +713,13 @@ def verification(cur, wf, session):
     if any(wf.check(cur, run_id, agent_id, a)["decision"] != "allow" for a in ("read_inventory", "verify")):
         wf.finish(cur, run_id, t0, "blocked")
         return "blocked"
-    cur.execute("""SELECT id, state, source_type, source_id, remediated_at, title FROM sa_work_items
+    cur.execute("""SELECT id, state, source_type, source_id, remediated_at, title, last_seen FROM sa_work_items
                    WHERE cloud_account_id = %s AND state = ANY(%s) AND source_type <> 'detection' FOR UPDATE""",
                 (wf.account, list(E.OPEN_STATES)))
     counts = {"passed": 0, "failed": 0, "pending": 0, "rescans_requested": 0}
     rescan = set()
-    for iid, state, st, sid, rem_at, title in cur.fetchall():
-        src = source_state(cur, wf.account, st, sid)
+    for iid, state, st, sid, rem_at, title, last_seen in cur.fetchall():
+        src = surface_state(cur, wf.account, last_seen) if st == "attack_surface" else source_state(cur, wf.account, st, sid)
         v = E.verify({}, src, rem_at)
         counts[v["result"]] += 1
         record = {**v, "source_status": src["status"], "checked_at": src["checked_at"], "verified_by": agent_id,
@@ -508,11 +741,16 @@ def verification(cur, wf, session):
                 rescan.add(st)
     for st in sorted(rescan):
         fn = RESCAN_FUNCTIONS[st]
+        cur.execute("""SELECT 1 FROM sa_actions WHERE cloud_account_id = %s AND action = 'request_rescan' AND target = %s
+                       AND execution_status = 'succeeded' AND created_at > NOW() - make_interval(hours => %s)""",
+                    (wf.account, fn, RESCAN_COOLDOWN_HOURS))
+        if cur.fetchone():
+            continue
         d = wf.check(cur, run_id, agent_id, "request_rescan", target=fn)
         if d["decision"] == "allow":
             try:
                 boto3.client("lambda", region_name=REGION).invoke(FunctionName=fn, InvocationType="Event", Payload=json.dumps(
-                    {"cloud_account_id": wf.account, "trigger": "manual", "_async": True}).encode())
+                    rescan_payload(st, wf.account)).encode())
                 wf.done(cur, d["action_id"])
                 counts["rescans_requested"] += 1
             except Exception:  # noqa: BLE001
@@ -527,9 +765,27 @@ def verification(cur, wf, session):
                             (wf.account, agent_id, fn, J({"reason": "Verify recorded remediations"}), agent_id))
                 cur.execute("UPDATE sa_actions SET approval_id = %s WHERE id = %s", (cur.fetchone()[0], d["action_id"]))
                 wf.notifications.append(("approval", agent_id, [{"title": f"Approve a verification re-scan ({fn})"}]))
+    # overdue work: one summary notification per day
+    cur.execute("""SELECT count(*) FROM sa_work_items WHERE cloud_account_id = %s AND state = ANY(%s) AND due_at < CURRENT_DATE""",
+                (wf.account, list(E.OPEN_STATES)))
+    overdue = cur.fetchone()[0]
+    counts["overdue"] = overdue
+    if overdue:
+        cur.execute("""SELECT 1 FROM sa_actions WHERE cloud_account_id = %s AND action = 'notify' AND target = 'overdue'
+                       AND created_at::date = CURRENT_DATE""", (wf.account,))
+        if not cur.fetchone():
+            wf.notifications.append(("overdue", agent_id, [{"count": overdue}]))
     wf.finish(cur, run_id, t0, "succeeded", counts,
-              limitations=["Scanner (CIS/FSBP) findings are re-checked by the regular account scan; no extra scan is started for them."])
+              limitations=[f"Re-scans are requested at most once per {RESCAN_COOLDOWN_HOURS} hours per source."])
     return counts
+
+
+def rescan_payload(source_type, account):
+    if source_type == "scanner_finding":
+        return {"cloud_account_id": account}                       # orchestrator: scoped to this account
+    if source_type == "attack_surface":
+        return {"cloud_account_id": account, "trigger": "event", "agents": ["red-attack-surface", "green-verification"], "_async": True}
+    return {"cloud_account_id": account, "trigger": "manual", "_async": True}
 
 
 def _notify(conn, wf):
@@ -563,6 +819,9 @@ def _notify(conn, wf):
                 create_notification(conn, wf.account, "security", "security_agent_verification_failed", "P2",
                                     f"Remediation not confirmed: {items[0]['title']}", description=items[0]["reason"],
                                     resource_link=link + "#queue", actor=agent_id)
+            elif kind == "overdue":
+                create_notification(conn, wf.account, "security", "security_agent_overdue", "P3",
+                                    f"{items[0]['count']} security work item(s) are past their due date", resource_link=link + "#queue", actor=agent_id)
             elif kind == "approval":
                 create_notification(conn, wf.account, "security", "security_agent_approval_required", "P3", items[0]["title"],
                                     resource_link=link + "#approvals", actor=agent_id)

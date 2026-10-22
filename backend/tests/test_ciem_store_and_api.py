@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,7 +20,8 @@ DSN = os.environ.get("NIAGAROS_PGTEST_DSN", "")
 pytestmark = pytest.mark.skipif(not DSN, reason="blocked: set NIAGAROS_PGTEST_DSN to a throwaway PostgreSQL")
 
 SCHEMA = ["tests/fixtures/ciem_schema.sql", "migrations/024_security_audit_log.sql", "migrations/026_enterprise.sql",
-          "migrations/032_ciem.sql", "migrations/032_ciem.sql"]  # 032 twice: must be re-runnable
+          "migrations/032_ciem.sql", "migrations/032_ciem.sql", "migrations/035_ciem_recurring_reviews.sql",
+          "migrations/035_ciem_recurring_reviews.sql"]  # 032 twice: must be re-runnable
 ACCT_AWS = "111122223333"
 NOW = datetime.now(timezone.utc)
 
@@ -367,3 +368,85 @@ def test_audit_log_is_append_only_for_the_app_role(conn):
                        WHERE grantee = 'cspm_lambda' AND table_name = 'ciem_audit_log' ORDER BY 1""")
         assert [r[0] for r in cur.fetchall()] == ["INSERT", "SELECT"]
     conn.rollback()
+
+
+# ── organisation policies, recurring reviews, business units ────────────────
+
+POLICY = {"id": "no-iam-outside-platform", "name": "Only platform may change IAM", "severity": "high", "applies_to": "all",
+          "forbidden_actions": ["iam:*"], "except_names": ["platform-*"]}
+
+
+def test_organisation_policy_is_evaluated_and_removal_suppresses(api, conn, accounts):
+    a = accounts["a"]
+    s, b = api("owner@a.test", "POST", body={"cloud_account_id": a, "action": "save_custom_policies", "policies": [dict(POLICY, forbidden_actions=["bad"])]})
+    assert s == 400
+    s, _ = api("owner@a.test", "POST", body={"cloud_account_id": a, "action": "save_custom_policies", "policies": [POLICY]})
+    assert s == 200
+    # saving the built-in rule settings must not drop the organisation policies
+    api("owner@a.test", "POST", body={"cloud_account_id": a, "action": "save_settings", "observation_days": 90, "rules": {}})
+    s, st = api("owner@a.test", "GET", {"cloud_account_id": a, "view": "settings"})
+    assert [p["id"] for p in st["custom_policies"]] == ["no-iam-outside-platform"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT rules FROM ciem_settings WHERE cloud_account_id = %s", (a,))
+        rules = cur.fetchone()[0]
+    conn.rollback()
+    _scan(conn, a, _raw(), settings=rules)
+    st_ = _status(conn, a, "custom:no-iam-outside-platform")
+    assert st_ and st_[0] == "open"                                     # alice has AdministratorAccess, so iam:* is granted
+    with conn.cursor() as cur:
+        cur.execute("SELECT details->'granted'->0->>'result' FROM ciem_findings WHERE rule = 'custom:no-iam-outside-platform' AND cloud_account_id = %s", (a,))
+        assert cur.fetchone()[0] == "allowed"
+    conn.rollback()
+    api("owner@a.test", "POST", body={"cloud_account_id": a, "action": "save_custom_policies", "policies": []})
+    from collectors.aws.scanner import ciem_scanner_handler as h, ciem_engine
+    with conn.cursor() as cur:
+        cur.execute("SELECT rules FROM ciem_settings WHERE cloud_account_id = %s", (a,))
+        rules = cur.fetchone()[0]
+    conn.rollback()
+    with patch.object(h, "collect", return_value=_raw()), patch.object(h, "_account_id", return_value=ACCT_AWS),          patch.object(h, "_notify"), patch.object(h, "_overdue_reviews"):
+        h.run(conn, a, MagicMock())
+    assert _status(conn, a, "custom:no-iam-outside-platform")[0] == "suppressed"
+
+
+def test_recurring_review_starts_again_after_its_interval(api, conn, accounts):
+    a = accounts["a"]
+    s, b = api("owner@a.test", "POST", body={"cloud_account_id": a, "action": "create_review", "name": "Quarterly admins", "scope": "all",
+                                             "reviewer_email": "rev@a.test", "due_date": (date.today() + timedelta(days=14)).isoformat(),
+                                             "repeat_every_days": 90})
+    assert s == 200
+    first = b["review_id"]
+    from collectors.aws.scanner import ciem_scanner_handler as h
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM ciem_scans WHERE cloud_account_id = %s AND status = 'succeeded' ORDER BY started_at DESC LIMIT 1", (a,))
+        scan_id = cur.fetchone()[0]
+    conn.rollback()
+    assert h.start_due_reviews(conn, a, scan_id) == []                    # not due yet
+    with conn.cursor() as cur:
+        cur.execute("UPDATE ciem_access_reviews SET created_at = NOW() - INTERVAL '91 days' WHERE id = %s", (first,))
+    conn.commit()
+    started = h.start_due_reviews(conn, a, scan_id)
+    assert len(started) == 1 and started[0]["reviewer"] == "rev@a.test"
+    assert h.start_due_reviews(conn, a, scan_id) == []                    # only once per review
+    s, rv = api("owner@a.test", "GET", {"cloud_account_id": a, "view": "reviews"})
+    nxt = [r for r in rv["reviews"] if r["name"].startswith("Quarterly admins — ")]
+    assert len(nxt) == 1 and nxt[0]["repeat_every_days"] == 90 and nxt[0]["items"] >= 1
+
+
+def test_business_units_only_show_accounts_the_caller_may_see(api, conn, accounts):
+    a, b = accounts["a"], accounts["b"]
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO organizations (name, owner_email) VALUES ('Org', 'owner@a.test') RETURNING id")
+        org = cur.fetchone()[0]
+        cur.execute("INSERT INTO business_units (organization_id, name) VALUES (%s, 'Retail'), (%s, 'Payments') RETURNING id", (org, org))
+        bu1, bu2 = [r[0] for r in cur.fetchall()]
+        cur.execute("INSERT INTO bu_accounts (business_unit_id, cloud_account_id) VALUES (%s, %s), (%s, %s)", (bu1, a, bu2, b))
+    conn.commit()
+    s, d = api("owner@a.test", "GET", {"cloud_account_id": a, "view": "business_units"})
+    assert s == 200 and d["organization"] == "Org" and {u["name"] for u in d["business_units"]} == {"Retail", "Payments"}
+    retail = next(u for u in d["business_units"] if u["name"] == "Retail")
+    assert retail["identities"] >= 1 and retail["open_findings"]
+    with conn.cursor() as cur:                                            # an org member limited to Retail sees only Retail
+        cur.execute("INSERT INTO org_members (organization_id, business_unit_id, email, role) VALUES (%s, %s, 'viewer@a.test', 'viewer')", (org, bu1))
+    conn.commit()
+    s, d = api("viewer@a.test", "GET", {"cloud_account_id": a, "view": "business_units"})
+    assert s == 200 and [u["name"] for u in d["business_units"]] == ["Retail"] and d["accounts_not_visible"] == 1

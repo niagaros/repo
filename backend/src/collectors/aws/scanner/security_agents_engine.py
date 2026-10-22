@@ -93,6 +93,19 @@ AGENTS = {
         "specialization": "Guardrail removal, invocation-logging changes and agent changes in Amazon Bedrock",
         "sources": ["CloudTrail management events (bedrock)"], "actions": ["read_telemetry", "analyze", "publish_work_item", "notify"],
         "mode": "Observe and recommend"},
+    "red-attack-surface": {
+        "category": "red", "name": "Attack Surface Agent",
+        "specialization": "What is reachable from the internet (open security groups, public instances and databases, unauthenticated "
+                          "function URLs) and what the identity behind it can do",
+        "sources": ["EC2, security groups, RDS and Lambda function URLs in every enabled region (read-only)", "CIEM"],
+        "actions": ["read_inventory", "analyze", "publish_work_item", "notify"],
+        "mode": "Observe & Assess (configuration only; nothing is scanned or connected to)"},
+    "blue-aws-detections": {
+        "category": "blue", "name": "AWS Detection Integration Agent",
+        "specialization": "Active threat findings from Amazon GuardDuty and AWS Security Hub, in every enabled region",
+        "sources": ["Amazon GuardDuty", "AWS Security Hub"],
+        "actions": ["read_telemetry", "analyze", "publish_work_item", "notify", "containment"],
+        "mode": "Observe and recommend; reports where these services are switched off"},
     "blue-incident-triage": {
         "category": "blue", "name": "Incident Triage Agent",
         "specialization": "Groups detections into incidents and correlates them with known weaknesses",
@@ -520,7 +533,7 @@ def detect(events, region):
                 by_day = {}
                 for e in evs:   # an episode = one address on one (UTC) day, so a later attack is a new detection
                     by_day.setdefault(_as_dt(e["EventTime"]).date().isoformat(), []).append(e)
-                batches += [(f"{ip}|{day}", v) for day, v in by_day.items() if len(v) >= d["threshold"]]
+                batches += [(f"{region}|{ip}|{day}", v) for day, v in by_day.items() if len(v) >= d["threshold"]]
         else:
             batches = [(_principal(e) + "|" + str(e.get("EventId")), [e]) for e in hits]
         for key, evs in batches:
@@ -544,6 +557,162 @@ def _safe_match(d, e):
         return bool(d["match"](e))
     except Exception:  # noqa: BLE001 - an odd event must not break detection of the others
         return False
+
+
+# ── Red: attack surface ───────────────────────────────────────────────────
+SENSITIVE_PORTS = {22: "SSH", 3389: "RDP", 3306: "MySQL", 5432: "PostgreSQL", 1433: "SQL Server", 1521: "Oracle", 6379: "Redis",
+                   27017: "MongoDB", 9200: "Elasticsearch", 5601: "Kibana", 2375: "Docker API", 11211: "Memcached"}
+DB_PORTS = {"postgres": 5432, "aurora-postgresql": 5432, "mysql": 3306, "aurora-mysql": 3306, "mariadb": 3306, "aurora": 3306,
+            "sqlserver-ex": 1433, "sqlserver-se": 1433, "sqlserver-ee": 1433, "sqlserver-web": 1433, "oracle-ee": 1521, "oracle-se2": 1521}
+
+
+PROTOCOLS = {"-1": "all", "6": "tcp", "17": "udp", "1": "icmp", "58": "icmpv6"}
+
+
+def open_to_internet(rules, families=("ipv4", "ipv6")):
+    """Security group ingress rules (IpPermissions) that admit the whole internet over the given address families.
+    Returns [(from, to, protocol)] with protocol normalised (tcp, udp, icmp, all)."""
+    out = []
+    for p in rules or []:
+        v4 = any(r.get("CidrIp") == "0.0.0.0/0" for r in p.get("IpRanges", []))
+        v6 = any(r.get("CidrIpv6") == "::/0" for r in p.get("Ipv6Ranges", []))
+        if not ((v4 and "ipv4" in families) or (v6 and "ipv6" in families)):
+            continue
+        proto = PROTOCOLS.get(str(p.get("IpProtocol")), str(p.get("IpProtocol")))
+        lo, hi = (0, 65535) if proto == "all" else (p.get("FromPort", 0), p.get("ToPort", 65535))
+        out.append((lo, hi, proto))
+    return out
+
+
+def _covers(ranges, port, proto="tcp"):
+    return any(lo <= port <= hi and p in ("all", proto) for lo, hi, p in ranges)
+
+
+def _ports_text(ranges):
+    return ", ".join("all ports" if (lo, hi) == (0, 65535) else (str(lo) if lo == hi else f"{lo}-{hi}") + f"/{pr}" for lo, hi, pr in ranges)
+
+
+def red_attack_surface(surface, ciem_by_role=None):
+    """surface: {region: {"security_groups": {id: {"name", "rules"}}, "instances": [...], "databases": [...], "function_urls": [...]}}.
+    Items describe reachability from configuration only; nothing was connected to."""
+    ciem_by_role = ciem_by_role or {}
+    items = []
+    for region, s in sorted(surface.items()):
+        sgs = s.get("security_groups") or {}
+        for inst in s.get("instances") or []:
+            fams = (("ipv4",) if inst.get("public_ip") else ()) + (("ipv6",) if inst.get("ipv6") else ())
+            if not fams or inst.get("state") != "running":
+                continue
+            ranges = [r for g in inst.get("security_groups") or [] for r in open_to_internet((sgs.get(g) or {}).get("rules"), fams)]
+            if not ranges:
+                continue
+            sensitive = sorted({f"{n} ({p})" for p, n in SENSITIVE_PORTS.items() if _covers(ranges, p)})
+            role = inst.get("role_arn")
+            c = ciem_by_role.get(role) or {}
+            admin = c.get("admin") == "admin"
+            caps = [x["label"] for x in c.get("capabilities") or [] if x.get("result") in ("allowed", "scoped")]
+            sev = "critical" if sensitive and admin else "high" if sensitive or admin else "medium"
+            to = "full administrator access" if admin else (", ".join(caps[:3]) if caps else ("its instance role" if role else "the instance"))
+            items.append(_surface_item(
+                "ec2_instance", f"{region}:{inst['id']}", f"EC2 {inst.get('name') or inst['id']} is reachable from the internet on {_ports_text(ranges)}",
+                sev, {"instance": inst["id"], "region": region, "public_ip": inst.get("public_ip"), "ipv6": inst.get("ipv6"), "open": _ports_text(ranges),
+                      "sensitive_services": sensitive, "role_arn": role, "role_capabilities": caps, "role_admin": admin,
+                      "security_groups": inst.get("security_groups")},
+                [{"type": "ec2_instance", "ref": inst.get("arn") or inst["id"]}] + ([{"type": "aws_identity", "ref": role}] if role else []),
+                {"from": "the internet", "steps": [f"{_ports_text(ranges)} via {', '.join(inst.get('security_groups') or [])}", f"instance {inst['id']}"]
+                 + ([f"instance role {role.split('/')[-1]}"] if role else []), "to": to, "prerequisites": ["a vulnerable or misconfigured service on an open port"]},
+                admin, "Restrict the security group to known addresses or put the instance behind a load balancer/VPN; scope the instance role."))
+        for db in s.get("databases") or []:
+            if not db.get("public"):
+                continue
+            port = db.get("port") or DB_PORTS.get(db.get("engine"))
+            ranges = [r for g in db.get("security_groups") or [] for r in open_to_internet((sgs.get(g) or {}).get("rules"))]
+            reachable = port is not None and _covers(ranges, port)
+            items.append(_surface_item(
+                "rds_instance", f"{region}:{db['id']}",
+                f"Database {db['id']} is publicly accessible" + (f" and port {port} is open to the internet" if reachable else ""),
+                "high" if reachable else "medium",
+                {"database": db["id"], "region": region, "engine": db.get("engine"), "port": port, "publicly_accessible": True,
+                 "open_to_internet": reachable, "open": _ports_text(ranges) if ranges else "no 0.0.0.0/0 rule",
+                 "encrypted": db.get("encrypted"), "security_groups": db.get("security_groups")},
+                [{"type": "rds_instance", "ref": db.get("arn") or db["id"]}],
+                {"from": "the internet", "steps": [f"port {port} via {', '.join(db.get('security_groups') or [])}" if reachable else "public endpoint (blocked by security group)",
+                                                   f"database {db['id']}"], "to": "database login (password or IAM authentication)",
+                 "prerequisites": ["valid or guessable database credentials"]},
+                False, "Turn off public accessibility, or restrict the security group to the addresses that need it; require TLS."))
+        for fu in s.get("function_urls") or []:
+            if fu.get("auth_type") != "NONE":
+                continue
+            role = fu.get("role_arn")
+            c = ciem_by_role.get(role) or {}
+            admin = c.get("admin") == "admin"
+            caps = [x["label"] for x in c.get("capabilities") or [] if x.get("result") in ("allowed", "scoped")]
+            items.append(_surface_item(
+                "lambda_url", f"{region}:{fu['function']}", f"Lambda {fu['function']} has a public URL without authentication",
+                "critical" if admin else "high" if caps else "medium",
+                {"function": fu["function"], "region": region, "url": fu.get("url"), "role_arn": role, "role_capabilities": caps, "role_admin": admin},
+                [{"type": "lambda_function", "ref": fu.get("arn") or fu["function"]}] + ([{"type": "aws_identity", "ref": role}] if role else []),
+                {"from": "the internet", "steps": ["unauthenticated function URL", f"function {fu['function']}"] + ([f"role {role.split('/')[-1]}"] if role else []),
+                 "to": "full administrator access" if admin else (", ".join(caps[:3]) if caps else "the function's own logic"),
+                 "prerequisites": ["input the function handles unsafely"]},
+                admin, "Set the function URL auth type to AWS_IAM or put an authorizer in front; scope the execution role."))
+    return items
+
+
+def _surface_item(kind, ident, title, severity, evidence, assets, path, to_admin, fix):
+    it = _item("red-attack-surface", "attack_surface", f"{kind}:{ident}", title, severity, "high", "observed configuration (read-only API calls)",
+               evidence, assets, {"current": title, "proposed": fix, "reason": "Anything reachable from the internet is probed continuously.",
+                                  "impact": "Legitimate clients outside the allowed range lose access; check who connects first.",
+                                  "rollback": "Restore the previous rule or setting.", "approvals": "Resource owner"},
+               exposure="external", path_to_admin=to_admin, attack_path=path)
+    it["validation"]["note"] = "Derived from configuration. Nothing was scanned or connected to, so reachability of the service itself is not tested."
+    return it
+
+
+# ── Blue: AWS-native detections ────────────────────────────────────────────
+
+def _gd_severity(v):
+    v = float(v or 0)
+    return "critical" if v >= 8.5 else "high" if v >= 7 else "medium" if v >= 4 else "low"
+
+
+def blue_aws_native(guardduty, securityhub):
+    """guardduty: GetFindings results; securityhub: GetFindings results. A Security Hub copy of a GuardDuty finding is
+    skipped only when that GuardDuty finding was imported directly. Returns detections in the same shape as detect()."""
+    out = []
+    imported_gd = {f["Id"] for f in guardduty or []}
+    for f in guardduty or []:
+        res = f.get("Resource") or {}
+        role = ((res.get("AccessKeyDetails") or {}).get("UserName")) or ((res.get("InstanceDetails") or {}).get("InstanceId"))
+        svc = f.get("Service") or {}
+        out.append({
+            "fingerprint": fingerprint("guardduty", f["Id"]), "rule": "guardduty:" + f.get("Type", "unknown"), "agent_id": "blue-aws-detections",
+            "severity": _gd_severity(f.get("Severity")), "title": f.get("Title") or f.get("Type"), "mitre": None,
+            "principal": role or res.get("ResourceType") or "unknown", "resources": [x for x in [role, res.get("ResourceType")] if x],
+            "source_ip": (((svc.get("Action") or {}).get("NetworkConnectionAction") or {}).get("RemoteIpDetails") or {}).get("IpAddressV4"),
+            "region": f.get("Region"), "first_event_at": svc.get("EventFirstSeen") or f.get("CreatedAt"),
+            "last_event_at": svc.get("EventLastSeen") or f.get("UpdatedAt"), "event_count": int(svc.get("Count") or 1),
+            "event_ids": [f["Id"]], "event_names": [f.get("Type")], "why": f.get("Description"),
+            "respond": "Follow the GuardDuty remediation guidance for this finding type; confirm whether the activity was expected.",
+            "basis": "observed (Amazon GuardDuty)"})
+    for f in securityhub or []:
+        if "guardduty" in str(f.get("ProductArn", "")).lower() and str(f.get("Id", "")).rsplit("/", 1)[-1] in imported_gd:
+            continue
+        if (f.get("Workflow") or {}).get("Status") in ("SUPPRESSED", "RESOLVED") or f.get("RecordState") == "ARCHIVED":
+            continue
+        label = ((f.get("Severity") or {}).get("Label") or "LOW").lower()
+        if label == "informational":
+            continue
+        resources = [r.get("Id") for r in f.get("Resources") or [] if r.get("Id")]
+        out.append({
+            "fingerprint": fingerprint("securityhub", f["Id"]), "rule": "securityhub:" + ((f.get("ProductFields") or {}).get("aws/securityhub/ProductName") or "finding"),
+            "agent_id": "blue-aws-detections", "severity": label if label in SEV_POINTS else "low", "title": f.get("Title"), "mitre": None,
+            "principal": resources[0] if resources else "unknown", "resources": resources[:20], "source_ip": None, "region": f.get("Region"),
+            "first_event_at": f.get("FirstObservedAt") or f.get("CreatedAt"), "last_event_at": f.get("LastObservedAt") or f.get("UpdatedAt"),
+            "event_count": 1, "event_ids": [f["Id"]], "event_names": (f.get("Types") or [])[:3], "why": f.get("Description"),
+            "respond": ((f.get("Remediation") or {}).get("Recommendation") or {}).get("Text") or "See the Security Hub finding.",
+            "basis": "observed (AWS Security Hub)"})
+    return out
 
 
 def triage(detections, work_items, window_minutes=60):
@@ -673,6 +842,9 @@ def evaluation_scenarios():
         "blue-identity-defense": (lambda: detect(blue_events, "eu-west-1"), blue_expected),
         "blue-cloud-threat": (lambda: detect(blue_events, "eu-west-1"), blue_expected),
         "blue-ai-threat-defense": (lambda: detect(blue_events, "eu-west-1"), blue_expected),
+        "red-attack-surface": (lambda: red_attack_surface(_surface_fixture(), {"arn:aws:iam::1:role/web": {"admin": "admin", "capabilities": []}}),
+                               {"ec2_instance:eu-west-1:i-web", "rds_instance:eu-west-1:db-pub", "lambda_url:eu-west-1:open-fn"}),
+        "blue-aws-detections": (lambda: blue_aws_native(*_native_fixture()), {"gd-1", "sh-2"}),
         "blue-incident-triage": (lambda: triage(detect(blue_events, "eu-west-1"), []), None),
         "green-remediation-planner": (lambda: [remediation_plan({"source_type": "ciem_finding", "confidence": "high",
                                                                  "recommendation": {"current": "a", "proposed": "b", "rollback": "c"}})], None),
@@ -680,6 +852,35 @@ def evaluation_scenarios():
                                         verify({}, {"present": True, "checked_at": NOW_EVAL}, NOW_EVAL - timedelta(hours=1)),
                                         verify({}, {"present": False, "checked_at": NOW_EVAL - timedelta(hours=2)}, NOW_EVAL - timedelta(hours=1))], None),
     }
+
+
+def _surface_fixture():
+    sg_open = {"rules": [{"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
+                         {"IpProtocol": "tcp", "FromPort": 5432, "ToPort": 5432, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]}]}
+    sg_closed = {"rules": [{"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "IpRanges": [{"CidrIp": "10.0.0.0/8"}]}]}
+    return {"eu-west-1": {
+        "security_groups": {"sg-open": sg_open, "sg-closed": sg_closed},
+        "instances": [{"id": "i-web", "state": "running", "public_ip": "198.51.100.4", "security_groups": ["sg-open"], "role_arn": "arn:aws:iam::1:role/web"},
+                      {"id": "i-private", "state": "running", "public_ip": None, "security_groups": ["sg-open"]},
+                      {"id": "i-closed", "state": "running", "public_ip": "198.51.100.5", "security_groups": ["sg-closed"]},
+                      {"id": "i-stopped", "state": "stopped", "public_ip": "198.51.100.6", "security_groups": ["sg-open"]}],
+        "databases": [{"id": "db-pub", "public": True, "engine": "postgres", "port": 5432, "security_groups": ["sg-open"]},
+                      {"id": "db-private", "public": False, "engine": "postgres", "port": 5432, "security_groups": ["sg-open"]}],
+        "function_urls": [{"function": "open-fn", "auth_type": "NONE"}, {"function": "iam-fn", "auth_type": "AWS_IAM"}]}}
+
+
+def _native_fixture():
+    gd = [{"Id": "gd-1", "Type": "UnauthorizedAccess:IAMUser/MaliciousIPCaller", "Severity": 8.0, "Title": "API called from a known malicious IP",
+           "Region": "eu-west-1", "CreatedAt": "2026-10-01T10:00:00Z", "UpdatedAt": "2026-10-01T11:00:00Z",
+           "Resource": {"ResourceType": "AccessKey", "AccessKeyDetails": {"UserName": "dev"}}, "Service": {"Count": 3}}]
+    sh = [{"Id": "arn:aws:guardduty:eu-west-1:1:detector/d/finding/gd-1", "ProductArn": "arn:aws:securityhub:eu-west-1::product/aws/guardduty",
+           "Severity": {"Label": "HIGH"}, "Title": "dup"},
+          {"Id": "sh-2", "ProductArn": "arn:aws:securityhub:eu-west-1::product/aws/inspector", "Severity": {"Label": "CRITICAL"}, "Title": "CVE in image",
+           "Resources": [{"Id": "arn:aws:ecr:eu-west-1:1:repository/app"}], "Region": "eu-west-1", "CreatedAt": "2026-10-01T10:00:00Z"},
+          {"Id": "sh-3", "ProductArn": "arn:aws:securityhub:eu-west-1::product/aws/inspector", "Severity": {"Label": "HIGH"}, "Title": "suppressed",
+           "Workflow": {"Status": "SUPPRESSED"}},
+          {"Id": "sh-4", "ProductArn": "arn:aws:securityhub:eu-west-1::product/aws/config", "Severity": {"Label": "INFORMATIONAL"}, "Title": "info"}]
+    return gd, sh
 
 
 def evaluate(agent_id):
@@ -696,6 +897,13 @@ def evaluate(agent_id):
         checks.append(("never claims validated exploitation", all(w["validation"]["status"] == "not_validated" for w in out)))
         precision = tp / len(got) if got else 1.0
         recall = tp / len(expected) if expected else 1.0
+    elif agent_id == "blue-aws-detections":
+        got = {d["event_ids"][0] for d in out}
+        tp = len(got & expected)
+        precision = tp / len(got) if got else 1.0
+        recall = tp / len(expected)
+        checks.append(("imports every active GuardDuty and Security Hub finding", recall == 1.0))
+        checks.append(("skips duplicates, suppressed and informational findings", not (got - expected)))
     elif agent_id in ("blue-identity-defense", "blue-cloud-threat", "blue-ai-threat-defense"):
         mine = {d["id"] for d in DETECTIONS if d["agent"] == agent_id}
         got = {}

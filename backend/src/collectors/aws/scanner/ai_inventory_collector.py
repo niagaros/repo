@@ -52,10 +52,40 @@ def _looks_like_literal_key(value):
     return bool(re.fullmatch(r"[A-Za-z0-9_\-.]{16,}", value)) and bool(re.search(r"\d", value)) and bool(re.search(r"[A-Za-z]", value))
 
 
+PART_SERVICE = {"bedrock_guardrails": "bedrock", "bedrock_models": "bedrock", "bedrock_invocation_logging": "bedrock",
+                "bedrock_knowledge_bases": "bedrock-agent", "bedrock_agents": "bedrock-agent", "sagemaker": "sagemaker",
+                "opensearch_vector_collections": "opensearchserverless", "lambda_functions": "lambda"}
+_REGIONS_CACHE = {}
+
+
+def _available_regions(session, service):
+    """Regions where AWS offers the service, from the SDK's endpoint data; None when unknown (then every region is
+    tried, and a failed call is a coverage gap)."""
+    if service not in _REGIONS_CACHE:
+        try:
+            # the SDK has no endpoint list for bedrock-agent; it is offered where Bedrock is
+            _REGIONS_CACHE[service] = set(session.get_available_regions(service)) or                 (set(session.get_available_regions("bedrock")) if service == "bedrock-agent" else set()) or None
+        except Exception:  # noqa: BLE001
+            _REGIONS_CACHE[service] = None
+    return _REGIONS_CACHE[service]
+
+
+def _unknown_operation(e):
+    err = getattr(e, "response", {}).get("Error", {})
+    return err.get("Code") == "UnknownOperationException" or "unknown operation" in str(err.get("Message", "")).lower()
+
+
 def collect_aws(session, account, region):
     out = {"region": region, "coverage": {}, "limitations": []}
 
     def part(name, fn):
+        service = PART_SERVICE.get(name)
+        # a service that AWS does not offer in this region has nothing to inventory there: a complete read. This comes
+        # from the SDK's endpoint data, never from a failed call (a network error is a failed read).
+        avail = _available_regions(session, service) if service else None
+        if avail and region not in avail:
+            out["coverage"][name] = {"ok": True, "not_available": True}
+            return
         try:
             fn()
             out["coverage"][name] = {"ok": True}
@@ -82,8 +112,15 @@ def collect_aws(session, account, region):
     part("bedrock_guardrails", guardrails)
 
     def models():
-        out["custom_models"] = [{"arn": m["modelArn"], "name": m["modelName"], "base_model": m.get("baseModelArn")}
-                                for page in br.get_paginator("list_custom_models").paginate() for m in page.get("modelSummaries", [])]
+        try:
+            out["custom_models"] = [{"arn": m["modelArn"], "name": m["modelName"], "base_model": m.get("baseModelArn")}
+                                    for page in br.get_paginator("list_custom_models").paginate() for m in page.get("modelSummaries", [])]
+        except Exception as e:  # noqa: BLE001
+            # custom models are not offered in every Bedrock region: AWS answers "Unknown operation" there. That is a
+            # complete answer (there are none); any other error is still a failed read.
+            if not _unknown_operation(e):
+                raise
+            out["custom_models"] = []
         out["provisioned"] = [{"arn": p["provisionedModelArn"], "name": p["provisionedModelName"], "model_arn": p.get("modelArn"), "status": p.get("status")}
                               for page in br.get_paginator("list_provisioned_model_throughputs").paginate()
                               for p in page.get("provisionedModelSummaries", [])]
@@ -114,17 +151,33 @@ def collect_aws(session, account, region):
                 d = ag.get_agent(agentId=a["agentId"])["agent"]
                 instr = d.get("instruction") or ""
                 groups = []
+                lam = session.client("lambda", region_name=region, config=RETRY)
                 for gp in ag.get_paginator("list_agent_action_groups").paginate(agentId=a["agentId"], agentVersion="DRAFT"):
                     for g in gp.get("actionGroupSummaries", []):
                         gd = ag.get_agent_action_group(agentId=a["agentId"], agentVersion="DRAFT", actionGroupId=g["actionGroupId"])["agentActionGroup"]
                         ex = gd.get("actionGroupExecutor") or {}
+                        executor_role = None
+                        if str(ex.get("lambda") or "").startswith("arn:aws:lambda"):
+                            # the executor may be a version or alias with its own execution role: read that exact configuration
+                            executor_role = lam.get_function_configuration(FunctionName=ex["lambda"]).get("Role")
                         groups.append({"id": g["actionGroupId"], "name": g["actionGroupName"], "state": gd.get("actionGroupState"),
+                                       "executor_role": executor_role,
                                        "executor": ex.get("lambda") or ex.get("customControl"),
                                        "functions": [f.get("name") for f in (gd.get("functionSchema") or {}).get("functions", [])],
                                        "side_effect": "returns control to the application" if ex.get("customControl") else
                                                       "unknown (executes a Lambda; not inferred from names)"})
                 kb_ids = [k["knowledgeBaseId"] for kp in ag.get_paginator("list_agent_knowledge_bases").paginate(agentId=a["agentId"], agentVersion="DRAFT")
                           for k in kp.get("agentKnowledgeBaseSummaries", [])]
+                collaborators = []
+                if d.get("agentCollaboration") in ("SUPERVISOR", "SUPERVISOR_ROUTER"):
+                    tok = None
+                    while True:
+                        r = ag.list_agent_collaborators(agentId=a["agentId"], agentVersion="DRAFT", **({"nextToken": tok} if tok else {}))
+                        collaborators += [{"name": c.get("collaboratorName"), "alias_arn": (c.get("agentDescriptor") or {}).get("aliasArn"),
+                                           "relay_history": c.get("relayConversationHistory")} for c in r.get("agentCollaboratorSummaries", [])]
+                        tok = r.get("nextToken")
+                        if not tok:
+                            break
                 gr = d.get("guardrailConfiguration") or {}
                 lam_groups = [g for g in groups if g["executor"] and str(g["executor"]).startswith("arn:aws:lambda")]
                 autonomy = ("A3 — Conditional autonomy" if lam_groups else
@@ -138,6 +191,7 @@ def collect_aws(session, account, region):
                     "memory": (d.get("memoryConfiguration") or {}).get("enabledMemoryTypes"), "idle_ttl": d.get("idleSessionTTLInSeconds"),
                     "instruction_sha256": hashlib.sha256(instr.encode()).hexdigest() if instr else None, "instruction_length": len(instr),
                     "action_groups": groups, "knowledge_bases": kb_ids,
+                    "collaboration": d.get("agentCollaboration"), "collaborators": collaborators,
                     "autonomy": {"level": autonomy, "basis": "inferred from action-group executors"}})
     part("bedrock_agents", agents)
 
@@ -214,13 +268,41 @@ def collect_aws(session, account, region):
     if out.get("lambda_env_unreadable"):
         out["limitations"].append(f"The environment variables of {len(out['lambda_env_unreadable'])} Lambda function(s) could not be "
                                   "read (encrypted with a key the scanner role may not use); AI keys in them are not checked.")
-    out["limitations"].append(f"AWS AI services were inventoried in region {region} only.")
     return out
+
+
+def collect_aws_regions(session, account, home_region):
+    """Every region enabled for the account, in parallel. Returns one collector result per region plus the list of
+    regions that could not be listed (then only the home region is read and that is said)."""
+    from concurrent.futures import ThreadPoolExecutor
+    limitations = []
+    try:
+        regions = sorted(r["RegionName"] for r in session.client("ec2", region_name=home_region, config=RETRY)
+                         .describe_regions(AllRegions=False)["Regions"])
+    except Exception as e:  # noqa: BLE001
+        regions = [home_region]
+        limitations.append(f"The enabled regions could not be listed ({_err(e)}); only {home_region} was inventoried.")
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda r: collect_aws(session, account, r), regions))
+    return results, regions, limitations
 
 
 # ── GitHub ──────────────────────────────────────────────────────────────────
 
-def _gh(url, token, raw=False, max_bytes=None):
+def _gh(url, token, raw=False, max_bytes=None, attempts=3):
+    """GitHub GET with at most `attempts` tries on rate limiting (403/429 with retry headers) and 5xx errors."""
+    for attempt in range(attempts):
+        try:
+            return _gh_once(url, token, raw, max_bytes)
+        except urllib.error.HTTPError as e:
+            retryable = e.code >= 500 or e.code == 429 or (e.code == 403 and e.headers.get("Retry-After"))
+            if not retryable or attempt == attempts - 1:
+                raise
+            wait = min(int(e.headers.get("Retry-After") or 2 ** attempt), 20)
+            time.sleep(wait)
+
+
+def _gh_once(url, token, raw, max_bytes):
     req = urllib.request.Request(url, headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json",
                                                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "niagaros-ai-inventory"})
     with urllib.request.urlopen(req, timeout=60) as r:
@@ -335,6 +417,33 @@ def collect_repo(full_name, token, default_branch=None):
             "files": files, "truncated": truncated, "method": "tarball", "private": meta.get("private")}
 
 
+def _dependabot(full_name, token):
+    alerts, page = [], 1
+    try:
+        while page <= 5:
+            batch = _gh(f"https://api.github.com/repos/{full_name}/dependabot/alerts?state=open&per_page=100&page={page}", token)
+            if not batch:
+                break
+            for a in batch:
+                dep = (a.get("dependency") or {}).get("package") or {}
+                adv = a.get("security_advisory") or {}
+                vuln = a.get("security_vulnerability") or {}
+                alerts.append({"package": (dep.get("name") or "").lower(), "ecosystem": dep.get("ecosystem"),
+                               "manifest": (a.get("dependency") or {}).get("manifest_path"), "ghsa": adv.get("ghsa_id"),
+                               "cve": adv.get("cve_id"), "summary": adv.get("summary"), "severity": (vuln.get("severity") or adv.get("severity") or "").lower(),
+                               "fixed_in": (vuln.get("first_patched_version") or {}).get("identifier"), "url": a.get("html_url")})
+            if len(batch) < 100:
+                break
+            page += 1
+        else:
+            return {"status": "more than 500 open alerts (truncated)", "alerts": alerts}
+        return {"status": "ok", "alerts": alerts}
+    except urllib.error.HTTPError as e:
+        return {"status": {403: "no permission to read alerts", 404: "Dependabot alerts disabled"}.get(e.code, f"HTTP {e.code}"), "alerts": []}
+    except Exception as e:  # noqa: BLE001
+        return {"status": _err(e), "alerts": []}
+
+
 def collect_github(org, token, include=None):
     """Repositories of the connected organisation (most recently pushed first, up to MAX_REPOS)."""
     out = {"org": org, "repos": [], "coverage": {}, "limitations": []}
@@ -370,6 +479,10 @@ def collect_github(org, token, include=None):
     for full_name in names[:MAX_REPOS]:
         try:
             r = collect_repo(full_name, token)
+            r["dependabot"] = _dependabot(full_name, token)
+            if r["dependabot"]["status"] != "ok":
+                out["limitations"].append(f"{full_name}: Dependabot alerts not available ({r['dependabot']['status']}); "
+                                          "known vulnerabilities in AI packages are not checked.")
             out["repos"].append(r)
             out["coverage"][full_name] = {"ok": True, "files": len(r["files"]), "truncated": r["truncated"], "commit": r["commit"]}
             if r["truncated"]:

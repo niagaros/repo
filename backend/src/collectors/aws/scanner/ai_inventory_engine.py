@@ -488,18 +488,37 @@ def build(account, aws, repos, ciem_by_role, settings=None, now=None):
             for m in models:
                 mk = model_asset(m["provider"], m["value"], src, "declared", f"{path}:{m['line']}", served_by=sorted(providers))
                 inv.rel(app_key, mk, "USES_MODEL", src, "declared", note=f"{path}:{m['line']}")
+        # known vulnerabilities (Dependabot) in AI packages of this repository, with the assets they affect
+        ai_packages = {n for names in FRAMEWORKS.values() for n in names} | set(GUARDRAIL_LIBS) | set(VECTOR_LIBS) | \
+                      {n for p in PROVIDERS.values() for n in p.get("packages", [])}
+        for al in (repo.get("dependabot") or {}).get("alerts", []):
+            if al["package"] not in ai_packages:
+                continue
+            ai_used = True
+            inv.asset(app_key, "application", repo["full_name"], src, "declared", repo.get("url"), now_s,
+                      repository=repo["full_name"], default_branch=repo.get("default_branch"))
+            sev = {"critical": "critical", "high": "high", "moderate": "medium", "medium": "medium"}.get(al["severity"], "low")
+            _finding(inv, "vulnerable_ai_dependency", sev, f"{al['package']} in {repo['full_name']} has a known vulnerability ({al['ghsa'] or al['cve']})",
+                     app_key, {"basis": "observed (GitHub Dependabot)", "source": src, "package": al["package"], "manifest": al["manifest"],
+                               "advisory": al["ghsa"], "cve": al["cve"], "summary": al["summary"], "fixed_in": al["fixed_in"], "alert": al["url"]},
+                     {"current": f"{al['package']} at a vulnerable version", "proposed": f"Upgrade to {al['fixed_in']} or later" if al["fixed_in"] else "No fixed version yet: assess the advisory and mitigate",
+                      "reason": al["summary"] or "Known vulnerability in an AI dependency.", "impact": "Test the application after upgrading.",
+                      "confidence": "high", "approvals": "Application owner", "rollback": "Pin the previous version."}, "controls",
+                     key=f"{al['package']}:{al['ghsa']}")
         if not ai_used:
             inv.assets.pop(app_key, None)
 
-    # ── AWS ─────────────────────────────────────────────────────────────────
-    if aws:
+    # ── AWS (one collector result per region) ────────────────────────────────
+    for aws in (aws if isinstance(aws, list) else ([aws] if aws else [])):
         region = aws.get("region")
         asrc = f"aws:{account}:{region}"
         usage = aws.get("bedrock_usage") or {}
         for model_id, n in usage.items():
             mk = model_asset("aws_bedrock", model_id, asrc + ":cloudwatch", "observed", f"AWS/Bedrock Invocations ModelId={model_id}",
                              served_by=["aws_bedrock"])
-            inv.assets[mk]["metadata"]["invocations_14d"] = n
+            meta = inv.assets[mk]["metadata"]
+            meta.setdefault("invocations_14d_by_region", {})[region] = n      # same model in several regions: keep each, sum them
+            meta["invocations_14d"] = sum(meta["invocations_14d_by_region"].values())
         for m in aws.get("custom_models", []):
             inv.asset(stable_key("aws", m["arn"]), "model_deployment", m["name"], asrc, "discovered", m["arn"], now_s,
                       provider="aws_bedrock", base_model=m.get("base_model"), kind="custom model")
@@ -509,7 +528,8 @@ def build(account, aws, repos, ciem_by_role, settings=None, now=None):
                       model_arn=p.get("model_arn"), status=p.get("status"), kind="provisioned throughput")
         for g in aws.get("guardrails", []):
             inv.asset(stable_key("aws", g["arn"]), "guardrail", g["name"], asrc, "discovered", g["arn"], now_s, provider="aws_bedrock",
-                      guardrail_state="configured", version=g.get("version"), filters=g.get("filters"), status=g.get("status"))
+                      guardrail_state=("configured" if g.get("status") == "READY" else "degraded" if g.get("status") else "unknown"),
+                      version=g.get("version"), filters=g.get("filters"), status=g.get("status"))
         for kb in aws.get("knowledge_bases", []):
             k = stable_key("aws", kb["arn"])
             inv.asset(k, "rag_pipeline", kb["name"], asrc, "discovered", kb["arn"], now_s, provider="aws_bedrock",
@@ -563,11 +583,43 @@ def build(account, aws, repos, ciem_by_role, settings=None, now=None):
                     inv.rel(k, kbk, "RETRIEVES_FROM", asrc, "discovered")
             for t in ag.get("action_groups", []):
                 tk = stable_key("tool", ag["arn"], t["id"])
+                executor = str(t.get("executor") or "")
+                fn = _function_for(aws.get("functions", []), executor) if executor.startswith("arn:aws:lambda") else None
+                executor_role = t.get("executor_role") or (fn.get("role_arn") if fn else None)
+                caps = _capabilities(ciem_by_role, executor_role)
                 inv.asset(tk, "tool", t["name"], asrc, "discovered", ag["arn"], now_s, provider="aws_bedrock",
                           executor=t.get("executor"), state=t.get("state"), functions=t.get("functions"),
-                          side_effect=t.get("side_effect", "unknown"))
+                          side_effect=caps["summary"] if fn else t.get("side_effect", "unknown"),
+                          capabilities=caps["capabilities"] if fn else None, capability_basis=caps["basis"] if fn else None)
                 inv.rel(k, tk, "EXPOSES_TOOL", asrc, "discovered")
+                if fn:
+                    fk = stable_key("aws", fn["arn"])
+                    inv.asset(fk, "ai_infrastructure", fn["name"], asrc, "discovered", fn["arn"], now_s, provider="aws_lambda",
+                              kind="Lambda function", runtime=fn.get("runtime"), handler=fn.get("handler"), role_arn=fn.get("role_arn"),
+                              ai_env_names=fn.get("ai_env_names") or [], last_modified=fn.get("last_modified"), executes_tool_for=ag["name"])
+                    inv.rel(tk, fk, "EXECUTED_BY", asrc, "discovered")
+                    _identity_link(inv, fk, executor_role, ciem_by_role, asrc)
+                    if caps["high_impact"] and str(t.get("state") or "ENABLED").upper() == "ENABLED":   # a disabled group cannot be called
+                        _finding(inv, "privileged_ai_tool", "high", f"Agent {ag['name']} can call tool {t['name']}, which can {caps['high_impact'][0].lower()}", tk,
+                                 {"basis": "calculated", "source": "Bedrock action group + CIEM", "agent": ag["name"], "executor": executor,
+                                  "role_arn": executor_role, "capabilities": caps["high_impact"],
+                                  "note": "Derived from the permissions of the Lambda that runs the tool, not from the tool's name."},
+                                 {"current": f"The tool runs as {str(executor_role).split('/')[-1]} with: {', '.join(caps['high_impact'])}",
+                                  "proposed": "Scope the executor role to what the tool does, or require confirmation (returnControl) before high-impact calls",
+                                  "reason": "A prompt-injected agent can trigger every action its tools can perform.",
+                                  "impact": "Tool calls outside the new scope fail.", "confidence": "medium", "approvals": "Agent owner",
+                                  "rollback": "Restore the previous role policy."}, "access", key=t["id"])
             _identity_link(inv, k, ag.get("role_arn"), ciem_by_role, asrc)
+            if ag.get("collaboration"):
+                inv.assets[k]["metadata"]["collaboration"] = ag["collaboration"]
+        for ag in aws.get("agents", []):
+            for c in ag.get("collaborators") or []:
+                # alias ARN: arn:aws:bedrock:<region>:<account>:agent-alias/<agentId>/<aliasId>
+                parts = str(c.get("alias_arn") or "").split("/")
+                target = next((a["arn"] for a in aws.get("agents", []) if len(parts) >= 3 and a["arn"].endswith("/" + parts[-2])), None)
+                if target:
+                    inv.rel(stable_key("aws", ag["arn"]), stable_key("aws", target), "DELEGATES_TO", asrc, "discovered",
+                            note=f"collaborator '{c.get('name')}'" + (", shares conversation history" if c.get("relay_history") == "TO_COLLABORATOR" else ""))
         if (aws.get("agents") or aws.get("knowledge_bases") or usage or aws.get("custom_models") or aws.get("provisioned")) and logging_known and not logging_on:
             k = stable_key("provider", "aws_bedrock")
             provider_asset("aws_bedrock", asrc, "discovered")
@@ -575,7 +627,8 @@ def build(account, aws, repos, ciem_by_role, settings=None, now=None):
                      {"basis": "discovered", "source": asrc, "region": region},
                      {"current": "Model invocation logging disabled", "proposed": "Enable invocation logging to CloudWatch Logs or S3 (with appropriate retention and access control)",
                       "reason": "Without it there is no record of prompts/responses for investigations or audits.", "impact": "Log storage costs; logs may contain sensitive data, so restrict access.",
-                      "confidence": "high", "approvals": "Security owner", "rollback": "Disable invocation logging again."}, "monitoring")
+                      "confidence": "high", "approvals": "Security owner", "rollback": "Disable invocation logging again."}, "monitoring",
+                     key=region)
         for e in aws.get("sagemaker_endpoints", []):
             k = stable_key("aws", e["arn"])
             inv.asset(k, "ai_endpoint", e["name"], asrc, "discovered", e["arn"], now_s, provider="aws_sagemaker",
@@ -652,6 +705,28 @@ def _safe(parser, f, errors, empty, repo_name=None):
     except Exception as e:  # noqa: BLE001 - any parser failure is reported, never fatal
         errors.append({"repo": repo_name, "path": f["path"], "error": type(e).__name__})
         return empty
+
+
+HIGH_IMPACT_CAPS = {"iam_write", "destructive", "org_admin", "defense_evasion", "network_admin", "pass_role"}
+
+
+def _function_for(functions, executor_arn):
+    base = ":".join(executor_arn.split(":")[:7])   # drop a version or alias qualifier
+    return next((f for f in functions if f["arn"] == base or f["arn"] == executor_arn), None)
+
+
+def _capabilities(ciem_by_role, role_arn):
+    """Sensitive capabilities of a role according to the latest CIEM scan."""
+    c = (ciem_by_role or {}).get(role_arn) if role_arn else None
+    if c is None or c.get("capabilities") is None:
+        return {"summary": "unknown (no CIEM data for the executor role)", "capabilities": None, "high_impact": [], "basis": "unknown"}
+    granted = [x for x in c["capabilities"] if x.get("result") in ("allowed", "scoped")]
+    high = [x["label"] for x in granted if x.get("id") in HIGH_IMPACT_CAPS]
+    if c.get("admin") == "admin":
+        high = ["Full administrator access"] + high
+    summary = ("can change or delete resources: " + ", ".join(high)) if high else \
+              ("can read data: " + ", ".join(x["label"] for x in granted)) if granted else "no sensitive capabilities found"
+    return {"summary": summary, "capabilities": [x["label"] for x in granted], "high_impact": high, "basis": "calculated from IAM policies (CIEM)"}
 
 
 def _identity_link(inv, asset_key, role_arn, ciem_by_role, source):

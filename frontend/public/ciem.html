@@ -71,6 +71,7 @@ pre{background:#0d1017;color:#e2e8f0;border-radius:8px;padding:10px 12px;font-si
     <button class="tab" data-tab="paths">Escalation paths</button>
     <button class="tab" data-tab="external">External access</button>
     <button class="tab" data-tab="reviews">Access reviews</button>
+    <button class="tab" data-tab="units">Business units</button>
     <button class="tab" data-tab="settings">Policies &amp; settings</button>
     <button class="tab" data-tab="reports">Reports &amp; audit</button>
   </div>
@@ -333,11 +334,25 @@ RENDER.reviews = async () => {
   view.innerHTML = `<div class="card"><h2>Start an access review</h2><div class="note">The reviewer decides per identity whether its access stays. They get a notification now, and again when the review is overdue.</div>
     <div class="row"><input id="rv-name" placeholder="Name, e.g. Q4 privileged access" style="flex:1;min-width:200px">
       <select id="rv-scope" aria-label="Scope"><option value="privileged">Privileged identities</option><option value="machine">Machine identities</option><option value="human">Human identities</option><option value="all">All identities</option></select>
-      <input id="rv-email" type="email" placeholder="Reviewer email"><input id="rv-due" type="date" value="${due}" aria-label="Due date"><button data-act="review-create">Start review</button></div></div>
+      <input id="rv-email" type="email" placeholder="Reviewer email"><input id="rv-due" type="date" value="${due}" aria-label="Due date">
+      <select id="rv-repeat" aria-label="Repeat"><option value="">Once</option><option value="30">Every 30 days</option><option value="90">Every 90 days</option><option value="180">Every 180 days</option><option value="365">Every year</option></select>
+      <button data-act="review-create">Start review</button></div>
+    <div class="note" style="margin-top:6px">A repeating review starts again automatically after the interval, with the identities of the latest scan, and notifies the reviewer.</div></div>
     <div class="card"><h2>Reviews</h2>${d.reviews.length ? `<table><thead><tr><th>Name</th><th>Scope</th><th>Reviewer</th><th>Due</th><th>Progress</th><th>Status</th></tr></thead><tbody>
       ${d.reviews.map(r => `<tr class="click" data-review="${esc(r.id)}"><td><b>${esc(r.name)}</b></td><td>${esc(r.scope)}</td><td>${esc(r.reviewer_email)}</td><td>${esc(r.due_date)}</td>
         <td style="min-width:110px"><div class="bar"><div style="width:${r.items ? Math.round(100 * r.decided / r.items) : 0}%"></div></div><span class="note">${esc(r.decided)}/${esc(r.items)}</span></td>
-        <td>${r.overdue ? chip('sev-high', 'overdue') : chip(r.status === 'completed' ? 'st-resolved' : 'st-in_progress', r.status)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No reviews yet.</div>'}</div>`;
+        <td>${r.overdue ? chip('sev-high', 'overdue') : chip(r.status === 'completed' ? 'st-resolved' : 'st-in_progress', r.status)}${r.repeat_every_days ? ' <span class="note">every ' + esc(r.repeat_every_days) + ' days</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No reviews yet.</div>'}</div>`;
+};
+
+// ── Business units ────────────────────────────────────────────────────────
+RENDER.units = async () => {
+  const d = await api('business_units');
+  if (!d.business_units.length) { view.innerHTML = `<div class="card"><h2>Business units</h2><div class="empty">${esc(d.note)}</div></div>`; return; }
+  view.innerHTML = `<div class="card"><h2>Business units — ${esc(d.organization)}</h2><div class="note">${esc(d.note)}${d.accounts_not_visible ? ' ' + esc(d.accounts_not_visible) + ' account(s) are not visible to you.' : ''}</div>
+    <table><thead><tr><th>Business unit</th><th>Accounts</th><th>Identities</th><th>Administrators</th><th>Escalation paths</th><th>Open findings (C/H/M/L)</th><th>Least privilege</th></tr></thead><tbody>
+    ${d.business_units.map(u => `<tr><td><b>${esc(u.name)}</b></td><td>${u.accounts.map(a => esc(a.name) + (a.last_scan ? '' : ' <span class="note">(no scan)</span>')).join('<br>')}</td>
+      <td>${esc(u.identities)}</td><td>${esc(u.admins)}</td><td>${esc(u.escalation_paths)}</td>
+      <td>${esc(['critical','high','medium','low'].map(x => u.open_findings[x] || 0).join(' / '))}</td><td>${u.least_privilege_pct == null ? '—' : esc(u.least_privilege_pct) + '%'}</td></tr>`).join('')}</tbody></table></div>`;
 };
 async function openReview(id) {
   openDrawer('<div class="empty">Loading…</div>');
@@ -362,7 +377,15 @@ RENDER.settings = async () => {
       <td><select data-rule-sev="${esc(r.id)}" aria-label="Severity">${['critical','high','medium','low'].map(s => `<option ${s === r.severity ? 'selected' : ''}>${s}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>
     <h3>Unused-access observation window</h3><div class="row"><select id="obs" aria-label="Observation window">${d.observation_choices.map(x => `<option value="${x}" ${x === d.observation_days ? 'selected' : ''}>${x} days</option>`).join('')}</select>
       <span class="note" style="margin:0">Longer windows catch rare jobs (DR, yearly tasks) and give fewer false “unused” results.</span></div>
-    <div style="margin-top:14px"><button data-act="settings-save">Save</button></div></div>`;
+    <div style="margin-top:14px"><button data-act="settings-save">Save</button></div></div>
+    <div class="card"><h2>Organisation policies</h2><div class="note">Your own entitlement rules, e.g. "only the platform team may change IAM". Every scan evaluates them with the same policy engine (denies, permissions boundaries and SCPs included). Removing a policy suppresses its findings; it does not mark them fixed.</div>
+      ${d.custom_policies.length ? `<table><thead><tr><th>Policy</th><th>Applies to</th><th>Forbidden actions</th><th>Exceptions</th><th>Severity</th><th></th></tr></thead><tbody>${d.custom_policies.map((p, n) => `<tr><td><b>${esc(p.name)}</b><div class="note" style="margin:0">${esc(p.id)}</div></td><td>${esc(p.applies_to)}</td><td>${esc(p.forbidden_actions.join(', '))}</td><td>${esc(p.except_names.join(', ') || '—')}</td><td>${sev(p.severity)}</td><td><button class="danger" data-act="cp-remove" data-n="${n}">Remove</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty">No organisation policies yet.</div>'}
+      <h3>Add a policy</h3><div class="row"><input id="cp-name" placeholder="Name, e.g. Only platform may change IAM" style="flex:1;min-width:220px">
+        <select id="cp-scope" aria-label="Applies to"><option value="all">All identities</option><option value="human">Human</option><option value="machine">Machine</option><option value="external">External</option></select>
+        <select id="cp-sev" aria-label="Severity"><option>high</option><option>critical</option><option>medium</option><option>low</option></select></div>
+      <div class="row" style="margin-top:6px"><input id="cp-actions" placeholder="Forbidden actions, comma separated (iam:*, s3:DeleteBucket)" style="flex:1;min-width:220px">
+        <input id="cp-except" placeholder="Exceptions: identity names, * allowed (platform-*)" style="flex:1;min-width:200px"><button data-act="cp-add">Add</button></div></div>`;
+  state.customPolicies = d.custom_policies;
 };
 
 // ── Reports & audit ───────────────────────────────────────────────────────
@@ -416,8 +439,10 @@ document.addEventListener('click', async e => {
       const r = await post({action: 'refresh_ticket', finding_id: b.dataset.id});
       toast('Ticket status: ' + (r.ticket.status || 'unknown')); openFinding(b.dataset.id);
     } else if (act === 'review-create') {
+      const rep = document.getElementById('rv-repeat').value;
       const r = await post({action: 'create_review', name: document.getElementById('rv-name').value, scope: document.getElementById('rv-scope').value,
-                            reviewer_email: document.getElementById('rv-email').value, due_date: document.getElementById('rv-due').value});
+                            reviewer_email: document.getElementById('rv-email').value, due_date: document.getElementById('rv-due').value,
+                            repeat_every_days: rep ? Number(rep) : null});
       toast('Review started with ' + r.items + ' identities.'); render();
     } else if (act === 'decide') {
       const item = b.dataset.item;
@@ -429,6 +454,18 @@ document.addEventListener('click', async e => {
       const rules = {};
       document.querySelectorAll('[data-rule-on]').forEach(cb => { rules[cb.dataset.ruleOn] = {enabled: cb.checked, severity: document.querySelector(`[data-rule-sev="${CSS.escape(cb.dataset.ruleOn)}"]`).value}; });
       const r = await post({action: 'save_settings', observation_days: Number(document.getElementById('obs').value), rules});
+      toast('Saved. ' + (r.note || '')); render();
+    } else if (act === 'cp-add' || act === 'cp-remove') {
+      let list = (state.customPolicies || []).slice();
+      if (act === 'cp-remove') list.splice(Number(b.dataset.n), 1);
+      else {
+        const name = document.getElementById('cp-name').value.trim();
+        const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+        const split = v => v.split(',').map(x => x.trim()).filter(Boolean);
+        list.push({id, name, applies_to: document.getElementById('cp-scope').value, severity: document.getElementById('cp-sev').value,
+                   forbidden_actions: split(document.getElementById('cp-actions').value), except_names: split(document.getElementById('cp-except').value)});
+      }
+      const r = await post({action: 'save_custom_policies', policies: list});
       toast('Saved. ' + (r.note || '')); render();
     } else if (act === 'export') {
       const u = new URLSearchParams({cloud_account_id: accountId, view: 'export', what: b.dataset.what, format: b.dataset.format});
@@ -442,7 +479,7 @@ document.addEventListener('click', async e => {
   finally { b.disabled = false; }
 });
 
-if (!['overview','identities','findings','paths','external','reviews','settings','reports'].includes(tab)) tab = 'overview';
+if (!['overview','identities','findings','paths','external','reviews','units','settings','reports'].includes(tab)) tab = 'overview';
 setTab(tab);
 </script>
 <script src="notifications-widget.js"></script>

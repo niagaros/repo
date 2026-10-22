@@ -43,6 +43,7 @@ class FakeCiem:
     def __init__(self):
         self.ids, self.findings, self.summary, self.limits = _engine_output()
         self.posts = []
+        self.custom = []
 
     def _json(self, route, payload, status=200):
         route.fulfill(status=status, content_type="application/json", headers=CORS, body=json.dumps(payload, default=str))
@@ -84,7 +85,13 @@ class FakeCiem:
             return self._json(route, {"finding": {**f, "integrations": []}})
         if v == "settings":
             return self._json(route, {"observation_days": 90, "observation_choices": [30, 60, 90, 180, 365],
-                                      "rules": [{"id": k, "title": t, "enabled": True, "severity": s, "default_severity": s} for k, (t, s) in E.POLICY_RULES.items()]})
+                                      "rules": [{"id": k, "title": t, "enabled": True, "severity": s, "default_severity": s} for k, (t, s) in E.POLICY_RULES.items()],
+                                      "custom_policies": self.custom})
+        if v == "business_units":
+            return self._json(route, {"organization": "Acme", "accounts_not_visible": 1, "note": "From each account's latest scan.",
+                                      "business_units": [{"id": "b1", "name": XSS, "accounts": [{"id": "a1", "name": "prod", "last_scan": NOW.isoformat()}],
+                                                          "identities": 12, "admins": 2, "escalation_paths": 3, "open_findings": {"high": 4},
+                                                          "least_privilege_pct": 75}]})
         if v == "paths":
             return self._json(route, {"paths": [{"arn": i["arn"], "name": i["name"], "kind": i["kind"], "escalation": i.get("escalation", []), "can_assume": i.get("can_assume", [])} for i in self.ids]})
         if v == "external":
@@ -188,3 +195,28 @@ def test_backend_error_is_shown_not_swallowed(page, site):
     page.goto(f"{site}/ciem.html?account_id={ACCOUNT}")
     page.wait_for_selector(".err")
     assert "Forbidden" in page.locator(".err").inner_text()
+
+
+def test_business_units_tab_escapes_names_and_says_what_is_hidden(ciem):
+    page, backend, errors = ciem
+    page.click("[data-tab=units]")
+    page.wait_for_selector("text=Business units — Acme")
+    assert page.locator("text=1 account(s) are not visible to you").is_visible()
+    assert page.evaluate("window.__xss") is None
+    assert not errors
+
+
+def test_organisation_policy_is_sent_with_its_actions_and_exceptions(ciem):
+    page, backend, errors = ciem
+    page.click("[data-tab=settings]")
+    page.wait_for_selector("text=Organisation policies")
+    page.fill("#cp-name", "Only platform may change IAM")
+    page.fill("#cp-actions", "iam:*, s3:DeleteBucket")
+    page.fill("#cp-except", "platform-*")
+    page.click("[data-act=cp-add]")
+    page.wait_for_timeout(300)
+    p = backend.posts[-1]
+    assert p["action"] == "save_custom_policies"
+    assert p["policies"] == [{"id": "only-platform-may-change-iam", "name": "Only platform may change IAM", "applies_to": "all", "severity": "high",
+                              "forbidden_actions": ["iam:*", "s3:DeleteBucket"], "except_names": ["platform-*"]}]
+    assert not errors

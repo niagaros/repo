@@ -30,7 +30,7 @@ import psycopg2
 from psycopg2.extras import Json
 
 from collectors.aws.scanner.tenant_auth import authenticate, guard
-from collectors.aws.scanner.ciem_engine import POLICY_RULES, SEV_ORDER
+from collectors.aws.scanner.ciem_engine import POLICY_RULES, REVIEW_REPEAT_DAYS, REVIEW_SCOPE_SQL, SEV_ORDER, validate_custom_policy
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -225,10 +225,11 @@ def view_external(cur, account):
 
 def view_reviews(cur, account):
     cur.execute("""SELECT r.id, r.name, r.scope, r.reviewer_email, r.due_date, r.status, r.created_by, r.created_at, r.completed_at,
-                          count(i.id), count(i.decision)
+                          count(i.id), count(i.decision), r.repeat_every_days
                    FROM ciem_access_reviews r LEFT JOIN ciem_review_items i ON i.review_id = r.id
                    WHERE r.cloud_account_id = %s GROUP BY r.id ORDER BY r.created_at DESC""", (account,))
-    cols = ("id", "name", "scope", "reviewer_email", "due_date", "status", "created_by", "created_at", "completed_at", "items", "decided")
+    cols = ("id", "name", "scope", "reviewer_email", "due_date", "status", "created_by", "created_at", "completed_at", "items", "decided",
+            "repeat_every_days")
     out = [dict(zip(cols, r)) for r in cur.fetchall()]
     for r in out:
         r["id"] = str(r["id"])
@@ -259,6 +260,7 @@ def view_settings(cur, account):
         out.append({"id": rid, "title": title, "default_severity": sev, "enabled": cfg.get("enabled", True),
                     "severity": cfg.get("severity") or sev})
     return {"observation_days": days, "observation_choices": list(OBS_DAYS), "rules": out,
+            "custom_policies": rules.get("_custom_policies") or [],
             "updated_by": r[2] if r else None, "updated_at": r[3] if r else None}
 
 
@@ -362,8 +364,10 @@ def save_settings(cur, account, body, actor):
         if not isinstance(enabled, bool):
             raise BadRequest(400, f"invalid enabled flag for {rid}")
         rules[rid] = {"enabled": enabled, **({"severity": sev} if sev else {})}
-    cur.execute("SELECT observation_days, rules FROM ciem_settings WHERE cloud_account_id = %s", (account,))
+    cur.execute("SELECT observation_days, rules FROM ciem_settings WHERE cloud_account_id = %s FOR UPDATE", (account,))
     before = cur.fetchone()
+    if before and (before[1] or {}).get("_custom_policies"):
+        rules["_custom_policies"] = before[1]["_custom_policies"]      # organisation policies are saved separately
     cur.execute("""INSERT INTO ciem_settings (cloud_account_id, observation_days, rules, updated_by, updated_at)
                    VALUES (%s, %s, %s, %s, NOW())
                    ON CONFLICT (cloud_account_id) DO UPDATE SET observation_days = EXCLUDED.observation_days,
@@ -372,6 +376,70 @@ def save_settings(cur, account, body, actor):
     _audit(cur, account, actor, "settings", None, {"previous": {"observation_days": before[0], "rules": before[1]} if before else None,
                                                      "new": {"observation_days": days, "rules": rules}})
     return {"saved": True, "note": "Applies from the next scan."}
+
+
+def save_custom_policies(cur, account, body, actor):
+    items = body.get("policies")
+    if not isinstance(items, list) or len(items) > 50:
+        raise BadRequest(400, "policies must be a list of at most 50 policies")
+    try:
+        cleaned = [validate_custom_policy(p) for p in items]
+    except ValueError as e:
+        raise BadRequest(400, str(e))
+    if len({p["id"] for p in cleaned}) != len(cleaned):
+        raise BadRequest(400, "Policy ids must be unique.")
+    cur.execute("SELECT observation_days, rules FROM ciem_settings WHERE cloud_account_id = %s FOR UPDATE", (account,))
+    row = cur.fetchone()
+    days, rules = (row[0], dict(row[1] or {})) if row else (90, {})
+    previous = rules.get("_custom_policies") or []
+    rules["_custom_policies"] = cleaned
+    cur.execute("""INSERT INTO ciem_settings (cloud_account_id, observation_days, rules, updated_by, updated_at)
+                   VALUES (%s, %s, %s, %s, NOW())
+                   ON CONFLICT (cloud_account_id) DO UPDATE SET rules = EXCLUDED.rules, updated_by = EXCLUDED.updated_by, updated_at = NOW()""",
+                (account, days, Json(rules), actor))
+    _audit(cur, account, actor, "custom_policies", None, {"previous": previous, "new": cleaned})
+    return {"saved": len(cleaned), "note": "Evaluated from the next scan. Findings of a removed policy are suppressed, not resolved."}
+
+
+def view_business_units(cur, account, actor):
+    """Enterprise posture: every account of this account's organisation the caller may see, grouped by business unit,
+    from each account's latest CIEM scan. Accounts the caller has no rights to are left out (and counted)."""
+    from collectors.aws.scanner.tenant_auth import account_allowed
+    cur.execute("""SELECT DISTINCT b2.id, b2.name, o.name, ba2.cloud_account_id, c.account_name, c.account_id
+                   FROM bu_accounts ba JOIN business_units b ON b.id = ba.business_unit_id
+                   JOIN business_units b2 ON b2.organization_id = b.organization_id
+                   JOIN organizations o ON o.id = b.organization_id
+                   JOIN bu_accounts ba2 ON ba2.business_unit_id = b2.id JOIN cloud_accounts c ON c.id = ba2.cloud_account_id
+                   WHERE ba.cloud_account_id = %s""", (account,))
+    rows = cur.fetchall()
+    if not rows:
+        return {"organization": None, "business_units": [], "note": "This account is not part of an organisation with business units."}
+    units, hidden = {}, 0
+    for bu_id, bu_name, org, acc, acc_name, aws_id in rows:
+        if not account_allowed(cur, actor, acc):
+            hidden += 1
+            continue
+        cur.execute("""SELECT id, finished_at, summary FROM ciem_scans WHERE cloud_account_id = %s AND status IN ('succeeded', 'partial')
+                       ORDER BY started_at DESC LIMIT 1""", (acc,))
+        scan = cur.fetchone()
+        cur.execute("""SELECT severity, count(*) FROM ciem_findings WHERE cloud_account_id = %s AND status IN ('open', 'in_progress') GROUP BY 1""", (acc,))
+        open_by = dict(cur.fetchall())
+        u = units.setdefault(str(bu_id), {"id": str(bu_id), "name": bu_name, "accounts": [], "identities": 0, "admins": 0,
+                                          "escalation_paths": 0, "open_findings": {}, "lp_compliant": 0, "lp_total": 0})
+        sm = (scan[2] if scan else None) or {}
+        lp = sm.get("least_privilege") or {}
+        u["accounts"].append({"id": str(acc), "name": acc_name or aws_id, "last_scan": scan[1] if scan else None})
+        u["identities"] += sm.get("identities") or 0
+        u["admins"] += sm.get("admins") or 0
+        u["escalation_paths"] += sm.get("escalation_paths") or 0
+        u["lp_compliant"] += lp.get("compliant") or 0
+        u["lp_total"] += lp.get("total") or 0
+        for k, v in open_by.items():
+            u["open_findings"][k] = u["open_findings"].get(k, 0) + v
+    for u in units.values():
+        u["least_privilege_pct"] = round(100 * u["lp_compliant"] / u["lp_total"]) if u["lp_total"] else None
+    return {"organization": rows[0][2], "business_units": sorted(units.values(), key=lambda x: x["name"]),
+            "accounts_not_visible": hidden, "note": "Each account counts from its own latest CIEM scan; accounts you have no rights to are left out."}
 
 
 def create_review(cur, account, body, actor):
@@ -393,8 +461,10 @@ def create_review(cur, account, body, actor):
     latest = _latest_scan(cur, account)
     if not latest:
         raise BadRequest(409, "There is no CIEM scan yet to review.")
-    where = {"privileged": "AND (admin IS NOT NULL OR data->'capabilities' @> '[{\"category\": \"identity\"}]'::jsonb)",
-             "machine": "AND classification = 'machine'", "human": "AND classification = 'human'", "all": ""}[scope]
+    repeat = body.get("repeat_every_days")
+    if repeat is not None and repeat not in REVIEW_REPEAT_DAYS:
+        raise BadRequest(400, f"repeat_every_days must be one of {list(REVIEW_REPEAT_DAYS)} or empty")
+    where = REVIEW_SCOPE_SQL[scope]
     cur.execute(f"""SELECT arn, name, jsonb_build_object('kind', kind, 'classification', classification, 'admin', admin,
                            'risk_score', risk_score, 'policies', data->'policies', 'owner', owner)
                     FROM ciem_identities WHERE scan_id = %s AND kind <> 'group' AND classification <> 'service_linked' {where}""",
@@ -402,8 +472,8 @@ def create_review(cur, account, body, actor):
     items = cur.fetchall()
     if not items:
         raise BadRequest(409, "No identities match this scope.")
-    cur.execute("""INSERT INTO ciem_access_reviews (cloud_account_id, name, scope, reviewer_email, due_date, created_by)
-                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""", (account, name, scope, reviewer, due, actor))
+    cur.execute("""INSERT INTO ciem_access_reviews (cloud_account_id, name, scope, reviewer_email, due_date, created_by, repeat_every_days)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""", (account, name, scope, reviewer, due, actor, repeat))
     rid = str(cur.fetchone()[0])
     for arn, n, snap in items:
         cur.execute("INSERT INTO ciem_review_items (review_id, identity_arn, identity_name, snapshot) VALUES (%s, %s, %s, %s)",
@@ -484,6 +554,7 @@ def refresh_ticket(cur, account, body, actor):
 
 
 ACTIONS = {"set_finding_status": set_finding_status, "save_settings": save_settings, "create_review": create_review,
+           "save_custom_policies": save_custom_policies,
            "decide_review_item": decide_review_item, "create_ticket": create_ticket, "refresh_ticket": refresh_ticket}
 VIEWS = {"overview": view_overview, "identities": view_identities, "findings": view_findings, "paths": view_paths,
          "external": view_external, "reviews": view_reviews, "settings": view_settings, "audit": view_audit, "scans": view_scans}
@@ -523,6 +594,8 @@ def handle(event, conn):
                     return _resp(200, view_finding(cur, account, qs.get("finding_id")))
                 if view == "review":
                     return _resp(200, view_review(cur, account, qs.get("review_id")))
+                if view == "business_units":
+                    return _resp(200, view_business_units(cur, account, actor))
                 if view == "export":
                     r = export(cur, account, qs.get("what"), qs.get("format", "csv"), actor)
                     conn.commit()
@@ -542,7 +615,7 @@ def handle(event, conn):
             try:
                 from collectors.aws.scanner.notification_lib import create_notification
                 create_notification(conn, account, "security", "ciem_access_review_assigned", "P3", note["title"],
-                                    description=note["description"], resource_link="ciem.html#reviews", actor=actor)
+                                    description=note["description"], resource_link=f"ciem.html?account_id={account}#reviews", actor=actor)
             except Exception:
                 logger.exception("could not notify the access review")
         return _resp(200, result)

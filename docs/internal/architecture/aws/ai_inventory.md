@@ -33,8 +33,22 @@ least-privilege roles with scoped logs, canary run on the internal test account 
 CORS/401 checks, then the `scanners` row). A journal-driven rollback script exists next to it.
 Reserved concurrency is not set: the account's Lambda concurrency limit is 10.
 
+## Added 2026-10-22
+
+- Every enabled region (in parallel). A service AWS does not offer in a region (SDK endpoint data, or "Unknown
+  operation" for Bedrock custom models) counts as read; a failed call stays a coverage gap. Assets of a region that
+  was not read are never marked stale.
+- Tools: the Lambda behind a Bedrock action group (its exact version/alias) is linked, and what the tool can do comes
+  from the CIEM capabilities of that executor role (`privileged_ai_tool` for enabled groups only).
+- Supervisor agents: `DELEGATES_TO` collaborators (distinct identities, never merged).
+- Guardrail health from the Bedrock status (configured / degraded / unknown).
+- Known vulnerabilities in AI packages from GitHub Dependabot (`vulnerable_ai_dependency`), resolved only when the
+  repository's alerts were readable in full.
+- Governance finding: a production asset without an owner (from your own data, re-evaluated every run).
+- Risk score per asset with its factors; evidence package (JSON) with scope, sources, timestamps and limitations.
+- Bounded GitHub retries on rate limits and server errors.
+
 ## Open
 
 - GitHub must be connected per account (Settings → GitHub) for code to be inventoried.
-- Single region (the account's region). SaaS AI tools, other clouds and runtime traffic are not covered yet;
-  the page says so and offers manual registration.
+- SaaS AI tools, other clouds and runtime traffic are not covered yet; the page says so and offers manual registration.

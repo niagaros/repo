@@ -80,7 +80,8 @@ def _run(conn, account, aws, repos, read_repos=("acme/app",), complete=True, cie
         sid = cur.fetchone()[0]
     conn.commit()
     assets, rels, findings, _ = E.build(ACCT, aws, repos, ciem or {}, {})
-    read = {"aws_parts": {k for k, v in aws["coverage"].items() if v["ok"]}, "repos": set(read_repos),
+    parts = {k for k, v in aws["coverage"].items() if v["ok"]}
+    read = {"aws_parts": parts, "aws_parts_by_region": {"eu-west-1": parts}, "repos": set(read_repos),
             "github_complete": complete, "ciem": bool(ciem)}
     out = h.store(conn, account, sid, assets, rels, findings, read, inactive)
     with conn.cursor() as cur:
@@ -259,13 +260,13 @@ def test_full_scanner_run_with_mocked_sources(conn, accounts):
     session = MagicMock()
     session.client.return_value.get_caller_identity.return_value = {"Account": ACCT}
     gh = {"repos": [_repo()], "coverage": {"acme/app": {"ok": True, "truncated": False}}, "limitations": [], "complete": True}
-    with patch.object(h, "collect_aws", return_value=_aws()), patch.object(h, "collect_github", return_value=gh) as cg, \
+    with patch.object(h, "collect_aws_regions", return_value=([_aws()], ["eu-west-1"], [])), patch.object(h, "collect_github", return_value=gh) as cg, \
          patch.object(h, "_github_token", return_value="tok"), patch.object(h, "_notify") as notify:
         out = h.run(conn, b, session)
     assert out["status"] == "succeeded" and out["summary"]["new_assets"] >= 5
     assert cg.call_args[0][:2] == ("acme", "tok")
     assert notify.call_args[0][3]                                       # new high-risk findings were passed on
-    with patch.object(h, "collect_aws", return_value=_aws()), patch.object(h, "collect_github", side_effect=RuntimeError("down")), \
+    with patch.object(h, "collect_aws_regions", return_value=([_aws()], ["eu-west-1"], [])), patch.object(h, "collect_github", side_effect=RuntimeError("down")), \
          patch.object(h, "_github_token", return_value="tok"), patch.object(h, "_notify"):
         out = h.run(conn, b, session)
     assert out["status"] == "partial"
@@ -494,7 +495,8 @@ def test_unreadable_lambda_environment_never_resolves_its_key_finding(conn, acco
         sid = cur.fetchone()[0]
     conn.commit()
     assets, rels, findings, _ = E.build(ACCT, aws, [_repo()], {}, {})
-    read = {"aws_parts": set(ALL_PARTS), "repos": {"acme/app"}, "github_complete": True, "ciem": False, "lambda_env_unreadable": {FN_ARN}}
+    read = {"aws_parts": set(ALL_PARTS), "aws_parts_by_region": {"eu-west-1": set(ALL_PARTS)}, "repos": {"acme/app"}, "github_complete": True,
+            "ciem": False, "lambda_env_unreadable": {FN_ARN}}
     h.store(conn, a, sid, assets, rels, findings, read, 30)
     assert _finding(conn, a, "ai_key_in_lambda_env")[1] in ("open", "in_progress")
 
@@ -524,3 +526,63 @@ def test_api_rejects_unauthenticated_calls_before_touching_the_database():
     with patch.object(h, "authenticate", return_value=None), patch.object(h, "_get_connection") as gc:
         r = h.handler({"httpMethod": "GET", "queryStringParameters": {"cloud_account_id": str(uuid.uuid4())}, "headers": {}}, None)
     assert r["statusCode"] == 401 and not gc.called
+
+
+def test_production_asset_without_owner_becomes_a_finding_and_resolves_when_owned(api, conn, accounts):
+    a = accounts["a"]
+    aid = _aid(conn, a, "provider:groq")
+    api("owner@a.test", "POST", body={"cloud_account_id": a, "action": "update_asset", "asset_id": aid, "owner": None, "environment": "production",
+                                      "criticality": "high"})
+    with conn.cursor() as cur:
+        cur.execute("UPDATE ai_assets SET owner = NULL WHERE id = %s", (aid,))
+    conn.commit()
+    _run(conn, a, _aws(), [_repo()])
+    f = _finding(conn, a, "production_asset_without_owner")
+    assert f and f[1] == "open"
+    api("owner@a.test", "POST", body={"cloud_account_id": a, "action": "update_asset", "asset_id": aid, "owner": "ai-team"})
+    _run(conn, a, _aws(), [_repo()], read_repos=(), complete=False)     # resolves even when sources are partial: it is our own data
+    assert _finding(conn, a, "production_asset_without_owner")[1] == "resolved"
+
+
+def test_risk_score_lists_its_factors(api, conn, accounts):
+    a = accounts["a"]
+    s, d = api("owner@a.test", "GET", {"cloud_account_id": a, "view": "assets"})
+    app = next(x for x in d["assets"] if x["asset_key"] == f"aws:{FN_ARN}")
+    assert app["risk_score"] > 0 and app["risk_factors"] and all("points" in f and "factor" in f for f in app["risk_factors"])
+    s, one = api("owner@a.test", "GET", {"cloud_account_id": a, "view": "asset", "asset_id": app["id"]})
+    assert one["risk_score"] == app["risk_score"]
+
+
+def test_evidence_package_has_scope_sources_and_limitations(api, accounts):
+    a = accounts["a"]
+    s, csv_body = api("owner@a.test", "GET", {"cloud_account_id": a, "view": "export", "what": "evidence", "format": "csv"})
+    assert s == 400
+    s, ev = api("owner@a.test", "GET", {"cloud_account_id": a, "view": "export", "what": "evidence", "format": "json"})
+    assert s == 200 and ev["assets"] and all("observations" in x for x in ev["assets"])
+    assert "limitations" in ev and "scope" in ev and "not proof" in ev["note"]
+
+
+def test_vulnerable_dependency_only_resolves_when_dependabot_was_read(conn, accounts):
+    a = accounts["a"]
+    r = _repo(extra="")
+    r["files"].append({"path": "requirements.txt", "text": "langchain==0.0.200\n"})
+    r["dependabot"] = {"status": "ok", "alerts": [{"package": "langchain", "ecosystem": "pip", "manifest": "requirements.txt", "ghsa": "GHSA-1",
+                                                   "cve": None, "summary": "RCE", "severity": "critical", "fixed_in": "0.0.236", "url": "u"}]}
+    from collectors.aws.scanner import ai_inventory_engine as E, ai_inventory_scanner_handler as h
+
+    def run(repo, dependabot_ok):
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO ai_inventory_scans (cloud_account_id, status) VALUES (%s, 'succeeded') RETURNING id", (a,))
+            sid = cur.fetchone()[0]
+        conn.commit()
+        assets, rels, findings, _ = E.build(ACCT, _aws(), [repo], {}, {})
+        read = {"aws_parts": set(ALL_PARTS), "aws_parts_by_region": {"eu-west-1": set(ALL_PARTS)}, "repos": {"acme/app"}, "github_complete": True, "ciem": False,
+                "dependabot_repos": {"acme/app"} if dependabot_ok else set()}
+        h.store(conn, a, sid, assets, rels, findings, read, 30)
+    run(r, True)
+    assert _finding(conn, a, "vulnerable_ai_dependency")[1] == "open"
+    fixed = dict(r, dependabot={"status": "no permission to read alerts", "alerts": []})
+    run(fixed, False)
+    assert _finding(conn, a, "vulnerable_ai_dependency")[1] == "open"            # alerts not readable: no conclusion
+    run(dict(r, dependabot={"status": "ok", "alerts": []}), True)
+    assert _finding(conn, a, "vulnerable_ai_dependency")[1] == "resolved"

@@ -25,6 +25,7 @@ SCHEMA = ["tests/fixtures/ciem_schema.sql", "tests/fixtures/ai_inventory_schema.
           "migrations/033_ai_inventory.sql", "migrations/034_security_agents.sql", "migrations/034_security_agents.sql"]
 NOW = datetime.now(timezone.utc)
 ADMIN_ARN = "arn:aws:iam::111122223333:user/dev"
+from collectors.aws.scanner.security_agents_engine import AGENTS as _AGENTS  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -70,9 +71,20 @@ def accounts(conn):
     return {"a": a, "b": b}
 
 
-def _ct_session(events):
+def _ct_session(events, surface=None):
+    """One mock for every AWS client: one region, CloudTrail events, optional network configuration, no GuardDuty/Security Hub."""
     ct = MagicMock()
+    ct.describe_regions.return_value = {"Regions": [{"RegionName": "eu-west-1"}]}
     ct.lookup_events.side_effect = lambda **kw: {"Events": [e for e in events if e["EventName"] == kw["LookupAttributes"][0]["AttributeValue"]]}
+    surface = surface or {}
+    pages = lambda key, items: MagicMock(paginate=MagicMock(return_value=[{key: items}]))
+    ct.get_paginator.side_effect = lambda name: {
+        "describe_security_groups": pages("SecurityGroups", surface.get("sgs", [])),
+        "describe_instances": pages("Reservations", [{"Instances": surface.get("instances", [])}]),
+        "describe_db_instances": pages("DBInstances", surface.get("dbs", [])),
+        "list_functions": pages("Functions", [])}[name]
+    ct.list_detectors.return_value = {"DetectorIds": []}
+    ct.get_findings.return_value = {"Findings": []}
     s = MagicMock()
     s.client.return_value = ct
     return s, ct
@@ -148,12 +160,12 @@ def test_step_by_step_activation(api, accounts):
 
 def test_activate_recommended_activates_everything_with_recorded_steps(api, accounts):
     s, b = api("owner@a.test", "POST", body={"cloud_account_id": accounts["a"], "action": "activate_recommended"})
-    assert s == 200 and len(b["activated"]) == 8              # the one activated by hand above is skipped
+    assert s == 200 and len(b["activated"]) == len(_AGENTS) - 1     # the one activated by hand above is skipped
     s, ag = api("owner@a.test", "GET", {"cloud_account_id": accounts["a"], "view": "agents"})
     assert all(x["status"] == "active" and x["evaluation_current"] for x in ag["agents"])
     s, au = api("owner@a.test", "GET", {"cloud_account_id": accounts["a"], "view": "audit"})
     acts = [x["action"] for x in au["audit"]]
-    assert acts.count("agent_approved") == 9 and acts.count("authorization_granted") == 9
+    assert acts.count("agent_approved") == len(_AGENTS) and acts.count("authorization_granted") == len(_AGENTS)
 
 
 # ── the workflow ────────────────────────────────────────────────────────────
@@ -178,7 +190,7 @@ def test_full_workflow_red_blue_triage_green(conn, accounts):
         cur.execute("SELECT DISTINCT decision FROM sa_actions WHERE cloud_account_id = %s", (a,))
         assert {r[0] for r in cur.fetchall()} == {"allow"}
         cur.execute("SELECT count(*) FROM sa_runs WHERE cloud_account_id = %s AND workflow_id = %s", (a, out["workflow_id"]))
-        assert cur.fetchone()[0] == 9
+        assert cur.fetchone()[0] == len(_AGENTS)
         cur.execute("SELECT coverage->>'window_end' FROM sa_runs WHERE cloud_account_id = %s AND agent_id = 'blue-cloud-threat' ORDER BY started_at DESC LIMIT 1", (a,))
         assert cur.fetchone()[0]
     conn.rollback()
@@ -456,3 +468,35 @@ def test_partial_blue_read_does_not_move_the_cursor(conn, accounts):
         status, end = cur.fetchone()
     conn.rollback()
     assert status == "partial" and end is None
+
+
+def test_attack_surface_path_is_published_with_sla_and_resolves_once_closed(conn, accounts):
+    from collectors.aws.scanner import security_agents_runner_handler as R
+    a = accounts["a"]
+    sg = {"GroupId": "sg-db", "GroupName": "default", "IpPermissions": [{"IpProtocol": "tcp", "FromPort": 5432, "ToPort": 5432, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]}]}
+    db = {"DBInstanceIdentifier": "cspm-db", "DBInstanceArn": "arn:aws:rds:eu-west-1:1:db:cspm-db", "PubliclyAccessible": True, "Engine": "postgres",
+          "Endpoint": {"Port": 5432}, "StorageEncrypted": True, "VpcSecurityGroups": [{"VpcSecurityGroupId": "sg-db"}]}
+
+    def run(public):
+        session, _ = _ct_session([], {"sgs": [sg], "dbs": [dict(db, PubliclyAccessible=public)]})
+        with patch.object(R, "_notify"):
+            out = R.run(conn, a, session, "manual", "eu-west-1", None, ["red-attack-surface", "blue-aws-detections", "green-verification"])
+        conn.commit()
+        return out
+    out = run(True)
+    assert out["runs"]["red-attack-surface"]["items"] == 1
+    with conn.cursor() as cur:
+        cur.execute("""SELECT state, severity, due_at - CURRENT_DATE, attack_path->>'to', evidence->>'open_to_internet' FROM sa_work_items
+                       WHERE cloud_account_id = %s AND source_type = 'attack_surface'""", (a,))
+        state, sev, days, to, open_ = cur.fetchone()
+        cur.execute("""SELECT limitations FROM sa_runs WHERE cloud_account_id = %s AND agent_id = 'blue-aws-detections' ORDER BY started_at DESC LIMIT 1""", (a,))
+        lim = cur.fetchone()[0]
+    conn.rollback()
+    assert state == "new" and sev == "high" and days == 30 and open_ == "true" and "database login" in to
+    assert any("GuardDuty is not enabled" in l for l in lim)                   # switched off = coverage gap, said out loud
+    run(False)
+    with conn.cursor() as cur:
+        cur.execute("SELECT state, verification->>'reason' FROM sa_work_items WHERE cloud_account_id = %s AND source_type = 'attack_surface'", (a,))
+        state, reason = cur.fetchone()
+    conn.rollback()
+    assert state == "resolved" and "no longer reachable" in reason

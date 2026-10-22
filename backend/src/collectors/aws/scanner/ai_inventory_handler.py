@@ -31,7 +31,7 @@ import logging
 import os
 import re
 from collections import deque
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import boto3
 import psycopg2
@@ -232,16 +232,46 @@ def view_assets(cur, account, qs):
     if qs.get("no_owner") == "1":
         where.append("owner IS NULL")
     cur.execute(f"""SELECT {ASSET_COLS},
-                           (SELECT count(*) FROM ai_inventory_findings f WHERE f.asset_id = a.id AND f.status IN ('open', 'in_progress')),
-                           (SELECT count(*) FROM ai_asset_relationships r WHERE r.source_asset_id = a.id OR r.target_asset_id = a.id)
+                           (SELECT count(*) FROM ai_asset_relationships r WHERE r.source_asset_id = a.id OR r.target_asset_id = a.id),
+                           (SELECT json_build_object('critical', count(*) FILTER (WHERE f.severity = 'critical'), 'high', count(*) FILTER (WHERE f.severity = 'high'),
+                                                   'medium', count(*) FILTER (WHERE f.severity = 'medium'), 'low', count(*) FILTER (WHERE f.severity = 'low'))
+                            FROM ai_inventory_findings f WHERE f.asset_id = a.id AND f.status IN ('open', 'in_progress')),
+                           EXISTS (SELECT 1 FROM ai_asset_relationships r JOIN ai_assets i ON i.id = r.target_asset_id
+                                   WHERE r.source_asset_id = a.id AND r.rel_type = 'AUTHENTICATES_AS' AND i.metadata->>'ciem_admin' = 'admin')
                     FROM ai_assets a WHERE {" AND ".join(where)}
                     ORDER BY CASE lifecycle_status WHEN 'active' THEN 0 WHEN 'stale' THEN 1 ELSE 2 END, asset_type, name LIMIT 1000""", args)
     out = []
     for r in cur.fetchall():
-        a = _asset_row(r[:-2])
-        a["open_findings"], a["relationships"] = r[-2], r[-1]
+        a = _asset_row(r[:-3])
+        a["relationships"] = r[-3]
+        a["open_findings"] = sum((r[-2] or {}).values())
+        a["risk_score"], a["risk_factors"] = risk_score(a, r[-2] or {}, r[-1])
         out.append(a)
     return {"assets": out, "truncated": len(out) == 1000, "types": ASSET_TYPES}
+
+
+FINDING_POINTS = {"critical": 40, "high": 25, "medium": 10, "low": 3}
+
+
+def risk_score(a, open_by_severity, admin_identity):
+    """0-100 prioritisation aid, always returned with the factors that make it up."""
+    factors = []
+    pts = min(60, sum(FINDING_POINTS[s] * n for s, n in open_by_severity.items() if n))
+    if pts:
+        factors.append({"points": pts, "factor": "open findings: " + ", ".join(f"{n} {s}" for s, n in open_by_severity.items() if n)})
+    if admin_identity:
+        factors.append({"points": 15, "factor": "runs as an identity with full administrator access (CIEM)"})
+    if a.get("approval_status") == "rejected" and a.get("lifecycle_status") in ("active", "stale"):
+        factors.append({"points": 25, "factor": "rejected but still in use"})
+    elif a.get("approval_status") == "unreviewed" and a.get("asset_type") != "ai_identity":
+        factors.append({"points": 10, "factor": "not reviewed by your team"})
+    if a.get("approval_status") == "exception" and a.get("approval_until") and str(a["approval_until"]) < date.today().isoformat():
+        factors.append({"points": 10, "factor": "exception expired"})
+    if a.get("environment") == "production":
+        factors.append({"points": 10, "factor": "production"})
+    if a.get("criticality") in ("high", "critical"):
+        factors.append({"points": 15 if a["criticality"] == "critical" else 10, "factor": f"criticality {a['criticality']}"})
+    return min(100, sum(f["points"] for f in factors)), factors
 
 
 def _impact(cur, account, asset_id, depth=3):
@@ -308,6 +338,13 @@ def view_asset(cur, account, asset_id):
     a["findings"] = [{"id": str(i), "rule": ru, "severity": sv, "title": t, "status": st, "first_seen": fs, "last_seen": ls}
                      for i, ru, sv, t, st, fs, ls in cur.fetchall()]
     a["impact"] = _impact(cur, account, aid)
+    cur.execute(f"SELECT " + """(SELECT json_build_object('critical', count(*) FILTER (WHERE f.severity = 'critical'), 'high', count(*) FILTER (WHERE f.severity = 'high'),
+                                                   'medium', count(*) FILTER (WHERE f.severity = 'medium'), 'low', count(*) FILTER (WHERE f.severity = 'low'))
+                            FROM ai_inventory_findings f WHERE f.asset_id = a.id AND f.status IN ('open', 'in_progress')),
+                           EXISTS (SELECT 1 FROM ai_asset_relationships r JOIN ai_assets i ON i.id = r.target_asset_id
+                                   WHERE r.source_asset_id = a.id AND r.rel_type = 'AUTHENTICATES_AS' AND i.metadata->>'ciem_admin' = 'admin')""" + " FROM ai_assets a WHERE a.id = %s", (aid,))
+    by_sev, admin = cur.fetchone()
+    a["risk_score"], a["risk_factors"] = risk_score(a, by_sev or {}, admin)
     return a
 
 
@@ -405,7 +442,44 @@ def view_scans(cur, account):
                        "limitations": lm} for i, s, t, a, f, e, sm, lm in cur.fetchall()]}
 
 
+def _evidence(cur, account):
+    """Evidence package: what was inventoried, from which sources, when, how sure, and what was not covered."""
+    scan = _latest_scan(cur, account)
+    cur.execute(f"SELECT {ASSET_COLS} FROM ai_assets WHERE cloud_account_id = %s ORDER BY asset_type, name", (account,))
+    assets = [_asset_row(r) for r in cur.fetchall()]
+    cur.execute("""SELECT o.asset_id, o.source, o.ref, o.verification, o.observed_at FROM ai_asset_observations o JOIN ai_assets a ON a.id = o.asset_id
+                   WHERE a.cloud_account_id = %s ORDER BY o.observed_at DESC""", (account,))
+    obs = {}
+    for aid, src, ref, ver, at in cur.fetchall():
+        lst = obs.setdefault(str(aid), [])
+        if len(lst) < 20:
+            lst.append({"source": src, "ref": ref, "verification": ver, "at": at})
+    for a in assets:
+        a["observations"] = obs.get(a["id"], [])
+    cur.execute("""SELECT s.name, r.rel_type, t.name, r.sources, r.verification, r.confidence, r.origin, r.first_seen, r.last_seen
+                   FROM ai_asset_relationships r JOIN ai_assets s ON s.id = r.source_asset_id JOIN ai_assets t ON t.id = r.target_asset_id
+                   WHERE r.cloud_account_id = %s""", (account,))
+    rels = [dict(zip(("source", "type", "target", "sources", "verification", "confidence", "origin", "first_seen", "last_seen"), r)) for r in cur.fetchall()]
+    cur.execute("""SELECT rule, severity, title, status, status_reason, accepted_until, details, compliance, first_seen, last_seen, resolved_at
+                   FROM ai_inventory_findings WHERE cloud_account_id = %s ORDER BY first_seen""", (account,))
+    findings = [dict(zip(("rule", "severity", "title", "status", "status_reason", "accepted_until", "evidence", "compliance", "first_seen",
+                          "last_seen", "resolved_at"), r)) for r in cur.fetchall()]
+    return {"generated_at": datetime.now(timezone.utc).isoformat(), "scope": {"cloud_account_id": account,
+            "regions": ((scan or {}).get("summary") or {}).get("regions"), "sources_read": ((scan or {}).get("summary") or {}).get("sources_read")},
+            "latest_scan": scan, "limitations": (scan or {}).get("limitations") or [],
+            "verification_levels": {"declared": "found in code or configuration", "discovered": "listed by AWS", "observed": "usage evidence",
+                                    "verified": "reviewed by a person"},
+            "assets": assets, "relationships": rels, "findings": findings,
+            "note": "Covers only the sources listed under scope; it is not proof that no other AI is in use."}
+
+
 def export(cur, account, what, fmt, actor):
+    if what == "evidence":
+        if fmt != "json":
+            raise BadRequest(400, "The evidence package is only available as JSON.")
+        data = _evidence(cur, account)
+        _audit(cur, account, actor, "export", what, {"format": fmt, "assets": len(data["assets"])})
+        return _resp(200, data)
     if what == "assets":
         cols = ["asset_type", "name", "provider", "verification", "origin", "lifecycle_status", "approval_status", "approval_reason",
                 "approval_until", "owner", "business_purpose", "environment", "criticality", "next_review_at", "first_seen",
@@ -433,7 +507,7 @@ def export(cur, account, what, fmt, actor):
         cur.execute("""SELECT created_at, actor_email, action, target, details FROM ai_inventory_audit_log
                        WHERE cloud_account_id = %s ORDER BY created_at DESC""", (account,))
     else:
-        raise BadRequest(400, "what must be assets, findings, relationships, changes or audit")
+        raise BadRequest(400, "what must be assets, findings, relationships, changes, audit or evidence")
     if fmt not in ("csv", "json"):
         raise BadRequest(400, "format must be csv or json")
     rows = cur.fetchall()

@@ -26,6 +26,19 @@ workflow. No language model makes decisions; every agent is versioned code with 
 - Each Blue agent keeps its own CloudTrail cursor and moves it only after a complete, published read. Unreadable or truncated event types are coverage gaps shown on the page, never "no threat".
 - `security-agents-handler` serves `GET/POST /security-agents` behind `tenant_auth.guard` (REFS for every id); unauthenticated calls are rejected before a database connection.
 
+## Added 2026-10-22
+
+- **Attack Surface Agent (Red):** reads security groups, instances (IPv4 and IPv6, with their instance role), RDS and
+  Lambda function URLs in every enabled region and builds paths internet → port/protocol → resource → role →
+  what the role can do (CIEM). Configuration only; nothing is scanned. Verification: the item resolves when a later
+  complete read no longer finds the exposure.
+- **AWS Detection Integration Agent (Blue):** active GuardDuty and Security Hub findings in every region (a Security
+  Hub copy of a GuardDuty finding is skipped only when that finding was imported directly). Regions where the services
+  are off are reported as coverage gaps.
+- CloudTrail detections in every enabled region; a failed region list makes the run partial (the cursor does not move).
+- SLA due dates per severity (7/30/90/180 days) and a daily overdue notification; verification re-scans for every
+  source (the account-scoped orchestrator scan for CIS/FSBP findings), at most once per source per 6 hours.
+
 ## Not covered
 
 Active penetration testing, network scanning, runtime/EDR telemetry, containers/Kubernetes, SBOM and

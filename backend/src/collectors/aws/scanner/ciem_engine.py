@@ -934,6 +934,112 @@ def disabled_rules(settings):
     return sorted(r for r, cfg in (settings or {}).items() if isinstance(cfg, dict) and cfg.get("enabled") is False)
 
 
+CUSTOM_SCOPES = ("all", "human", "machine", "external")
+
+# Which identities an access review covers (shared by the API and the scanner that starts recurring reviews).
+REVIEW_SCOPE_SQL = {"privileged": "AND (admin IS NOT NULL OR data->'capabilities' @> '[{\"category\": \"identity\"}]'::jsonb)",
+                    "machine": "AND classification = 'machine'", "human": "AND classification = 'human'", "all": ""}
+REVIEW_REPEAT_DAYS = (30, 90, 180, 365)
+
+
+def validate_custom_policy(p):
+    """Organisation-defined entitlement policy: identities in scope may not be granted any of the forbidden actions
+    (unless their name matches an exception). Returns the cleaned policy or raises ValueError with a readable reason."""
+    if not isinstance(p, dict):
+        raise ValueError("A policy must be an object.")
+    pid = str(p.get("id") or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,40}", pid):
+        raise ValueError("Policy id: 2-41 lowercase letters, digits, - or _.")
+    name = str(p.get("name") or "").strip()
+    if not 3 <= len(name) <= 150:
+        raise ValueError("Policy name: 3-150 characters.")
+    sev = p.get("severity")
+    if sev not in ("critical", "high", "medium", "low"):
+        raise ValueError("Severity must be critical, high, medium or low.")
+    scope = p.get("applies_to", "all")
+    if scope not in CUSTOM_SCOPES:
+        raise ValueError(f"applies_to must be one of {', '.join(CUSTOM_SCOPES)}.")
+    actions = [str(a).strip() for a in p.get("forbidden_actions") or [] if str(a).strip()]
+    if not actions or len(actions) > 30 or any(not re.fullmatch(r"(\*|[a-z0-9-]+:[A-Za-z0-9*?]+)", a) for a in actions):
+        raise ValueError("forbidden_actions: 1-30 IAM actions such as iam:* or s3:DeleteBucket.")
+    exceptions = [str(e).strip() for e in p.get("except_names") or [] if str(e).strip()][:30]
+    if any(len(e) > 128 for e in exceptions):
+        raise ValueError("Exception names can be at most 128 characters.")
+    return {"id": pid, "name": name, "severity": sev, "applies_to": scope, "forbidden_actions": actions, "except_names": exceptions,
+            "description": str(p.get("description") or "")[:500]}
+
+
+_KNOWN_ACTIONS = sorted({a for _, _, acts, _ in SENSITIVE_CAPABILITIES for a in acts} | set(ADMIN_PROBE))
+
+
+def _concrete_actions(pattern, statements):
+    """evaluate() answers for one concrete action. A forbidden pattern (iam:*, s3:Delete*) is expanded into the concrete
+    actions the identity's Allow statements name that fall under it, the known sensitive actions under it, and — when a
+    statement allows a wildcard that overlaps the pattern — a representative action of the pattern itself."""
+    if "*" not in pattern and "?" not in pattern:
+        return [pattern]
+    out = []
+    for st in statements:
+        if st.get("effect") != "Allow":
+            continue
+        for a in st.get("actions") or []:
+            if "*" not in a and "?" not in a and _match_action(pattern, a):
+                out.append(a)
+    out += [a for a in _KNOWN_ACTIONS if _match_action(pattern, a)]
+    # wildcard grants that overlap the pattern (logs:Put* against logs:*): a representative action inside both
+    rep = lambda p: p.replace("*", "Niagaros").replace("?", "N")
+    for st in statements:
+        if st.get("effect") != "Allow":
+            continue
+        for a in st.get("actions") or []:
+            if "*" not in a and "?" not in a:
+                continue
+            if _match_action(pattern, rep(a)):
+                out.append(rep(a))
+            if _match_action(a, rep(pattern)):
+                out.append(rep(pattern))
+    seen, uniq = set(), []
+    for a in out:
+        if a.lower() not in seen:
+            seen.add(a.lower())
+            uniq.append(a)
+    return uniq[:200]
+
+
+def custom_policy_findings(account, identities, policies):
+    """Evaluated with the same policy engine as everything else (denies, boundaries and SCPs included)."""
+    out = []
+    for p in policies:
+        for i in identities:
+            if i["kind"] == "group" or i["classification"] == "service_linked":
+                continue
+            if p["applies_to"] != "all" and i["classification"] != p["applies_to"]:
+                continue
+            if any(fnmatch.fnmatchcase(i["name"], e) for e in p["except_names"]):
+                continue
+            hits = []
+            for pattern in p["forbidden_actions"]:
+                for action in _concrete_actions(pattern, i.get("_statements") or []):
+                    ev = evaluate(i.get("_statements") or [], action, "*", i.get("_guards"))
+                    if grants(ev):
+                        hits.append({"action": action, "pattern": pattern, "result": ev["result"], "evidence": ev.get("evidence", [])[:5],
+                                     "scope": ev.get("scope")})
+                        break           # one granted action is enough to show the pattern is violated
+            if not hits:
+                continue
+            out.append(_finding(account, f"custom:{p['id']}", "policy_violation", p["severity"],
+                                f"{p['name']}: {i['name']} is granted {', '.join(h['action'] for h in hits)}", i,
+                                {"policy": p, "granted": hits, "basis": "calculated from IAM policies",
+                                 "note": "'conditional' means a policy condition must hold; the grant may still be usable."},
+                                {"current": "Granted: " + ", ".join(f"{h['action']} ({h['result']})" for h in hits),
+                                 "proposed": f"Remove these permissions from {i['name']}, or add it to the policy's exceptions if it is approved",
+                                 "reason": f"Violates the organisation policy '{p['name']}'.", "impact": "Calls to the removed actions fail.",
+                                 "confidence": "high" if all(h["result"] == "allowed" for h in hits) else "medium",
+                                 "approvals": "Policy owner", "rollback": "Restore the previous policy version."},
+                                "least_privilege", key=p["id"]))
+    return out
+
+
 def build_findings(account, identities, root, external_findings, settings, observation_days):
     f = []
     for i in identities:
@@ -1318,6 +1424,7 @@ def analyze(raw, account, observation_days=90, settings=None, now=None):
         i["escalation"] = escalation_paths(i, identities, roles_by_service) + i.pop("_extra_paths", [])
 
     findings = build_findings(account, identities, raw.get("root"), raw.get("external_access"), settings, observation_days)
+    findings += custom_policy_findings(account, identities, (settings or {}).get("_custom_policies") or [])
     for i in identities:
         i["risk_score"], i["risk_severity"], i["risk_reasons"] = risk(i, findings)
 

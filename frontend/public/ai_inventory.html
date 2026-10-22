@@ -226,9 +226,9 @@ RENDER.assets = async () => {
       <label class="note" style="margin:0"><input type="checkbox" id="f-no_owner" ${f.no_owner ? 'checked' : ''}> Without owner</label>
       <button class="ghost" data-act="filter">Apply</button></div>
     ${d.truncated ? '<div class="warn">Showing the first 1000 assets; narrow the filters.</div>' : ''}
-    ${d.assets.length ? `<table><thead><tr><th>Asset</th><th>Type</th><th>Verification</th><th>Approval</th><th class="hide-sm">Owner</th><th class="hide-sm">Environment</th><th class="hide-sm">Last seen</th><th>Findings</th></tr></thead><tbody>
+    ${d.assets.length ? `<table><thead><tr><th>Asset</th><th>Type</th><th>Verification</th><th>Approval</th><th>Risk</th><th class="hide-sm">Owner</th><th class="hide-sm">Environment</th><th class="hide-sm">Last seen</th><th>Findings</th></tr></thead><tbody>
       ${d.assets.map(a => `<tr class="click" data-asset="${esc(a.id)}"><td><b>${esc(a.name)}</b> ${life(a.lifecycle_status)} ${a.origin !== 'discovered' ? chip('', a.origin) : ''}<div class="note" style="margin:0;word-break:break-all">${esc(a.provider || '')}</div></td>
-        <td>${esc(a.type_label)}</td><td>${ver(a.verification)}</td><td>${appr(a.approval_status)}</td><td class="hide-sm">${esc(a.owner || '—')}</td>
+        <td>${esc(a.type_label)}</td><td>${ver(a.verification)}</td><td>${appr(a.approval_status)}</td><td title="${esc((a.risk_factors || []).map(f => f.factor + ' +' + f.points).join('; '))}"><b>${esc(a.risk_score)}</b></td><td class="hide-sm">${esc(a.owner || '—')}</td>
         <td class="hide-sm">${esc(a.environment)}</td><td class="hide-sm">${esc(a.origin === 'discovered' ? day(a.last_seen) : '—')}</td><td>${a.open_findings ? chip('sev-high', a.open_findings) : '0'}</td></tr>`).join('')}</tbody></table>`
       : '<div class="empty">No asset matches these filters.</div>'}</div>`;
 };
@@ -263,6 +263,7 @@ async function openAsset(id) {
       <div class="kv"><div>Key</div><div style="word-break:break-all">${esc(a.asset_key)}</div><div>Provider</div><div>${esc(a.provider || '—')}</div>
         <div>First seen</div><div>${esc(fmt(a.first_seen))}</div><div>Last seen</div><div>${esc(a.origin === 'discovered' ? fmt(a.last_seen) : '— (registered by hand)')}</div>
         <div>Last synced</div><div>${esc(fmt(a.last_synced))}</div><div>Last verified</div><div>${esc(fmt(a.last_verified))}${a.approval_by ? ' by ' + esc(a.approval_by) : ''}</div></div>
+      <h3>Risk ${esc(a.risk_score)}/100</h3><div class="note">${(a.risk_factors || []).length ? a.risk_factors.map(f => esc(f.factor) + ' (+' + f.points + ')').join(' · ') : 'No risk factors found.'} A prioritisation aid; the factors are what matter.</div>
       <h3>Governance</h3><div class="note">Filled in by your team; scans never overwrite these fields. Approving, restricting or rejecting marks the asset as reviewed (verified).</div>
       ${a.approval_status !== 'unreviewed' && a.verification !== 'verified' ? '<div class="warn">This asset changed in a risk-relevant way after it was reviewed, so the review no longer covers it. Check the change history and save to confirm the decision again.</div>' : ''}
       <div class="form">
@@ -454,7 +455,9 @@ RENDER.reports = async () => {
   const [a, sc] = await Promise.all([api('audit'), api('scans')]);
   view.innerHTML = `<div class="card"><h2>Exports</h2><div class="note">Exports contain only this account and are recorded in the audit trail.</div>
     <div class="row">${['assets', 'relationships', 'findings', 'changes', 'audit'].map(w => `<button class="ghost" data-act="export" data-what="${w}" data-format="csv">${w} (CSV)</button><button class="ghost" data-act="export" data-what="${w}" data-format="json">${w} (JSON)</button>`).join('')}
-    <button class="ghost" data-act="print">Overview as PDF (print)</button></div></div>
+    <button class="ghost" data-act="export" data-what="evidence" data-format="json">Evidence package (JSON)</button>
+    <button class="ghost" data-act="print">Overview as PDF (print)</button></div>
+    <div class="note" style="margin-top:6px">The evidence package lists every asset with its sources, timestamps and verification level, the relationships, findings, and what the inventory did not cover.</div></div>
     <div class="card"><h2>Inventory runs</h2><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Assets</th><th class="hide-sm">Notes</th></tr></thead><tbody>
       ${sc.scans.map(s => `<tr><td>${esc(fmt(s.started_at))}</td><td>${esc(s.trigger)}</td><td>${chip(s.status === 'succeeded' ? 'st-resolved' : s.status === 'failed' ? 'sev-critical' : 'sev-medium', s.status)}</td>
         <td>${esc((s.summary || {}).assets ?? '—')}</td><td class="hide-sm note">${esc(s.error || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">No runs yet.</td></tr>'}</tbody></table></div>

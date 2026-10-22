@@ -40,8 +40,9 @@ CATEGORY_SOURCES = {
     "dormant_identity": ["credential_report"], "privileged_use": ["credential_report"],
     "unused_entitlement": ["credential_report", "access_advisor"],
     "ownership": ["credential_report"],   # user classification (machine vs unknown) comes from the credential report
+    "policy_violation": ["credential_report"],   # organisation policies scoped to human/machine need that classification
 }
-ALL_CATEGORIES = ["excessive_permissions", "wildcard_permission", "privilege_escalation", "external_access", "ownership",
+ALL_CATEGORIES = ["excessive_permissions", "wildcard_permission", "privilege_escalation", "external_access", "ownership", "policy_violation",
                   "external_resource_access", "stale_credential", "weak_authentication", "dormant_identity",
                   "privileged_use", "unused_entitlement"]
 
@@ -160,7 +161,7 @@ def store(conn, account_id, scan_id, identities, findings, summary, raw, resolva
                         "WHERE cloud_account_id = %s AND fingerprint = ANY(%s) AND status IN ('open', 'in_progress', 'resolved')",
                         (account_id, list(archived)))
         if disabled:
-            cur.execute("""UPDATE ciem_findings SET status = 'suppressed', status_reason = 'Rule switched off in CIEM settings'
+            cur.execute("""UPDATE ciem_findings SET status = 'suppressed', status_reason = 'Rule switched off, or organisation policy removed, in CIEM settings'
                            WHERE cloud_account_id = %s AND status IN ('open', 'in_progress') AND rule = ANY(%s)""",
                         (account_id, list(disabled)))
         # Absent from a scan whose data source was read: resolved. Access Analyzer is regional, so its findings
@@ -197,7 +198,7 @@ def _notify(conn, account_id, new_high):
             "P1" if crit else "P2",
             f"{len(new_high)} new high-risk cloud entitlement finding(s)",
             description="; ".join(f["title"] for f in new_high[:5]) + (" …" if len(new_high) > 5 else ""),
-            resource_link="ciem.html", actor="ciem-scanner")
+            resource_link=f"ciem.html?account_id={account_id}#findings", actor="ciem-scanner")
     except Exception:
         logger.exception("could not create the CIEM notification")
 
@@ -216,13 +217,48 @@ def _overdue_reviews(conn, account_id):
         try:
             create_notification(conn, account_id, "security", "ciem_access_review_overdue", "P3",
                                 f"Access review '{name}' is overdue", description=f"Due {due}; reviewer {reviewer}.",
-                                resource_link="ciem.html#reviews", actor="ciem-scanner")
+                                resource_link=f"ciem.html?account_id={account_id}#reviews", actor="ciem-scanner")
             with conn.cursor() as cur:
                 cur.execute("UPDATE ciem_access_reviews SET overdue_notified = true WHERE id = %s", (rid,))
             conn.commit()
         except Exception:
             logger.exception("could not notify an overdue access review")
             conn.rollback()
+
+
+def start_due_reviews(conn, account_id, scan_id):
+    """Recurring access reviews: when a review's interval has passed, start the next one over the identities of this
+    scan (same scope, reviewer and interval), linked to the previous one. Returns the reviews started."""
+    started = []
+    with conn.cursor() as cur:
+        cur.execute("""SELECT r.id, r.name, r.scope, r.reviewer_email, r.repeat_every_days, r.created_by, r.due_date - r.created_at::date
+                       FROM ciem_access_reviews r WHERE r.cloud_account_id = %s AND r.repeat_every_days IS NOT NULL
+                         AND r.created_at < NOW() - make_interval(days => r.repeat_every_days)
+                         AND NOT EXISTS (SELECT 1 FROM ciem_access_reviews n WHERE n.previous_review_id = r.id)
+                       FOR UPDATE OF r SKIP LOCKED""", (account_id,))
+        for rid, name, scope, reviewer, repeat, created_by, window in cur.fetchall():
+            cur.execute(f"""SELECT arn, name, jsonb_build_object('kind', kind, 'classification', classification, 'admin', admin,
+                                   'risk_score', risk_score, 'policies', data->'policies', 'owner', owner)
+                            FROM ciem_identities WHERE scan_id = %s AND kind <> 'group' AND classification <> 'service_linked'
+                            {ciem_engine.REVIEW_SCOPE_SQL[scope]}""", (scan_id,))
+            items = cur.fetchall()
+            if not items:
+                continue
+            base = name.split(" — ")[0]
+            cur.execute("""INSERT INTO ciem_access_reviews (cloud_account_id, name, scope, reviewer_email, due_date, created_by,
+                                                            repeat_every_days, previous_review_id)
+                           VALUES (%s, %s, %s, %s, CURRENT_DATE + %s, %s, %s, %s) RETURNING id""",
+                        (account_id, f"{base} — {datetime.now(timezone.utc).date().isoformat()}", scope, reviewer, max(7, window or 14),
+                         created_by, repeat, rid))
+            new_id = cur.fetchone()[0]
+            for arn, n, snap in items:
+                cur.execute("INSERT INTO ciem_review_items (review_id, identity_arn, identity_name, snapshot) VALUES (%s, %s, %s, %s)",
+                            (new_id, arn, n, Json(snap)))
+            cur.execute("""INSERT INTO ciem_audit_log (cloud_account_id, actor_email, action, target, details) VALUES (%s, 'ciem-scanner', 'review_created', %s, %s)""",
+                        (account_id, str(new_id), Json({"recurring": True, "previous_review_id": str(rid), "items": len(items), "reviewer": reviewer})))
+            started.append({"name": base, "reviewer": reviewer, "items": len(items)})
+    conn.commit()
+    return started
 
 
 def run(conn, account_id, session, trigger="schedule", region=None):
@@ -240,6 +276,12 @@ def run(conn, account_id, session, trigger="schedule", region=None):
         complete = all(v.get("ok") for k, v in raw["coverage"].items() if isinstance(v, dict) and k not in ("access_analyzer", "scp"))
         resolvable = resolvable_categories(raw["coverage"])
         disabled = ciem_engine.disabled_rules(rules)
+        # a deleted organisation policy suppresses its findings (the access may still exist), it does not 'resolve' them
+        current = {f"custom:{p['id']}" for p in (rules or {}).get("_custom_policies") or []}
+        with conn.cursor() as cur:
+            cur.execute("""SELECT DISTINCT rule FROM ciem_findings WHERE cloud_account_id = %s AND rule LIKE 'custom:%%'
+                           AND status IN ('open', 'in_progress', 'accepted', 'suppressed')""", (account_id,))
+            disabled += sorted({r for (r,) in cur.fetchall()} - current)
         archived = [ciem_engine.fingerprint(aws_account, "external_resource_access", x["resource"], x["id"])
                     for x in raw.get("external_archived") or []]
         new_high, resolved = store(conn, account_id, scan_id, identities, findings, summary, raw, resolvable, disabled,
@@ -256,6 +298,15 @@ def run(conn, account_id, session, trigger="schedule", region=None):
         conn.commit()
         _notify(conn, account_id, new_high)
         _overdue_reviews(conn, account_id)
+        try:
+            for r in start_due_reviews(conn, account_id, scan_id):
+                from collectors.aws.scanner.notification_lib import create_notification
+                create_notification(conn, account_id, "security", "ciem_access_review_assigned", "P3",
+                                    f"Recurring access review '{r['name']}' assigned to {r['reviewer']}",
+                                    description=f"{r['items']} identities to review.", resource_link=f"ciem.html?account_id={account_id}#reviews", actor="ciem-scanner")
+        except Exception:  # noqa: BLE001 - a review that could not start must not fail the scan
+            conn.rollback()
+            logger.exception("recurring access review could not be started")
         return {"scan_id": str(scan_id), "status": "succeeded" if complete else "partial", "summary": summary}
     except Exception as e:
         conn.rollback()

@@ -266,3 +266,55 @@ def test_low_ciem_hygiene_items_are_not_published_as_weaknesses():
     low = [{"id": "l1", "status": "open", "rule": "machine_owner", "category": "ownership", "severity": "low", "title": "no owner",
             "identity_arn": "arn:aws:iam::1:role/x"}]
     assert E.red_identity([], low) == []
+
+
+# ── attack surface and AWS-native detections ──────────────────────────────
+
+def test_attack_surface_builds_a_path_from_the_internet_to_the_role():
+    items = {i["source_id"]: i for i in E.red_attack_surface(E._surface_fixture(), {"arn:aws:iam::1:role/web": {"admin": "admin", "capabilities": []}})}
+    web = items["ec2_instance:eu-west-1:i-web"]
+    assert web["severity"] == "critical" and web["path_to_admin"] and web["attack_path"]["to"] == "full administrator access"
+    assert "SSH (22)" in web["evidence"]["sensitive_services"] and web["exposure"] == "external"
+    assert "Nothing was scanned" in web["validation"]["note"]
+    assert set(items) == {"ec2_instance:eu-west-1:i-web", "rds_instance:eu-west-1:db-pub", "lambda_url:eu-west-1:open-fn"}
+
+
+def test_public_database_behind_a_closed_group_is_medium_not_high():
+    s = {"eu-west-1": {"security_groups": {"sg": {"rules": []}}, "databases": [{"id": "d", "public": True, "engine": "postgres", "port": 5432,
+                                                                              "security_groups": ["sg"]}]}}
+    item = E.red_attack_surface(s)[0]
+    assert item["severity"] == "medium" and item["evidence"]["open_to_internet"] is False
+
+
+def test_all_traffic_rule_covers_every_port():
+    assert E.open_to_internet([{"IpProtocol": "-1", "IpRanges": [{"CidrIp": "0.0.0.0/0"}]}]) == [(0, 65535, "all")]
+    assert E.open_to_internet([{"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "Ipv6Ranges": [{"CidrIpv6": "::/0"}]}]) == [(443, 443, "tcp")]
+
+
+def test_aws_native_findings_keep_their_ids_and_skip_duplicates():
+    out = E.blue_aws_native(*E._native_fixture())
+    assert sorted(d["event_ids"][0] for d in out) == ["gd-1", "sh-2"]
+    gd = next(d for d in out if d["event_ids"] == ["gd-1"])
+    assert gd["severity"] == "high" and gd["principal"] == "dev" and gd["basis"] == "observed (Amazon GuardDuty)"
+
+
+def test_ipv6_only_instances_and_protocols_are_judged_correctly():
+    s = {"eu-west-1": {"security_groups": {"sg6": {"rules": [{"IpProtocol": "6", "FromPort": 22, "ToPort": 22, "Ipv6Ranges": [{"CidrIpv6": "::/0"}]}]},
+                                           "sgudp": {"rules": [{"IpProtocol": "udp", "FromPort": 5432, "ToPort": 5432, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]}]}},
+                       "instances": [{"id": "i-v6", "state": "running", "public_ip": None, "ipv6": ["2001:db8::1"], "security_groups": ["sg6"]}],
+                       "databases": [{"id": "db-udp", "public": True, "engine": "postgres", "port": 5432, "security_groups": ["sgudp"]}]}}
+    items = {i["source_id"]: i for i in E.red_attack_surface(s)}
+    assert "SSH (22)" in items["ec2_instance:eu-west-1:i-v6"]["evidence"]["sensitive_services"]
+    assert items["rds_instance:eu-west-1:db-udp"]["evidence"]["open_to_internet"] is False      # UDP does not reach PostgreSQL
+
+
+def test_security_hub_guardduty_copies_are_kept_when_guardduty_was_not_read():
+    gd, sh = E._native_fixture()
+    assert sorted(d["event_ids"][0] for d in E.blue_aws_native([], sh)) == ["arn:aws:guardduty:eu-west-1:1:detector/d/finding/gd-1", "sh-2"]
+
+
+def test_same_address_in_two_regions_gives_two_detections():
+    fails = [ev("ConsoleLogin", i, failed=True, ip="198.51.100.1") for i in range(5)]
+    a = E.detect(fails, "eu-west-1")[0]
+    b = E.detect(fails, "us-east-1")[0]
+    assert a["fingerprint"] != b["fingerprint"]
