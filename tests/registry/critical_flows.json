@@ -649,6 +649,22 @@
         "backend/migrations/034_security_agents.sql",
         "frontend/public/security_agents.html"
       ]
+    },
+    {
+      "id": "E2E-GITHUB-CIS-001",
+      "domain": "Cloud Security",
+      "name": "CIS GitHub Benchmark: scan the connected organisation; checks whose data the token cannot read are NOT CHECKED, never a pass or fail from missing data",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline tests with a simulated GitHub API",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "GitHub organisation integration"
+      ],
+      "paths": [
+        "backend/src/collectors/github/lambda_handler.py"
+      ]
     }
   ]
 }
