@@ -215,7 +215,7 @@ async function openAgent(id) {
       <button class="ghost" data-act="evaluate" data-id="${esc(a.agent_id)}">Run evaluation</button>
       <h3>4. Approval</h3><div class="row">${a.status === 'active' ? `<span class="ok" style="margin:0">Active</span><button class="ghost" data-act="agent-status" data-status="paused" data-id="${esc(a.agent_id)}">Pause</button>` : `<button data-act="approve" data-id="${esc(a.agent_id)}">Approve and activate</button>`}
         <button class="danger" data-act="agent-status" data-status="retired" data-id="${esc(a.agent_id)}">Retire</button></div>
-      <h3>Actions and autonomy (${esc((a.policies[0] || {}).environment ? '' : '')})</h3>
+      <h3>Actions and autonomy</h3>
       <table><thead><tr><th>Action</th><th>Environment</th><th>Needs</th><th>Allowed level</th><th>Approval</th></tr></thead><tbody>${a.policies.map(p => `<tr><td>${esc(p.action_label)}${p.executable ? '' : ' <span class="note">(prepared only; your team executes)</span>'}</td><td>${esc(p.environment)}</td><td>${esc(p.needs)}</td><td>${esc(p.level)}${p.custom ? ' ' + chip('', 'custom') : ''}</td><td>${p.requires_approval ? 'required' : 'no'}</td></tr>`).join('')}</tbody></table>
       <h3>Recent runs</h3>${a.runs.length ? `<table><tbody>${a.runs.map(r => `<tr class="click" data-run="${esc(r.id)}"><td>${esc(fmt(r.started_at))}</td><td>${st(r.status)}</td><td class="note">${esc(JSON.stringify(r.summary))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No runs yet.</div>'}
       <h3>Scope enforcement test</h3><div class="note">Try an offensive technique; the policy engine must refuse it, and the attempt is recorded.</div>
