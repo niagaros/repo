@@ -12,6 +12,40 @@ body {
   background: #0d0f14;
 }
 
+/* Datum- en tijdvelden
+   --------------------------------------------------------------------------
+   Deze velden zijn native besturingselementen: de browser tekent zelf de
+   agendaknop ernaast en het kalendervenster dat daaronder openklapt. Zonder
+   color-scheme gaat hij daarbij uit van een lichte pagina, en dan is die knop
+   donkergrijs. Op de achtergrond van dit product is dat vrijwel onzichtbaar,
+   zodat een gebruiker niet ziet dat hij er een kalender mee kan openen -- en
+   het venster dat hij wel opent, licht op als een wit vlak midden in een
+   donker scherm.
+
+   color-scheme laat de browser het hele element in donkere uitvoering tekenen:
+   witte knop, donker kalendervenster. Dat is beter dan het pictogram omkeren
+   met een filter, want zo'n filter werkt alleen in Chrome en slaat juist om
+   zodra een browser de knop al licht tekent.
+
+   Deze regel staat hier en niet per pagina, zodat elk datumveld in de
+   onboarding hetzelfde doet -- de einddatum van een engagement bij stap 3,
+   maar net zo goed de datumvelden in de latere stappen. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="time"] {
+  color-scheme: dark;
+}
+
+/* Chrome toont de agendaknop standaard gedempt. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 1;
+  cursor: pointer;
+}
+
 /* Amplify Authenticator overrides */
 [data-amplify-authenticator] {
   --amplify-components-authenticator-router-background-color: transparent;
