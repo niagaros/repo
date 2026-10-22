@@ -63,7 +63,7 @@ pre{background:#0d1017;color:#e2e8f0;border-radius:8px;padding:10px 12px;font-si
 </style>
 </head>
 <body>
-<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-ciem">Cloud Entitlements</a><a id="nav-int">Integrations</a></header>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-ciem">Cloud Entitlements</a><a id="nav-sa">Security Agents</a><a id="nav-int">Integrations</a></header>
 <main>
   <h1>AI Inventory</h1>
   <div class="sub">Every AI application, agent, model, provider, MCP server, tool, knowledge base and AI identity Niagaros can find in your
@@ -112,6 +112,7 @@ const opts = (list, sel, labels) => list.map(x => `<option value="${esc(x)}" ${x
 document.getElementById('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q();
 document.getElementById('nav-ciem').onclick = () => location.href = 'ciem.html' + q();
 document.getElementById('nav-int').onclick = () => location.href = 'integrations.html' + q();
+document.getElementById('nav-sa').onclick = () => location.href = 'security_agents.html' + q();
 
 async function api(view, extra) {
   const u = new URLSearchParams({cloud_account_id: accountId, view, ...(extra || {})});
@@ -327,7 +328,8 @@ RENDER.graph = async () => {
   const byCol = COLS.map(() => []);
   d.nodes.forEach(n => byCol[colOf(n.asset_type)].push(n));
   byCol.forEach(c => c.sort((a, b) => a.asset_type.localeCompare(b.asset_type) || a.name.localeCompare(b.name)));
-  const W = 210, H = 30, PAD = 24, colW = 260;
+  // five columns that fit the card; narrower screens scroll sideways inside the graph box only
+  const PAD = 24, H = 30, colW = Math.max(190, Math.floor((view.clientWidth - 40 - PAD * 2) / COLS.length)), W = colW - 40, maxChars = Math.floor((W - 14) / 6.4);
   const pos = {};
   byCol.forEach((c, ci) => c.forEach((n, ri) => { pos[n.id] = {x: PAD + ci * colW, y: PAD + 20 + ri * (H + 10)}; }));
   const height = PAD * 2 + 20 + Math.max(...byCol.map(c => c.length)) * (H + 10);
@@ -344,7 +346,7 @@ RENDER.graph = async () => {
       ${heads.map((h, i) => `<text x="${PAD + i * colW}" y="${PAD}" font-weight="700" fill="#6b7280">${esc(h)}</text>`).join('')}
       ${d.edges.map(edge).join('')}
       ${d.nodes.map(n => { const p = pos[n.id]; return `<g class="node" data-asset="${esc(n.id)}" tabindex="0"><rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="7" fill="${fill(n)}" stroke="${n.lifecycle_status === 'active' ? '#94a3b8' : '#e5e7eb'}"/>
-        <text x="${p.x + 8}" y="${p.y + 13}" fill="#111827" font-weight="600">${esc(n.name.length > 30 ? n.name.slice(0, 29) + '…' : n.name)}</text>
+        <text x="${p.x + 8}" y="${p.y + 13}" fill="#111827" font-weight="600">${esc(n.name.length > maxChars ? n.name.slice(0, maxChars - 1) + '…' : n.name)}</text>
         <text x="${p.x + 8}" y="${p.y + 25}" fill="#6b7280">${esc(n.type_label)}${n.lifecycle_status !== 'active' ? ' · ' + esc(n.lifecycle_status) : ''}</text><title>${esc(n.name)}</title></g>`; }).join('')}
     </svg></div>
     <div class="note" style="margin-top:8px">${d.nodes.length} assets, ${d.edges.length} relationships.</div></div>`;

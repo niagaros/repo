@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Security Agents</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700;flex-wrap:wrap}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer}
+header a:hover{color:#fff}
+main{max-width:1180px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 14px;max-width:860px;line-height:1.55}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;overflow-x:auto}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+h3{font-size:12.5px;font-weight:700;margin:14px 0 6px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:10px;line-height:1.5}
+input,select,textarea{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;background:#fff}
+textarea{width:100%;min-height:70px}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+button.danger{background:#fff;color:#b91c1c;border:1px solid #fecaca;padding:5px 10px;font-size:11.5px}
+button:disabled{opacity:.55;cursor:default}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid #e5e7eb}
+.tab{background:none;color:#6b7280;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 10px;font-weight:600}
+.tab.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.metric{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+.metric .v{font-size:22px;font-weight:800}
+.metric .l{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.35}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6;vertical-align:top}
+tr.click{cursor:pointer} tr.click:hover td{background:#f9fafb}
+.chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;background:#f3f4f6;color:#374151}
+.sev-critical{background:#fee2e2;color:#991b1b}.sev-high{background:#ffedd5;color:#9a3412}.sev-medium{background:#fef9c3;color:#854d0e}.sev-low,.sev-info{background:#e0f2fe;color:#075985}
+.cat-red{background:#fee2e2;color:#991b1b}.cat-blue{background:#dbeafe;color:#1e40af}.cat-green{background:#dcfce7;color:#166534}
+.st-active,.st-resolved,.st-approved,.st-succeeded,.st-allow,.st-closed{background:#dcfce7;color:#166534}
+.st-blocked,.st-block,.st-failed,.st-rejected{background:#fee2e2;color:#991b1b}
+.st-pending,.st-approval_required,.st-awaiting_approval,.st-partial,.st-remediated,.st-verification,.st-investigating{background:#fef9c3;color:#854d0e}
+.st-in_progress,.st-assigned,.st-triaged,.st-running,.st-contained{background:#dbeafe;color:#1e40af}
+.st-reopened{background:#ffedd5;color:#9a3412}
+.lane{border-radius:10px;padding:12px 14px;border:1px solid #e5e7eb;background:#fff}
+.lane.red{border-top:4px solid #dc2626}.lane.blue{border-top:4px solid #2563eb}.lane.green{border-top:4px solid #16a34a}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:12px;line-height:1.5}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:12px}
+.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:12px;line-height:1.5}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.drawer{position:fixed;top:0;right:0;width:min(780px,100%);height:100%;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.15);z-index:20;overflow-y:auto;padding:20px 22px 60px;display:none}
+.drawer.open{display:block}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:19;display:none}.shade.open{display:block}
+pre{background:#0d1017;color:#e2e8f0;border-radius:8px;padding:10px 12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:320px}
+.kv{display:grid;grid-template-columns:160px 1fr;gap:4px 10px;font-size:12px}.kv div:nth-child(odd){color:#6b7280}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.flow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:#374151}
+.flow span.s{background:#f3f4f6;border-radius:6px;padding:3px 8px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:30;max-width:90vw}
+@media (max-width:800px){.cols3{grid-template-columns:1fr}}
+@media (max-width:700px){header{padding:12px 16px}main{padding:0 12px 40px}.kv{grid-template-columns:1fr}.hide-sm{display:none}}
+@media print{header,.tabs,button,.filters,.drawer,.shade{display:none!important}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-ciem">Cloud Entitlements</a><a id="nav-ai">AI Inventory</a><a id="nav-int">Integrations</a></header>
+<main>
+  <h1>Security Agents</h1>
+  <div class="sub"><b>Red</b> finds weaknesses, <b>Blue</b> watches for threats, <b>Green</b> gets them fixed and proves the fix worked.
+    Every action an agent wants to take is checked against your authorisation and autonomy policy at that moment, and recorded.
+    Niagaros only reads your account: Red never attacks, containment and changes are approved here and carried out by your team,
+    and nothing is marked resolved until a later scan confirms it.</div>
+  <div id="banner"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="agents">Agent registry</button>
+    <button class="tab" data-tab="queue">Work queue</button>
+    <button class="tab" data-tab="paths">Attack paths</button>
+    <button class="tab" data-tab="threats">Threats &amp; incidents</button>
+    <button class="tab" data-tab="approvals">Approvals</button>
+    <button class="tab" data-tab="policies">Policies</button>
+    <button class="tab" data-tab="runs">Runs</button>
+    <button class="tab" data-tab="reports">Audit &amp; reports</button>
+  </div>
+  <div id="view"><div class="empty">Loading…</div></div>
+</main>
+<div class="shade" id="shade"></div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" tabindex="-1"></div>
+<div class="toast" id="toast"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+const accountId = params.get('account_id');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 4500); };
+const q = () => accountId ? '?account_id=' + encodeURIComponent(accountId) : '';
+const fmt = d => d ? new Date(d).toLocaleString() : '—';
+const day = d => d ? new Date(d).toLocaleDateString() : '—';
+const chip = (cls, text) => `<span class="chip ${cls}">${esc(text)}</span>`;
+const sev = s => chip('sev-' + s, s);
+const st = s => chip('st-' + s, String(s || '').replace(/_/g, ' '));
+const cat = c => chip('cat-' + c, ({red: 'Red', blue: 'Blue', green: 'Green'})[c] || c);
+const opts = (list, sel, labels) => list.map(x => `<option value="${esc(x)}" ${x === sel ? 'selected' : ''}>${esc((labels || {})[x] || String(x).replace(/_/g, ' '))}</option>`).join('');
+const kv = obj => `<div class="kv">${Object.entries(obj || {}).filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => `<div>${esc(k.replace(/_/g, ' '))}</div><div style="word-break:break-all">${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</div>`).join('')}</div>`;
+['dash:niagaros-dashboard.html', 'ciem:ciem.html', 'ai:ai_inventory.html', 'int:integrations.html'].forEach(x => { const [id, page] = x.split(':'); document.getElementById('nav-' + id).onclick = () => location.href = page + q(); });
+
+async function api(view, extra) {
+  const u = new URLSearchParams({cloud_account_id: accountId, view, ...(extra || {})});
+  const r = await fetch(API + 'security-agents?' + u.toString());
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Could not load this page (HTTP ' + r.status + ').');
+  return b;
+}
+async function post(body) {
+  const r = await fetch(API + 'security-agents', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cloud_account_id: accountId, ...body})});
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Something went wrong (HTTP ' + r.status + ').');
+  return b;
+}
+
+const TABS = ['overview','agents','queue','paths','threats','approvals','policies','runs','reports'];
+let tab = (location.hash || '#overview').slice(1);
+if (tab === 'incidents') tab = 'threats';
+if (tab === 'audit') tab = 'reports';
+const view = document.getElementById('view');
+const state = {qf: {open: '1'}};
+function setTab(t) {
+  tab = t; history.replaceState(null, '', '#' + t);
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  render();
+}
+document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+async function render() {
+  if (!accountId) { view.innerHTML = '<div class="err">Open this page from the dashboard so Niagaros knows which cloud account to show.</div>'; return; }
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try { await (RENDER[tab] || RENDER.overview)(); }
+  catch (e) { view.innerHTML = `<div class="err">${esc(e.message)} <button class="ghost" data-act="reload">Try again</button></div>`; }
+}
+const metric = (v, l, sub) => `<div class="metric"><div class="v">${esc(v ?? '—')}</div><div class="l">${esc(l)}</div>${sub || ''}</div>`;
+const RENDER = {};
+
+// ── Overview ──────────────────────────────────────────────────────────────
+RENDER.overview = async () => {
+  const o = await api('overview');
+  const active = o.agents.filter(a => a.status === 'active').length;
+  const m = o.metrics, qd = o.queue;
+  const lane = c => {
+    const ags = o.agents.filter(a => a.category === c);
+    return `<div class="lane ${c}"><h2>${esc(ags[0] ? ags[0].category_label : c)}</h2><div class="note">${esc(o.boundaries[c])}</div>
+      <table><tbody>${ags.map(a => { const lr = o.latest_runs[a.agent_id];
+        return `<tr class="click" data-agent="${esc(a.agent_id)}"><td><b>${esc(a.name)}</b><div class="note" style="margin:0">${lr ? 'last run ' + esc(fmt(lr.started_at)) : 'never run'}</div></td><td>${st(a.status)}${lr ? ' ' + st(lr.status) : ''}</td></tr>`; }).join('')}</tbody></table>
+      <div class="note" style="margin:6px 0 0">${esc(qd.open_by_category[c] || 0)} open work item(s)</div></div>`;
+  };
+  view.innerHTML = `
+    ${active ? '' : `<div class="warn"><b>No agent is active yet.</b> Agents only run after they have an owner, an authorisation for this account, a passed evaluation and an approval.
+      <div style="margin-top:8px"><button data-act="activate">Set up all agents for this account (recommended)</button> <span class="note">You become owner and approver; authorisation for the ${esc(o.settings.environment)} environment for 90 days. Each step is recorded.</span></div></div>`}
+    <div class="card"><div class="row" style="justify-content:space-between"><div><h2>Workforce</h2>
+      <div class="note">${active} of ${o.agents.length} agents active · ${esc(o.pending_approvals)} pending approval(s) · environment ${esc(o.settings.environment)} · CloudTrail look-back ${esc(o.settings.lookback_hours)}h</div></div>
+      <div class="row"><button data-act="run" ${active ? '' : 'disabled'}>Run agents now</button><button class="ghost" data-act="settings">Settings</button></div></div>
+      <div class="flow"><span class="s">Red: potential weakness</span>→<span class="s">Blue: related activity?</span>→<span class="s">Green: plan &amp; ticket</span>→<span class="s">your team changes it</span>→<span class="s">approval where needed</span>→<span class="s">later scan verifies</span>→<span class="s">resolved or re-opened</span></div></div>
+    <div class="cols3">${lane('red')}${lane('blue')}${lane('green')}</div>
+    <div class="grid" style="margin-top:16px">
+      ${metric(m.open, 'open work items')}${metric(Object.values(o.incidents.open || {}).reduce((a, b) => a + b, 0) + Object.values(o.incidents.investigating || {}).reduce((a, b) => a + b, 0), 'open incidents')}
+      ${metric(m.recommended, 'with a remediation plan (recommended)')}${metric(m.remediation_recorded, 'remediation recorded by your team')}
+      ${metric(m.verified_resolved, 'verified resolved by a later scan')}${metric(m.pct_remediations_verified == null ? '—' : m.pct_remediations_verified + '%', 'of recorded remediations verified')}
+      ${metric(m.mean_days_to_verified_resolution ?? '—', 'mean days to verified resolution')}${metric(m.recurred, 'items that came back (re-opened)')}
+      ${metric(m.pct_open_with_owner == null ? '—' : m.pct_open_with_owner + '%', 'open items with an owner')}${metric(m.false_positive_rate_pct == null ? '—' : m.false_positive_rate_pct + '%', 'marked false positive')}
+      ${metric(o.actions_30d.blocked, 'agent actions blocked by policy (30 days)')}${metric(o.actions_30d.approval_required, 'actions that waited for approval (30 days)')}
+    </div>
+    <div class="note" style="margin-top:8px">${esc(m.note)}</div>
+    <div class="card" style="margin-top:12px"><h2>Open work by severity</h2><div class="row">${['critical','high','medium','low'].map(x => `${sev(x)} <b>${esc(qd.open_by_severity[x] || 0)}</b>`).join(' &nbsp; ')}</div></div>
+    <div class="card" style="background:transparent;border-style:dashed"><h2>Not done by these agents</h2><div class="note" style="margin:0">
+      ${esc(o.boundaries.model)} Active penetration testing, network or port scanning, credential attacks, live prompt-injection tests and automatic changes in your account are not performed:
+      Niagaros has no authorised way to do them safely. Containers, Kubernetes, runtime/EDR telemetry, SBOM and threat-intelligence feeds are not connected yet.</div></div>`;
+};
+
+// ── Agent registry ────────────────────────────────────────────────────────
+RENDER.agents = async () => {
+  const d = await api('agents');
+  view.innerHTML = `<div class="card"><h2>Agent registry</h2><div class="note">Lifecycle: ${esc(d.lifecycle.join(' → '))}. An agent only runs when it is active: owner set, authorised for this account, evaluation of the current version passed, approved by you.</div>
+    <table><thead><tr><th>Agent</th><th>Category</th><th>Status</th><th class="hide-sm">Owner</th><th class="hide-sm">Authorised until</th><th>Evaluation</th><th class="hide-sm">Last run</th></tr></thead><tbody>
+    ${d.agents.map(a => `<tr class="click" data-agent="${esc(a.agent_id)}"><td><b>${esc(a.name)}</b><div class="note" style="margin:0">${esc(a.specialization)}</div></td><td>${cat(a.category)}</td><td>${st(a.status)}</td>
+      <td class="hide-sm">${esc(a.owner || '—')}</td><td class="hide-sm">${esc(day(a.authorized_until))}</td><td>${a.evaluation ? (a.evaluation_current ? chip('st-resolved', 'passed') : chip('st-failed', a.evaluation.passed ? 'outdated' : 'failed')) : '—'}</td>
+      <td class="hide-sm">${esc(a.last_run_at ? fmt(a.last_run_at) : '—')} ${a.last_run_status ? st(a.last_run_status) : ''}</td></tr>`).join('')}</tbody></table></div>`;
+};
+
+const drawer = document.getElementById('drawer'), shade = document.getElementById('shade');
+function openDrawer(html) { drawer.innerHTML = html; drawer.classList.add('open'); shade.classList.add('open'); drawer.focus(); }
+function closeDrawer() { drawer.classList.remove('open'); shade.classList.remove('open'); }
+shade.onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+const head = (title, sub) => `<div class="row" style="justify-content:space-between"><h2>${esc(title)}</h2><button class="ghost" data-act="close">Close</button></div>${sub ? `<div class="row" style="margin:4px 0 10px">${sub}</div>` : ''}`;
+const fail = e => { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; };
+
+async function openAgent(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const a = await api('agent', {agent_id: id});
+    state.agent = a;
+    const ev = a.evaluations[0];
+    drawer.innerHTML = head(a.name, `${cat(a.category)} ${st(a.status)} <span class="note" style="margin:0">${esc(a.mode)}</span>`) + `
+      ${kv({specialization: a.specialization, data_sources: a.sources.join(', '), model: a.model, framework: a.framework, version: a.engine_version,
+            owner: a.owner, purpose: a.business_purpose, approved: a.approved_by ? a.approved_by + ' on ' + fmt(a.approved_at) : null})}
+      <h3>1. Owner</h3><div class="row"><input id="ag-owner" value="${esc(a.owner || '')}" placeholder="Owner (name or email)"><input id="ag-purpose" value="${esc(a.business_purpose || '')}" placeholder="Purpose" style="flex:1;min-width:180px"><button class="ghost" data-act="configure" data-id="${esc(a.agent_id)}">Save</button></div>
+      <h3>2. Authorisation for this account</h3>
+      ${a.authorizations.length ? `<table><tbody>${a.authorizations.map(z => `<tr><td>${esc((z.environments || []).join(', '))}</td><td>${esc(day(z.valid_from))} – ${esc(day(z.valid_until))}</td><td class="note">${esc(z.reason || '')} — ${esc(z.approved_by)}</td><td>${z.revoked_at ? chip('st-failed', 'revoked') : new Date(z.valid_until) < new Date() ? chip('st-failed', 'expired') : `<button class="danger" data-act="revoke" data-id="${esc(z.id)}">Revoke</button>`}</td></tr>`).join('')}</tbody></table>` : '<div class="note">None yet: the agent is blocked for this account.</div>'}
+      <div class="row"><select id="az-env" aria-label="Environment">${opts(['production','staging','development','test'], 'production')}</select><input id="az-days" type="number" min="1" max="365" value="90" style="width:80px" aria-label="Days"> days
+        <input id="az-reason" placeholder="Reason" style="flex:1;min-width:160px"><button class="ghost" data-act="authorize" data-id="${esc(a.agent_id)}">Grant</button></div>
+      <h3>3. Evaluation</h3>${ev ? `<div class="${ev.passed ? 'ok' : 'err'}">${ev.passed ? 'Passed' : 'Failed'} (${esc(ev.agent_version)}, ${esc(fmt(ev.at))}, by ${esc(ev.run_by)})${ev.result.precision != null ? ` · precision ${esc(ev.result.precision)}, recall ${esc(ev.result.recall)}` : ''}
+        <ul style="margin:6px 0 0 18px">${ev.result.checks.map(c => `<li>${c.passed ? '✓' : '✗'} ${esc(c.check)}</li>`).join('')}</ul><div class="note" style="margin:6px 0 0">${esc(ev.result.scenario_set)}</div></div>` : '<div class="note">Not evaluated yet.</div>'}
+      <button class="ghost" data-act="evaluate" data-id="${esc(a.agent_id)}">Run evaluation</button>
+      <h3>4. Approval</h3><div class="row">${a.status === 'active' ? `<span class="ok" style="margin:0">Active</span><button class="ghost" data-act="agent-status" data-status="paused" data-id="${esc(a.agent_id)}">Pause</button>` : `<button data-act="approve" data-id="${esc(a.agent_id)}">Approve and activate</button>`}
+        <button class="danger" data-act="agent-status" data-status="retired" data-id="${esc(a.agent_id)}">Retire</button></div>
+      <h3>Actions and autonomy (${esc((a.policies[0] || {}).environment ? '' : '')})</h3>
+      <table><thead><tr><th>Action</th><th>Environment</th><th>Needs</th><th>Allowed level</th><th>Approval</th></tr></thead><tbody>${a.policies.map(p => `<tr><td>${esc(p.action_label)}${p.executable ? '' : ' <span class="note">(prepared only; your team executes)</span>'}</td><td>${esc(p.environment)}</td><td>${esc(p.needs)}</td><td>${esc(p.level)}${p.custom ? ' ' + chip('', 'custom') : ''}</td><td>${p.requires_approval ? 'required' : 'no'}</td></tr>`).join('')}</tbody></table>
+      <h3>Recent runs</h3>${a.runs.length ? `<table><tbody>${a.runs.map(r => `<tr class="click" data-run="${esc(r.id)}"><td>${esc(fmt(r.started_at))}</td><td>${st(r.status)}</td><td class="note">${esc(JSON.stringify(r.summary))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No runs yet.</div>'}
+      <h3>Scope enforcement test</h3><div class="note">Try an offensive technique; the policy engine must refuse it, and the attempt is recorded.</div>
+      <div class="row"><select id="tq" aria-label="Technique">${opts(['active_exploitation','credential_attack','network_scan','prompt_injection_live','destructive_test'])}</select><button class="ghost" data-act="technique" data-id="${esc(a.agent_id)}">Request</button></div>`;
+  } catch (e) { fail(e); }
+}
+
+// ── Work queue ────────────────────────────────────────────────────────────
+RENDER.queue = async () => {
+  const f = state.qf;
+  const d = await api('queue', Object.fromEntries(Object.entries(f).filter(([, v]) => v)));
+  view.innerHTML = `<div class="card"><h2>Work queue</h2><div class="note">Everything the agents found, in one place. ${'New → Triaged → Assigned → In progress → (Awaiting approval) → Remediated → Verification → Resolved'}. Only the Verification Agent resolves or re-opens items.</div>
+    <div class="filters"><select id="qf-category" aria-label="Category"><option value="">All categories</option>${opts(['red','blue','green'], f.category)}</select>
+      <select id="qf-state" aria-label="State"><option value="">Any state</option>${opts(d.states, f.state)}</select>
+      <select id="qf-severity" aria-label="Severity"><option value="">Any severity</option>${opts(['critical','high','medium','low'], f.severity)}</select>
+      <label class="note" style="margin:0"><input type="checkbox" id="qf-open" ${f.open ? 'checked' : ''}> Open only</label><button class="ghost" data-act="qfilter">Apply</button></div>
+    ${d.items.length ? `<table><thead><tr><th>Priority</th><th>Work item</th><th>From</th><th>State</th><th class="hide-sm">Owner</th><th class="hide-sm">First seen</th></tr></thead><tbody>
+      ${d.items.map(i => `<tr class="click" data-item="${esc(i.id)}"><td><b>${esc(i.priority)}</b> ${sev(i.severity)}${i.active_threat ? ' ' + chip('sev-critical', 'active threat') : ''}</td><td>${esc(i.title)}<div class="note" style="margin:0">${esc(i.basis || '')}</div></td>
+        <td>${cat(i.category)}<div class="note" style="margin:0">${esc(i.agent_name)}</div></td><td>${st(i.state)}</td><td class="hide-sm">${esc(i.owner || '—')}</td><td class="hide-sm">${esc(day(i.first_seen))}</td></tr>`).join('')}</tbody></table>`
+      : `<div class="empty">Nothing here${f.open ? ' that is open' : ''}.</div>`}</div>`;
+};
+async function openItem(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const i = await api('item', {work_item_id: id});
+    state.item = i;
+    const rec = i.recommendation || {}, plan = i.plan;
+    const transitions = i.allowed_transitions.filter(t => t !== 'remediated');
+    drawer.innerHTML = head(i.title, `${cat(i.category)} ${sev(i.severity)} ${st(i.state)} <b>priority ${esc(i.priority)}</b>`) + `
+      ${i.state_reason ? `<div class="note">${esc(i.state_reason)}</div>` : ''}
+      <div class="${i.validation.status === 'observed' ? 'ok' : 'warn'}">${esc(i.validation.note)}</div>
+      ${kv({found_by: i.agent_name, basis: i.basis, source: i.source_type.replace(/_/g, ' '), confidence: i.confidence, owner: i.owner, due: i.due_at,
+            first_seen: fmt(i.first_seen), last_seen: fmt(i.last_seen), change_reference: i.change_reference, remediated: i.remediated_at ? fmt(i.remediated_at) + ' by ' + i.remediated_by : null})}
+      <h3>Why this priority</h3><div class="note">${(i.priority_reasons || []).map(r => esc(r.reason) + (r.points ? ' (+' + r.points + ')' : r.factor ? ' (×' + r.factor + ')' : '')).join(' · ')}</div>
+      ${i.attack_path ? `<h3>Potential attack path</h3><div class="note">${esc(i.attack_path.from)} → ${(i.attack_path.steps || []).map(esc).join(' → ')} → <b>${esc(i.attack_path.to)}</b></div>${(i.attack_path.prerequisites || []).length ? `<div class="note">Prerequisites: ${i.attack_path.prerequisites.map(esc).join('; ')}</div>` : ''}` : ''}
+      <h3>Evidence</h3>${kv(i.evidence)}
+      <h3>Assets</h3><div class="note">${(i.assets || []).map(a => esc((a.name ? a.name + ' — ' : '') + (a.ref || ''))).join('<br>')}</div>
+      ${i.incidents.length ? `<h3>Related incidents</h3>${i.incidents.map(x => `<div><a href="#" data-incident="${esc(x.id)}">${esc(x.summary)}</a> ${sev(x.severity)} ${st(x.status)}</div>`).join('')}` : ''}
+      <h3>Recommendation</h3>${kv({now: rec.current, change_to: rec.proposed, why: rec.reason, impact: rec.impact, approvals: rec.approvals, rollback: rec.rollback})}
+      ${plan ? `<h3>Remediation plan <span class="note">(Green: Remediation Planning Agent)</span></h3><ol style="margin:0 0 0 18px;font-size:12px">${plan.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol><div class="note" style="margin-top:6px">Done when: ${esc(plan.acceptance_criteria)}</div>` : ''}
+      ${i.verification ? `<h3>Verification</h3><div class="${i.verification.result === 'passed' || i.verification.result === 'closed_by_person' ? 'ok' : i.verification.result === 'failed' ? 'err' : 'warn'}">${esc(i.verification.result)}: ${esc(i.verification.reason)}${i.verification.at ? ' (' + esc(fmt(i.verification.at)) + ')' : ''}</div>` : ''}
+      ${i.state !== 'resolved' ? `<h3>Work on it</h3>
+        <div class="row"><input id="it-owner" value="${esc(i.owner || '')}" placeholder="Owner"><input id="it-due" type="date" value="${esc(i.due_at || '')}" aria-label="Due date"><button class="ghost" data-act="assign" data-id="${esc(i.id)}">Assign</button></div>
+        ${transitions.length ? `<div class="row" style="margin-top:8px"><select id="it-to" aria-label="Move to">${opts(transitions)}</select><input id="it-reason" placeholder="Reason" style="flex:1;min-width:160px"><input id="it-until" type="date" aria-label="Accepted until" title="Accepted until (accepted risk)"><button class="ghost" data-act="transition" data-id="${esc(i.id)}">Move</button></div>` : ''}
+        ${i.source_type !== 'detection' && ['new','triaged','assigned','in_progress','reopened'].includes(i.state) ? `<div class="row" style="margin-top:8px"><input id="it-ref" placeholder="Change reference (PR, ticket or change ID)" style="flex:1;min-width:200px"><button data-act="remediated" data-id="${esc(i.id)}">Record remediation</button></div><div class="note">Records that your team changed something. The item stays open until a later scan confirms it.</div>` : ''}
+        ${i.ticket ? `<div class="note" style="margin-top:8px">Ticket: ${i.ticket.url ? `<a href="${esc(i.ticket.url)}" target="_blank" rel="noopener">${esc(i.ticket.key)}</a>` : esc(i.ticket.key)} (${esc(i.ticket.provider)}, ${esc(i.ticket.status || 'created')}) <button class="ghost" data-act="ticket-refresh" data-id="${esc(i.id)}">Refresh</button></div>`
+          : i.integrations.length ? `<div class="row" style="margin-top:8px"><select id="tk-int" aria-label="Integration">${i.integrations.map(x => `<option value="${esc(x.id)}">${esc(x.provider)} ${esc(x.project || '(no project)')}</option>`).join('')}</select><button class="ghost" data-act="ticket" data-id="${esc(i.id)}">Create ticket</button></div>`
+          : `<div class="note" style="margin-top:8px">Connect Jira or Monday on the <a href="integrations.html${esc(q())}">Integrations</a> page to create tickets.</div>`}
+        ${i.category === 'blue' ? `<h3>Containment</h3><div class="note">Prepare a containment step for approval. After approval your team carries it out.</div><textarea id="ct-plan" placeholder="What to do (e.g. deactivate access key AKIA… of user X)"></textarea><input id="ct-rollback" placeholder="How to undo it" style="width:100%;margin-top:6px"><button class="ghost" style="margin-top:6px" data-act="contain" data-id="${esc(i.id)}">Request approval</button>` : ''}` : ''}
+      ${i.approvals.length ? `<h3>Approvals</h3><table><tbody>${i.approvals.map(a => `<tr><td>${esc(a.action.replace(/_/g, ' '))}</td><td>${st(a.decision)}</td><td class="note">${esc(a.requested_by)}${a.decided_by ? ' → ' + esc(a.decided_by) + ': ' + esc(a.reason) : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+      <h3>History</h3><table><tbody>${i.history.map(h => `<tr><td>${esc(fmt(h.at))}</td><td>${esc(h.from || '—')} → ${esc(h.to)}</td><td class="note">${esc(h.actor)} (${esc(h.actor_kind)}) ${esc(h.note || '')}</td></tr>`).join('')}</tbody></table>
+      <h3>Evidence log</h3>${i.evidence_log.length ? `<table><tbody>${i.evidence_log.map(e => `<tr><td>${esc(fmt(e.at))}</td><td>${esc(e.type)}</td><td>${st(e.status)}</td><td class="note" style="word-break:break-all">${esc(e.source)} · sha256 ${esc(e.content_hash.slice(0, 12))}…</td></tr>`).join('')}</tbody></table>` : '<div class="empty">—</div>'}`;
+  } catch (e) { fail(e); }
+}
+
+// ── Attack paths ──────────────────────────────────────────────────────────
+RENDER.paths = async () => {
+  const d = await api('attack_paths');
+  view.innerHTML = `<div class="card"><h2>Potential attack paths</h2><div class="note">${esc(d.note)}</div>
+    ${d.paths.length ? d.paths.map(i => `<div class="lane red" style="margin-bottom:10px;cursor:pointer" data-item="${esc(i.id)}"><div class="row">${sev(i.severity)} <b>${esc(i.title)}</b> ${i.active_threat ? chip('sev-critical', 'active threat') : ''}</div>
+      <div class="flow" style="margin-top:6px"><span class="s">${esc(i.attack_path.from)}</span>${(i.attack_path.steps || []).map(s => `→<span class="s">${esc(s)}</span>`).join('')}→<span class="s"><b>${esc(i.attack_path.to)}</b></span></div></div>`).join('')
+      : '<div class="empty">No potential attack paths in the latest data.</div>'}</div>`;
+};
+
+// ── Threats & incidents ───────────────────────────────────────────────────
+RENDER.threats = async () => {
+  const [inc, det] = await Promise.all([api('incidents'), api('detections')]);
+  const cov = det.recent_coverage[0];
+  view.innerHTML = `
+    ${cov ? `<div class="warn"><b>Coverage:</b> ${(cov.limitations || []).map(esc).join(' ')}</div>` : '<div class="warn">Blue agents have not read CloudTrail yet. Until they do, nothing can be said about threats.</div>'}
+    <div class="card"><h2>Incidents</h2><div class="note">Detections grouped per identity and time window, correlated with known weaknesses. The hypothesis is a starting point, not a conclusion.</div>
+    ${inc.incidents.length ? `<table><thead><tr><th>Severity</th><th>Incident</th><th>Status</th><th class="hide-sm">Last activity</th></tr></thead><tbody>${inc.incidents.map(x => `<tr class="click" data-incident="${esc(x.id)}"><td>${sev(x.severity)}</td><td>${esc(x.summary)}<div class="note" style="margin:0">${esc(x.hypothesis)}</div></td><td>${st(x.status)}</td><td class="hide-sm">${esc(fmt(x.last_event_at))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No incidents.</div>'}</div>
+    <div class="card"><h2>Detections</h2>${det.detections.length ? `<table><thead><tr><th>When</th><th>Detection</th><th>Who</th><th>Status</th><th class="hide-sm">MITRE</th></tr></thead><tbody>${det.detections.map(x => `<tr class="click" data-detection="${esc(x.id)}"><td>${esc(fmt(x.first_event_at))}</td><td>${sev(x.severity)} ${esc(x.title)}${x.event_count > 1 ? ` (${esc(x.event_count)}×)` : ''}</td><td style="word-break:break-all">${esc(x.principal)}</td><td>${st(x.status)}</td><td class="hide-sm">${esc(x.mitre)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No detections in the period read.</div>'}</div>
+    <div class="card"><h2>Detection rules</h2><table><tbody>${det.rules.map(r => `<tr><td>${sev(r.severity)}</td><td><b>${esc(r.title)}</b><div class="note" style="margin:0">${esc(r.why)}</div></td><td class="note">${esc(r.events.join(', '))}</td><td class="hide-sm">${esc(r.mitre)}</td></tr>`).join('')}</tbody></table></div>`;
+  state.detections = det.detections;
+};
+async function openIncident(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const x = await api('incident', {incident_id: id});
+    drawer.innerHTML = head(x.summary, `${sev(x.severity)} ${st(x.status)}`) + `<div class="warn">${esc(x.hypothesis)} — ${esc(x.basis)}</div>
+      ${kv({principal: x.principal, first_activity: fmt(x.first_event_at), last_activity: fmt(x.last_event_at), owner: x.owner, status_note: x.status_reason})}
+      <h3>Detections</h3><table><tbody>${x.detections.map(d => `<tr><td>${sev(d.severity)}</td><td>${esc(d.title)}<div class="note" style="margin:0">${esc(d.respond)}</div></td><td class="note" style="word-break:break-all">CloudTrail ${esc((d.event_ids || []).slice(0, 3).join(', '))}</td></tr>`).join('')}</tbody></table>
+      ${x.work_items.length ? `<h3>Known weaknesses on the same identity or resource</h3>${x.work_items.map(w => `<div><a href="#" data-item="${esc(w.id)}">${esc(w.title)}</a> ${sev(w.severity)}</div>`).join('')}` : ''}
+      <h3>Update</h3><div class="row"><select id="in-status" aria-label="Status">${opts(['open','investigating','contained','closed'], x.status)}</select><input id="in-owner" placeholder="Owner" value="${esc(x.owner || '')}"><input id="in-reason" placeholder="What was found or done" style="flex:1;min-width:160px"><button class="ghost" data-act="incident" data-id="${esc(x.id)}">Save</button></div>
+      <h3>Containment</h3><textarea id="ct-plan" placeholder="What to do"></textarea><input id="ct-rollback" placeholder="How to undo it" style="width:100%;margin-top:6px"><button class="ghost" style="margin-top:6px" data-act="contain-incident" data-id="${esc(x.id)}">Request approval</button>
+      ${x.approvals.length ? `<h3>Approvals</h3>${x.approvals.map(a => `<div>${esc(a.action)} ${st(a.decision)} <span class="note">${esc(a.requested_by)}${a.decided_by ? ' → ' + esc(a.decided_by) : ''}</span></div>`).join('')}` : ''}`;
+  } catch (e) { fail(e); }
+}
+function openDetection(id) {
+  const x = (state.detections || []).find(d => d.id === id);
+  if (!x) return;
+  openDrawer(head(x.title, `${sev(x.severity)} ${st(x.status)} <span class="note" style="margin:0">${esc(x.mitre)}</span>`) + `<div class="ok">Observed in CloudTrail: the events happened. Whether they were malicious is for you to confirm.</div>
+    ${kv({who: x.principal, from_ip: x.source_ip, region: x.region, first_event: fmt(x.first_event_at), last_event: fmt(x.last_event_at), events: x.event_count,
+          event_names: (x.event_names || []).join(', '), resources: (x.resources || []).join(', '), cloudtrail_event_ids: (x.event_ids || []).join(', '), why_it_matters: x.why, what_to_do: x.respond})}
+    <h3>Triage</h3><div class="row"><select id="dt-status" aria-label="Status">${opts(['open','acknowledged','benign','escalated'], x.status)}</select><input id="dt-reason" placeholder="Reason" style="flex:1;min-width:160px"><button class="ghost" data-act="detection" data-id="${esc(x.id)}">Save</button></div>`);
+}
+
+// ── Approvals ─────────────────────────────────────────────────────────────
+RENDER.approvals = async () => {
+  const d = await api('approvals');
+  view.innerHTML = `<div class="card"><h2>Approvals</h2><div class="note">Actions that need a person. If someone else with admin rights exists for this account, you cannot approve your own request. Approved changes to your systems are carried out by your team.</div>
+    ${d.approvals.length ? `<table><thead><tr><th>Requested</th><th>Action</th><th>For</th><th>Status</th><th></th></tr></thead><tbody>${d.approvals.map(a => `<tr><td>${esc(fmt(a.created_at))}<div class="note" style="margin:0">${esc(a.requested_by)}</div></td>
+      <td>${esc(a.action_label || a.action)}${a.executable === false ? '<div class="note" style="margin:0">executed by your team</div>' : ''}${a.payload && a.payload.plan ? `<div class="note" style="margin:0">${esc(a.payload.plan)}<br>Undo: ${esc(a.payload.rollback)}</div>` : ''}</td>
+      <td>${a.work_item_id ? `<a href="#" data-item="${esc(a.work_item_id)}">${esc(a.work_item_title)}</a>` : a.incident_id ? `<a href="#" data-incident="${esc(a.incident_id)}">${esc(a.incident_summary)}</a>` : esc(a.target || '')}</td>
+      <td>${st(a.decision)}${a.decided_by ? `<div class="note" style="margin:0">${esc(a.decided_by)}: ${esc(a.reason)}</div>` : `<div class="note" style="margin:0">expires ${esc(fmt(a.expires_at))}</div>`}${a.execution_result && a.execution_result.note ? `<div class="note" style="margin:0">${esc(a.execution_result.note)}</div>` : ''}</td>
+      <td>${a.decision === 'pending' ? `<input data-areason="${esc(a.id)}" placeholder="Reason" style="width:140px"> <button class="ghost" data-act="approve-req" data-decision="approved" data-id="${esc(a.id)}">Approve</button> <button class="danger" data-act="approve-req" data-decision="rejected" data-id="${esc(a.id)}">Reject</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No approval requests.</div>'}</div>`;
+};
+
+// ── Policies ──────────────────────────────────────────────────────────────
+RENDER.policies = async () => {
+  const d = await api('policies');
+  const env = state.penv || d.environment;
+  const rows = d.policies.filter(p => p.environment === env);
+  view.innerHTML = `<div class="card"><h2>Autonomy per agent, action and environment</h2><div class="note">${Object.entries(d.levels).map(([k, v]) => `<b>${esc(k)}</b> ${esc(v)}`).join(' · ')}. L5 is not available. Actions that change your systems always need approval and are carried out by your team.</div>
+    <div class="filters"><select id="p-env" aria-label="Environment">${opts(['production','staging','development','test'], env)}</select><button class="ghost" data-act="penv">Show</button><span class="note" style="margin:0">This account is treated as <b>${esc(d.environment)}</b>.</span></div>
+    <table><thead><tr><th>Agent</th><th>Action</th><th>Needs</th><th>Allowed level</th><th>Approval</th><th></th></tr></thead><tbody>${rows.map((p, n) => `<tr><td>${esc(p.agent_id)}</td><td>${esc(p.action_label)}</td><td>${esc(p.needs)}</td>
+      <td><select data-plevel="${n}" aria-label="Level">${opts(['L0','L1','L2','L3','L4'], p.level)}</select></td><td><input type="checkbox" data-pappr="${n}" ${p.requires_approval ? 'checked' : ''} ${p.needs === 'L3' ? 'disabled' : ''} aria-label="Requires approval"></td>
+      <td><button class="ghost" data-act="policy" data-n="${n}">Save</button></td></tr>`).join('')}</tbody></table></div>
+    <div class="card"><h2>Techniques that are never run</h2><table><tbody>${Object.entries(d.prohibited_techniques).map(([k, v]) => `<tr><td>${esc(k.replace(/_/g, ' '))}</td><td class="note">${esc(v)}</td></tr>`).join('')}</tbody></table></div>`;
+  state.prows = rows;
+};
+
+// ── Runs ──────────────────────────────────────────────────────────────────
+RENDER.runs = async () => {
+  const d = await api('runs');
+  view.innerHTML = `<div class="card"><h2>Agent runs</h2><div class="note">One row per agent per workflow. Click for the policy decision of every action and the evidence it collected.</div>
+    ${d.runs.length ? `<table><thead><tr><th>Started</th><th>Agent</th><th>Status</th><th>Trigger</th><th class="hide-sm">Result</th></tr></thead><tbody>${d.runs.map(r => `<tr class="click" data-run="${esc(r.id)}"><td>${esc(fmt(r.started_at))}</td><td>${esc(r.agent_name)}</td><td>${st(r.status)}</td><td>${esc(r.trigger)}${r.initiated_by ? ' · ' + esc(r.initiated_by) : ''}</td><td class="hide-sm note">${esc(JSON.stringify(r.summary))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No runs yet.</div>'}</div>`;
+};
+async function openRun(id) {
+  openDrawer('<div class="empty">Loading…</div>');
+  try {
+    const r = await api('run', {run_id: id});
+    drawer.innerHTML = head('Run of ' + r.agent_id, `${st(r.status)} <span class="note" style="margin:0">${esc(fmt(r.started_at))} – ${esc(fmt(r.completed_at))}</span>`) + `
+      ${kv({workflow: r.workflow_id, agent_version: r.agent_version, policy_version: r.policy_version, trigger: r.trigger, initiated_by: r.initiated_by, error: r.error})}
+      ${(r.limitations || []).length ? `<div class="warn" style="margin-top:8px">${r.limitations.map(esc).join('<br>')}</div>` : ''}
+      <h3>Result</h3>${kv(r.summary)}<h3>Resource use</h3>${kv(r.resource_usage)}<h3>Scope at execution</h3>${kv(r.scope_snapshot)}
+      <h3>Actions and policy decisions</h3><table><tbody>${r.actions.map(a => `<tr><td>${esc(a.action.replace(/_/g, ' '))}</td><td>${st(a.decision)}</td><td>${st(a.execution_status)}</td><td class="note">${esc(a.reason)}</td></tr>`).join('')}</tbody></table>
+      <h3>Evidence</h3>${r.evidence.length ? `<table><tbody>${r.evidence.map(e => `<tr><td>${esc(e.type)}</td><td>${st(e.status)}</td><td class="note" style="word-break:break-all">${esc(e.source)} · ${esc(e.content_hash.slice(0, 12))}…</td></tr>`).join('')}</tbody></table>` : '<div class="empty">—</div>'}`;
+  } catch (e) { fail(e); }
+}
+
+// ── Audit & reports ───────────────────────────────────────────────────────
+RENDER.reports = async () => {
+  const [a, s] = await Promise.all([api('audit'), api('settings')]);
+  view.innerHTML = `<div class="card"><h2>Exports</h2><div class="note">Only this account; every export is recorded.</div><div class="row">${['queue','detections','incidents','runs','audit'].map(w => `<button class="ghost" data-act="export" data-what="${w}" data-format="csv">${w} (CSV)</button><button class="ghost" data-act="export" data-what="${w}" data-format="json">${w} (JSON)</button>`).join('')}<button class="ghost" data-act="print">Overview as PDF (print)</button></div></div>
+    <div class="card" id="settings-card"><h2>Settings</h2><div class="row"><label class="note" style="margin:0">Environment of this account</label><select id="s-env" aria-label="Environment">${opts(['production','staging','development','test'], s.environment)}</select>
+      <label class="note" style="margin:0">CloudTrail look-back</label><input id="s-hours" type="number" min="1" max="2160" value="${esc(s.lookback_hours)}" style="width:90px"> hours <button class="ghost" data-act="settings-save">Save</button></div>
+      ${s.updated_by ? `<div class="note" style="margin-top:6px">Last changed by ${esc(s.updated_by)} on ${esc(fmt(s.updated_at))}</div>` : ''}</div>
+    <div class="card"><h2>Blocked and approval-gated actions</h2>${a.policy_decisions.length ? `<table><tbody>${a.policy_decisions.map(x => `<tr><td>${esc(fmt(x.at))}</td><td>${esc(x.agent_id)}</td><td>${esc(x.action)}</td><td>${st(x.decision)}</td><td class="note">${esc(x.reason)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">None.</div>'}</div>
+    <div class="card"><h2>Audit trail</h2>${a.audit.length ? `<table><tbody>${a.audit.map(x => `<tr><td>${esc(fmt(x.at))}</td><td>${esc(x.actor)}</td><td>${esc(x.action.replace(/_/g, ' '))}</td><td class="hide-sm note" style="word-break:break-all">${esc(JSON.stringify(x.details))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nothing recorded yet.</div>'}</div>`;
+};
+
+// ── actions ───────────────────────────────────────────────────────────────
+const val = id => (document.getElementById(id) || {}).value || '';
+document.addEventListener('click', async e => {
+  const nav = [['data-agent', openAgent], ['data-item', openItem], ['data-incident', openIncident], ['data-run', openRun], ['data-detection', openDetection]];
+  if (!e.target.closest('[data-act]')) for (const [attr, fn] of nav) { const el = e.target.closest(`[${attr}]`); if (el) { e.preventDefault(); return fn(el.getAttribute(attr)); } }
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  try {
+    if (act === 'close') return closeDrawer();
+    if (act === 'reload') return render();
+    if (act === 'print') return window.print();
+    if (act === 'settings') return setTab('reports');
+    if (act === 'qfilter') { state.qf = {category: val('qf-category'), state: val('qf-state'), severity: val('qf-severity'), open: document.getElementById('qf-open').checked ? '1' : ''}; return render(); }
+    if (act === 'penv') { state.penv = val('p-env'); return render(); }
+    b.disabled = true;
+    const again = () => { if (drawer.classList.contains('open') && state.agent && act !== 'transition') return openAgent(state.agent.agent_id); };
+    if (act === 'activate') { const r = await post({action: 'activate_recommended'}); toast(r.activated.length + ' agents activated.'); render(); }
+    else if (act === 'run') { const r = await post({action: 'run_agents'}); toast(r.note); }
+    else if (act === 'configure') { await post({action: 'configure_agent', agent_id: id, owner: val('ag-owner'), business_purpose: val('ag-purpose') || null}); toast('Saved.'); openAgent(id); }
+    else if (act === 'authorize') { await post({action: 'authorize_agent', agent_id: id, environments: [val('az-env')], valid_days: Number(val('az-days')), reason: val('az-reason')}); toast('Authorisation granted.'); openAgent(id); }
+    else if (act === 'revoke') { if (!confirm('Revoke this authorisation? The agent is blocked from its next action.')) return; await post({action: 'revoke_authorization', authorization_id: id}); toast('Revoked.'); again(); }
+    else if (act === 'evaluate') { const r = await post({action: 'run_evaluation', agent_id: id}); toast(r.evaluation.passed ? 'Evaluation passed.' : 'Evaluation failed.'); openAgent(id); }
+    else if (act === 'approve') { await post({action: 'approve_agent', agent_id: id}); toast('Agent active.'); openAgent(id); if (['overview','agents'].includes(tab)) render(); }
+    else if (act === 'agent-status') { const reason = prompt('Reason'); if (!reason) return; await post({action: 'set_agent_status', agent_id: id, status: b.dataset.status, reason}); toast('Saved.'); openAgent(id); render(); }
+    else if (act === 'technique') { const r = await post({action: 'request_technique', agent_id: id, technique: val('tq')}); toast(r.decision + ': ' + r.reason); openAgent(id); }
+    else if (act === 'assign') { await post({action: 'assign_item', work_item_id: id, owner: val('it-owner'), due_at: val('it-due') || null}); toast('Assigned.'); openItem(id); render(); }
+    else if (act === 'transition') { await post({action: 'transition_item', work_item_id: id, to: val('it-to'), reason: val('it-reason') || null, accepted_until: val('it-until') || null}); toast('Saved.'); openItem(id); render(); }
+    else if (act === 'remediated') { const r = await post({action: 'record_remediation', work_item_id: id, change_reference: val('it-ref')}); toast(r.note); openItem(id); render(); }
+    else if (act === 'ticket') { const r = await post({action: 'create_ticket', work_item_id: id, integration_id: val('tk-int')}); toast(r.approval_required ? 'Needs approval first (see Approvals).' : 'Ticket ' + (r.ticket.key || '') + ' created.'); openItem(id); }
+    else if (act === 'ticket-refresh') { const r = await post({action: 'refresh_ticket', work_item_id: id}); toast('Ticket: ' + (r.ticket.status || 'unknown')); openItem(id); }
+    else if (act === 'contain') { const r = await post({action: 'request_containment', work_item_id: id, agent_id: state.item.agent_id === 'blue-cloud-threat' ? 'blue-cloud-threat' : 'blue-identity-defense', plan: val('ct-plan'), rollback: val('ct-rollback')}); toast(r.note); openItem(id); }
+    else if (act === 'contain-incident') { const r = await post({action: 'request_containment', incident_id: id, plan: val('ct-plan'), rollback: val('ct-rollback')}); toast(r.note); openIncident(id); }
+    else if (act === 'incident') { await post({action: 'update_incident', incident_id: id, status: val('in-status'), owner: val('in-owner') || null, reason: val('in-reason') || null}); toast('Saved.'); openIncident(id); render(); }
+    else if (act === 'detection') { await post({action: 'update_detection', detection_id: id, status: val('dt-status'), reason: val('dt-reason') || null}); toast('Saved.'); closeDrawer(); render(); }
+    else if (act === 'approve-req') { const reason = (document.querySelector(`[data-areason="${CSS.escape(id)}"]`) || {}).value; const r = await post({action: 'decide_approval', approval_id: id, decision: b.dataset.decision, reason}); toast(r.decision + (r.result && r.result.note ? ' — ' + r.result.note : '')); render(); }
+    else if (act === 'policy') { const p = state.prows[Number(b.dataset.n)]; await post({action: 'set_policy', agent_id: p.agent_id, policy_action: p.action, environment: p.environment, level: document.querySelector(`[data-plevel="${b.dataset.n}"]`).value, requires_approval: document.querySelector(`[data-pappr="${b.dataset.n}"]`).checked}); toast('Policy saved.'); render(); }
+    else if (act === 'settings-save') { const r = await post({action: 'save_settings', environment: val('s-env'), lookback_hours: Number(val('s-hours'))}); toast('Saved. ' + r.note); render(); }
+    else if (act === 'export') {
+      const u = new URLSearchParams({cloud_account_id: accountId, view: 'export', what: b.dataset.what, format: b.dataset.format});
+      const r = await fetch(API + 'security-agents?' + u.toString());
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Export failed.'); }
+      const blob = b.dataset.format === 'csv' ? await r.blob() : new Blob([JSON.stringify(await r.json(), null, 2)], {type: 'application/json'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `niagaros-security-agents-${b.dataset.what}.${b.dataset.format}`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+  } catch (err) { toast(err.message); }
+  finally { b.disabled = false; }
+});
+
+if (!TABS.includes(tab)) tab = 'overview';
+setTab(tab);
+</script>
+<script src="notifications-widget.js"></script>
+<script src="ai-agent-widget.js"></script>
+</body>
+</html>

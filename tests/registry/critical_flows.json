@@ -627,6 +627,28 @@
         "backend/migrations/033_ai_inventory.sql",
         "frontend/public/ai_inventory.html"
       ]
+    },
+    {
+      "id": "E2E-SECAGENTS-001",
+      "domain": "AI Security",
+      "name": "Security Agents: Red analysis -> Blue CloudTrail detections and incidents -> Green plans, tickets and approvals -> verification by a later scan; every action authorised at execution time, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline engine tests + PostgreSQL store/API tests + browser",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS CloudTrail (read-only scanner role)",
+        "CIEM, AI Inventory and scanner findings",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/security_agents_engine.py",
+        "backend/src/collectors/aws/scanner/security_agents_runner_handler.py",
+        "backend/src/collectors/aws/scanner/security_agents_handler.py",
+        "backend/migrations/034_security_agents.sql",
+        "frontend/public/security_agents.html"
+      ]
     }
   ]
 }

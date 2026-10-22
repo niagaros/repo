@@ -822,9 +822,9 @@ def handler(event, context):
             conn.rollback()
         except Exception:
             pass
-        if type(e).__name__ == "ProviderError":
-            return _resp(502, {"error": f"The ticket system answered with an error: {str(e)[:200]}"})
         logger.error("ai_inventory_handler error: %s", e, exc_info=True)
+        if type(e).__name__ == "ProviderError":
+            return _resp(502, {"error": "The ticket system did not accept the request. Check the connection and project on the Integrations page."})
         return _resp(500, {"error": "Something went wrong on our side. Please try again."})
     finally:
         conn.close()
