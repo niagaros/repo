@@ -971,7 +971,7 @@ def handler(event, context):
                     return _resp(400, {"error": "days must be between 1 and 90"})
                 headers = event.get("headers") or {}
                 origin = headers.get("origin") or headers.get("Origin") or ""
-                base = origin if re.match(r"^https://[a-z0-9.-]+\.amplifyapp\.com$", origin) else os.environ.get("APP_BASE_URL", "https://main.d3joqokkaynfaq.amplifyapp.com")
+                base = origin if re.match(r"^https://([a-z0-9-]+\.d3joqokkaynfaq\.amplifyapp\.com|app\.niagaros\.com)$", origin) else os.environ.get("APP_BASE_URL", "https://main.d3joqokkaynfaq.amplifyapp.com")
                 access_id, path, link, expires_at, email_result = _invite_auditor(
                     conn, body["audit_id"], email, body.get("auditor_name"), days, base)
                 return _resp(200, {"id": access_id, "path": path, "url": link, "expires_at": expires_at, "email": email_result})

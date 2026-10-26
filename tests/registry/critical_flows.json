@@ -420,7 +420,11 @@
         "PostgreSQL"
       ],
       "paths": [
-        "backend/src/collectors/aws/scanner/trust_center_handler.py"
+        "backend/src/collectors/aws/scanner/trust_center_handler.py",
+        "frontend/public/trust_center.html",
+        "frontend/public/trust_center_public.html",
+        "frontend/index.html",
+        "backend/migrations/036_trust_center_custom_domain.sql"
       ]
     },
     {

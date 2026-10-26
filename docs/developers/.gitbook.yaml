@@ -1,0 +1,5 @@
+# GitBook Git Sync for developers.niagaros.com (#272). In GitBook, set the space's project directory to docs/developers.
+root: ./
+structure:
+  readme: README.md
+  summary: SUMMARY.md

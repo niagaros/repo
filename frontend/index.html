@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Niagaros Frontend</title>
+    <script>
+      // A company's own Trust Center domain (e.g. trust.domits.com) serves only its public Trust Center page (#272)
+      if (!/(^|\.)d3joqokkaynfaq\.amplifyapp\.com$|^app\.niagaros\.com$|^localhost$|^127\.0\.0\.1$/.test(location.hostname)) {
+        location.replace('/trust_center_public.html' + location.search);
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

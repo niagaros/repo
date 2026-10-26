@@ -154,6 +154,15 @@ input:checked + .slider::before{transform:translateX(18px)}
         </div>
       </div>
 
+      <div class="card" id="domain-card">
+        <h3>Custom domain</h3>
+        <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Show this Trust Center on your own address, for example trust.yourcompany.com. You prove you own the domain with one DNS record.</div>
+        <label class="f-lbl" for="in-domain">Domain</label>
+        <input class="f-in" id="in-domain" placeholder="trust.yourcompany.com" autocomplete="off">
+        <button class="btn-primary" onclick="saveDomain()">Save domain</button>
+        <div id="domain-status" style="margin-top:10px;font-size:12px"></div>
+      </div>
+
       <div class="card">
         <h3>Company information</h3>
         <label class="f-lbl">Company name</label>
@@ -272,6 +281,7 @@ function render(){
   document.getElementById('public-status').textContent=s.is_public?'public':'private';
   document.getElementById('public-link-box').hidden=!s.is_public;
   if(s.is_public) document.getElementById('public-link-text').textContent=publicUrl(s.public_slug);
+  renderDomain(s.custom_domain);
   document.getElementById('in-company').value=s.company_name||'';
   document.getElementById('in-intro').value=s.intro_text||'';
   document.getElementById('in-contact').value=s.contact_email||'';
@@ -334,6 +344,38 @@ async function saveSettings(){
   })});
   showToast('Saved');
   loadAll();
+}
+function renderDomain(cd, message){
+  document.getElementById('in-domain').value=cd?cd.domain:'';
+  const box=document.getElementById('domain-status');
+  if(!cd){ box.innerHTML='<span style="color:#9ca3af">No custom domain set.</span>'; return; }
+  if(cd.verified){
+    box.innerHTML=`<div style="color:#16a34a;font-weight:600">✓ ${esc(cd.domain)} is verified</div>
+      <div style="color:#6b7280;margin-top:4px">Niagaros now sets up HTTPS for this domain and sends you the CNAME record that makes it live.${state.settings.is_public?'':' Your Trust Center is still private: turn on the public page above, or visitors see a "not public" message.'}</div>`;
+    return;
+  }
+  box.innerHTML=`<div style="color:#d97706;font-weight:600">Waiting for DNS verification</div>
+    <div style="color:#6b7280;margin:4px 0 6px">Add this TXT record at your DNS provider, then click Verify.</div>
+    <div class="link-box"><span>Name: <b>${esc(cd.txt_name)}</b></span></div>
+    <div class="link-box"><span>Value: <b>${esc(cd.txt_value)}</b></span></div>
+    ${message?`<div style="color:#6b7280;margin:6px 0">${esc(message)}</div>`:''}
+    <button class="btn-ghost btn-sm" onclick="verifyDomain()">Verify</button>`;
+}
+async function saveDomain(){
+  const r=await fetch(TC_API,{method:'POST',body:JSON.stringify({action:'set_custom_domain',cloud_account_id:currentAccountId,custom_domain:document.getElementById('in-domain').value})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ showToast(d.error||'Could not save the domain.'); return; }
+  state.settings.custom_domain=d.custom_domain;
+  renderDomain(d.custom_domain);
+  showToast(d.custom_domain?'Domain saved':'Custom domain removed');
+}
+async function verifyDomain(){
+  const r=await fetch(TC_API,{method:'POST',body:JSON.stringify({action:'verify_custom_domain',cloud_account_id:currentAccountId})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ showToast(d.error||'Verification failed.'); return; }
+  state.settings.custom_domain=d.custom_domain;
+  renderDomain(d.custom_domain, d.message);
+  showToast(d.verified?'Domain verified':'Record not found yet');
 }
 function copyPublicLink(){
   navigator.clipboard.writeText(document.getElementById('public-link-text').textContent).then(()=>showToast('Link copied')).catch(()=>{});

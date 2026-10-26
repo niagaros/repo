@@ -86,12 +86,16 @@ body{font-family:'Inter',sans-serif;background:#f5f6f8;color:#111827;font-size:1
 <script>
 const TC_API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/trust-center';
 let data=null, requestingDocId=null;
+const APP_HOST_RE=/(^|\.)d3joqokkaynfaq\.amplifyapp\.com$|^app\.niagaros\.com$|^localhost$|^127\.0\.0\.1$/;
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 function closeOv(){document.getElementById('ov-request').classList.remove('open');}
 
 async function load(){
-  const slug=new URLSearchParams(location.search).get('slug');
+  // On a company's own Trust Center domain the hostname alone picks the Trust Center: a ?slug= there could show
+  // another company's page under that company's address
+  const customHost=!APP_HOST_RE.test(location.hostname);
+  const slug=customHost ? null : new URLSearchParams(location.search).get('slug');
   const downloadDoc=new URLSearchParams(location.search).get('download');
   const token=new URLSearchParams(location.search).get('token');
   if(downloadDoc && token){
@@ -101,9 +105,10 @@ async function load(){
     showError(d.error||'This link no longer works.');
     return;
   }
-  if(!slug){ showError('No Trust Center specified.'); return; }
+  const domain=customHost ? location.hostname : null;
+  if(!slug && !domain){ showError('No Trust Center specified.'); return; }
   try{
-    const r=await fetch(TC_API+'?slug='+encodeURIComponent(slug));
+    const r=await fetch(TC_API+(slug?'?slug='+encodeURIComponent(slug):'?domain='+encodeURIComponent(domain)));
     const d=await r.json();
     if(!r.ok){ showError(d.error||'This page does not exist.'); return; }
     data=d;

@@ -33,6 +33,8 @@ import logging
 import os
 import re
 import secrets
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 
 import boto3
@@ -61,6 +63,16 @@ ACCESS_TOKEN_DAYS = 30
 # outcome (sent/failed + AWS's own error) is recorded rather than assumed.
 SES_SENDER_EMAIL = os.environ.get("SES_SENDER_EMAIL", "bottomclipzz@gmail.com")
 FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "https://main.d3joqokkaynfaq.amplifyapp.com")
+
+# Custom Trust Center domain (#272), e.g. trust.domits.com. A domain only serves an account's Trust Center after the
+# account proved it controls that domain's DNS with a TXT record holding a per-account token, so no tenant can claim
+# another company's hostname. Niagaros's own application hosts can never be claimed.
+DOMAIN_RE = re.compile(r"^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+RESERVED_HOSTS = {"niagaros.com", "www.niagaros.com", "app.niagaros.com", "auth.niagaros.com", "api.niagaros.com",
+                  "developers.niagaros.com", "docs.niagaros.com", "status.niagaros.com", "security.niagaros.com"}
+DOMAIN_TXT_PREFIX = "_niagaros-trust"
+DOMAIN_TXT_VALUE = "niagaros-verify={token}"
+DOH_URL = os.environ.get("DOH_URL", "https://cloudflare-dns.com/dns-query")
 
 # Matches the "Trust Documents" list in issue #258's proposed solution.
 DOCUMENT_CATEGORIES = {
@@ -202,6 +214,12 @@ ALTER TABLE trust_document_access_requests
     ADD COLUMN IF NOT EXISTS nda_accepted_at   TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS email_status      VARCHAR(20),
     ADD COLUMN IF NOT EXISTS email_error       TEXT;
+ALTER TABLE trust_center_settings
+    ADD COLUMN IF NOT EXISTS custom_domain             VARCHAR(253),
+    ADD COLUMN IF NOT EXISTS custom_domain_token       VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS custom_domain_verified_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS trust_center_settings_verified_domain_uq
+    ON trust_center_settings (custom_domain) WHERE custom_domain_verified_at IS NOT NULL;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_center_settings TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_documents TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_document_versions TO cspm_lambda;
@@ -254,24 +272,126 @@ def _send_approval_email(requester_email, requester_name, document_title, compan
 
 # ── settings ──────────────────────────────────────────────────────────
 
+SETTINGS_COLUMNS = ("cloud_account_id, is_public, public_slug, company_name, intro_text, contact_email, "
+                    "custom_domain, custom_domain_token, custom_domain_verified_at")
+
+
+def _settings_dict(row):
+    domain, token, verified_at = row[6], row[7], row[8]
+    return {"cloud_account_id": str(row[0]), "is_public": row[1], "public_slug": row[2],
+            "company_name": row[3], "intro_text": row[4], "contact_email": row[5],
+            "custom_domain": _domain_info(domain, token, verified_at)}
+
+
 def _get_or_create_settings(cur, cloud_account_id):
-    cur.execute("""
-        SELECT cloud_account_id, is_public, public_slug, company_name, intro_text, contact_email
-        FROM trust_center_settings WHERE cloud_account_id = %s
-    """, (cloud_account_id,))
+    cur.execute(f"SELECT {SETTINGS_COLUMNS} FROM trust_center_settings WHERE cloud_account_id = %s", (cloud_account_id,))
     row = cur.fetchone()
     if row:
-        return {"cloud_account_id": str(row[0]), "is_public": row[1], "public_slug": row[2],
-                "company_name": row[3], "intro_text": row[4], "contact_email": row[5]}
+        return _settings_dict(row)
     slug = secrets.token_urlsafe(6).lower().replace("_", "").replace("-", "")
-    cur.execute("""
+    cur.execute(f"""
         INSERT INTO trust_center_settings (cloud_account_id, public_slug)
         VALUES (%s, %s)
-        RETURNING cloud_account_id, is_public, public_slug, company_name, intro_text, contact_email
+        RETURNING {SETTINGS_COLUMNS}
     """, (cloud_account_id, slug))
+    return _settings_dict(cur.fetchone())
+
+
+# ── custom domain ─────────────────────────────────────────────────────
+
+def normalise_domain(value):
+    """'Trust.Domits.com.' -> 'trust.domits.com'; None when it is not a plain hostname Niagaros may serve."""
+    if not isinstance(value, str):
+        return None
+    host = value.strip().lower().rstrip(".")
+    if not DOMAIN_RE.match(host) or host in RESERVED_HOSTS or host.endswith(".amplifyapp.com"):
+        return None
+    return host
+
+
+def _domain_info(domain, token, verified_at):
+    if not domain:
+        return None
+    return {"domain": domain, "verified": verified_at is not None,
+            "verified_at": verified_at.isoformat() if verified_at else None,
+            "txt_name": f"{DOMAIN_TXT_PREFIX}.{domain}", "txt_value": DOMAIN_TXT_VALUE.format(token=token)}
+
+
+def _dns_lookup(name, rtype):
+    """Answers for one DNS name over DNS-over-HTTPS (the Lambda has no resolver library). Raises on a lookup failure,
+    so 'could not check' is never reported as 'record absent'."""
+    req = urllib.request.Request(f"{DOH_URL}?name={urllib.parse.quote(name)}&type={rtype}",
+                                 headers={"Accept": "application/dns-json"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        data = json.loads(r.read())
+    if data.get("Status") not in (0, 3):          # 0 NOERROR, 3 NXDOMAIN (no such name: a real "absent")
+        raise RuntimeError(f"DNS lookup failed with status {data.get('Status')}")
+    want = {"TXT": 16, "CNAME": 5}[rtype]
+    return [a.get("data", "").strip('"') for a in data.get("Answer") or [] if a.get("type") == want]
+
+
+def _set_custom_domain(conn, cloud_account_id, raw):
+    """Set (or with an empty value remove) the account's custom domain. A new domain always starts unverified with a
+    fresh token."""
+    with conn:
+        with conn.cursor() as cur:
+            _get_or_create_settings(cur, cloud_account_id)
+            if not (raw or "").strip():
+                cur.execute("""UPDATE trust_center_settings SET custom_domain = NULL, custom_domain_token = NULL,
+                               custom_domain_verified_at = NULL, updated_at = NOW() WHERE cloud_account_id = %s""",
+                            (cloud_account_id,))
+                return None
+            domain = normalise_domain(raw)
+            if not domain:
+                raise ValueError("Enter a hostname such as trust.yourcompany.com, without https:// or a path.")
+            cur.execute("SELECT custom_domain FROM trust_center_settings WHERE cloud_account_id = %s", (cloud_account_id,))
+            if cur.fetchone()[0] == domain:
+                return _get_or_create_settings(cur, cloud_account_id)["custom_domain"]
+            cur.execute("""UPDATE trust_center_settings SET custom_domain = %s, custom_domain_token = %s,
+                           custom_domain_verified_at = NULL, updated_at = NOW() WHERE cloud_account_id = %s""",
+                        (domain, secrets.token_hex(16), cloud_account_id))
+            return _get_or_create_settings(cur, cloud_account_id)["custom_domain"]
+
+
+def _verify_custom_domain(conn, cloud_account_id):
+    """Check the TXT record. Returns (http_status, body)."""
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT custom_domain, custom_domain_token FROM trust_center_settings
+                           WHERE cloud_account_id = %s FOR UPDATE""", (cloud_account_id,))
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return 400, {"error": "Set a custom domain first."}
+            domain, token = row
+            info = _domain_info(domain, token, None)
+            try:
+                txt = _dns_lookup(info["txt_name"], "TXT")
+            except Exception as e:
+                logger.warning("DNS lookup for %s failed: %s", info["txt_name"], e)
+                return 503, {"error": "The DNS check could not be completed right now. Please try again in a minute."}
+            if info["txt_value"] not in txt:
+                # a removed record ends the verification, so the stored state always matches what DNS shows now
+                cur.execute("""UPDATE trust_center_settings SET custom_domain_verified_at = NULL, updated_at = NOW()
+                               WHERE cloud_account_id = %s AND custom_domain_verified_at IS NOT NULL""", (cloud_account_id,))
+                return 200, {"verified": False, "custom_domain": info,
+                             "message": f"The TXT record {info['txt_name']} was not found yet. DNS changes can take up to an hour."}
+            cur.execute("""SELECT 1 FROM trust_center_settings WHERE custom_domain = %s
+                           AND custom_domain_verified_at IS NOT NULL AND cloud_account_id <> %s""", (domain, cloud_account_id))
+            if cur.fetchone():
+                return 409, {"error": "This domain is already connected to another Trust Center."}
+            cur.execute("""UPDATE trust_center_settings SET custom_domain_verified_at = NOW(), updated_at = NOW()
+                           WHERE cloud_account_id = %s AND custom_domain_verified_at IS NULL""", (cloud_account_id,))
+            return 200, {"verified": True, "custom_domain": _get_or_create_settings(cur, cloud_account_id)["custom_domain"]}
+
+
+def _slug_for_domain(cur, host):
+    domain = normalise_domain(host)
+    if not domain:
+        return None
+    cur.execute("""SELECT public_slug FROM trust_center_settings
+                   WHERE custom_domain = %s AND custom_domain_verified_at IS NOT NULL""", (domain,))
     row = cur.fetchone()
-    return {"cloud_account_id": str(row[0]), "is_public": row[1], "public_slug": row[2],
-            "company_name": row[3], "intro_text": row[4], "contact_email": row[5]}
+    return row[0] if row else None
 
 
 def _update_settings(conn, cloud_account_id, is_public=None, company_name=None, intro_text=None, contact_email=None):
@@ -478,6 +598,7 @@ def _decide_access_request(conn, request_id, approve, decided_by):
                         access_token = %s, token_expires_at = NOW() + (%s || ' days')::interval
                     WHERE id = %s
                 """, (decided_by, token, ACCESS_TOKEN_DAYS, request_id))
+                # Always the Niagaros host: a verified custom domain may not serve HTTPS yet
                 download_url = f"{FRONTEND_BASE_URL}/trust_center_public.html?download={document_id}&token={token}"
                 email_status, email_error = _send_approval_email(
                     requester_email, requester_name, doc_title, company_name, download_url)
@@ -630,7 +751,7 @@ REFS = {
 
 
 def _is_public(event, qs, body):
-    return (event.get("httpMethod") == "GET" and (bool(qs.get("slug")) or (bool(qs.get("download_document")) and bool(qs.get("access_token"))))) or (event.get("httpMethod") == "POST" and body.get("action") == "request_access")
+    return (event.get("httpMethod") == "GET" and (bool(qs.get("slug")) or bool(qs.get("domain")) or (bool(qs.get("download_document")) and bool(qs.get("access_token"))))) or (event.get("httpMethod") == "POST" and body.get("action") == "request_access")
 
 
 def handler(event, context):
@@ -665,17 +786,25 @@ def handler(event, context):
     except (ValueError, TypeError):
         return _resp(400, {"error": "Invalid JSON"})
 
+    # guard() skips ids that are not canonical UUIDs, while PostgreSQL also accepts other spellings (no hyphens,
+    # braces); refuse those here so an id can never reach the SQL below without the guard having checked it.
+    for src in (qs, body):
+        for key in ("cloud_account_id", "download_document", *REFS):
+            if src.get(key) not in (None, "") and not _is_uuid(src.get(key)):
+                return _resp(400, {"error": f"{key} must be a valid id"})
+
     conn = _get_connection()
     try:
         denied = guard(event, conn, qs, body, REFS, _is_public)
         if denied:
             return _resp(denied[0], {"error": denied[1]})
         if method == "GET":
-            if qs.get("slug"):
-                view = _get_public_view(conn.cursor(), qs["slug"])
+            if qs.get("slug") or qs.get("domain"):
+                slug = qs.get("slug") or _slug_for_domain(conn.cursor(), qs["domain"])
+                view = _get_public_view(conn.cursor(), slug) if slug else None
                 conn.commit()
                 if not view:
-                    return _resp(404, {"error": "Deze Trust Center-pagina bestaat niet of is niet openbaar."})
+                    return _resp(404, {"error": "This Trust Center page does not exist or is not public."})
                 return _resp(200, view)
 
             if qs.get("download_document") and qs.get("access_token"):
@@ -683,7 +812,7 @@ def handler(event, context):
                     url = _download_restricted(cur, qs["download_document"], qs["access_token"])
                 conn.commit()
                 if not url:
-                    return _resp(403, {"error": "Deze link is ongeldig, verlopen, of nog niet goedgekeurd."})
+                    return _resp(403, {"error": "This link is invalid, has expired, or has not been approved yet."})
                 return _resp(200, {"download_url": url})
 
             account_id = qs.get("cloud_account_id")
@@ -706,6 +835,18 @@ def handler(event, context):
                 _update_settings(conn, body["cloud_account_id"], body.get("is_public"), body.get("company_name"),
                                   body.get("intro_text"), body.get("contact_email"))
                 return _resp(200, {"updated": True})
+            if action == "set_custom_domain":
+                try:
+                    info = _set_custom_domain(conn, body["cloud_account_id"], body.get("custom_domain"))
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"custom_domain": info})
+            if action == "verify_custom_domain":
+                try:
+                    status, result = _verify_custom_domain(conn, body["cloud_account_id"])
+                except psycopg2.IntegrityError:
+                    return _resp(409, {"error": "This domain is already connected to another Trust Center."})
+                return _resp(status, result)
             if action == "upload_document":
                 doc_id = _upload_document(conn, body["cloud_account_id"], body["title"], body.get("category", "other"),
                                            body.get("visibility", "restricted"), body["filename"], body["file_base64"],
