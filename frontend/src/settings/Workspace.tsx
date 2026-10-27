@@ -67,6 +67,14 @@ interface Integration {
   project: string | null;
   created_at: string;
   last_sync_at: string | null;
+  // Issue #268, criterium 9. De achterkant merkt dat een token niet meer wordt
+  // geaccepteerd op het moment dat zij hem gebruikt, en zet dat hier neer. Er
+  // is geen aparte controle die vraagt "werkt dit nog": dat is alleen te weten
+  // door het te proberen, en een paginalading is het verkeerde moment om daar
+  // achter te komen.
+  status: "active" | "needs_reauth" | null;
+  credential_failed_at: string | null;
+  credential_error: string | null;
   tickets: Ticket[];
 }
 
@@ -527,9 +535,16 @@ export default function Workspace() {
             <div key={i.id} style={{ borderTop: "1px solid #1a2030", padding: "14px 0" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ color: "#f1f5f9", fontSize: 13.5, fontWeight: 600 }}>
-                    {PROVIDER_LABEL[i.provider] || i.provider}
-                    {i.account_label && <span style={{ color: "#64748b", fontWeight: 400 }}> — {i.account_label}</span>}
+                  <div style={{ color: "#f1f5f9", fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                    <span>
+                      {PROVIDER_LABEL[i.provider] || i.provider}
+                      {i.account_label && <span style={{ color: "#64748b", fontWeight: 400 }}> — {i.account_label}</span>}
+                    </span>
+                    {i.status === "needs_reauth" && (
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", padding: "2px 8px", borderRadius: 4, background: "rgba(217,145,0,0.15)", color: "#d99100" }}>
+                        RECONNECT NEEDED
+                      </span>
+                    )}
                   </div>
                   <div style={{ color: "#4e627a", fontSize: 12, marginTop: 5, lineHeight: 1.7 }}>
                     {i.site_url && <>{i.site_url}<br /></>}
@@ -554,6 +569,18 @@ export default function Workspace() {
                   </button>
                 </div>
               </div>
+
+              {/* Niet alleen een label maar ook wat eraan te doen is. Een
+                  gebruiker die leest dat er iets mis is zonder te weten wat,
+                  klikt Synchronize nog drie keer voordat hij het opgeeft. */}
+              {i.status === "needs_reauth" && (
+                <div style={{ marginTop: 10, padding: "9px 12px", borderRadius: 7, background: "rgba(217,145,0,0.08)", border: "1px solid rgba(217,145,0,0.25)", color: "#d99100", fontSize: 12, lineHeight: 1.6 }}>
+                  {PROVIDER_LABEL[i.provider] || i.provider} accepteert deze koppeling niet meer
+                  {i.credential_failed_at && <> sinds {formatDate(i.credential_failed_at)}</>}.
+                  Meestal is het API-token ingetrokken of verlopen. Koppel los en opnieuw met een vers token;
+                  tot die tijd worden er geen tickets aangemaakt of bijgewerkt.
+                </div>
+              )}
 
               {rowError[i.id] && <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{rowError[i.id]}</div>}
               {syncResult[i.id] && <div style={{ color: "#4ade80", fontSize: 12, marginTop: 8 }}>{syncResult[i.id]}</div>}
