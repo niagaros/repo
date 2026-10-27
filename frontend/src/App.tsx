@@ -216,6 +216,10 @@ function DashboardView({ accountId }: { accountId: string }) {
 function AppContent() {
   const { user, signOut } = useAuthenticator();
   const [appState, setAppState] = useState<AppState>({ kind: "loading" });
+  // Hoort bij de voettekst onder de wizard. Kan niet in dat component zelf
+  // staan: checkAccount zet het scherm eerst op "loading", waardoor de
+  // voettekst even verdwijnt en zijn eigen state meeneemt.
+  const [recheckNote, setRecheckNote] = useState("");
   const email = user?.signInDetails?.loginId || "";
 
   const checkAccount = useCallback(async () => {
@@ -291,7 +295,60 @@ function AppContent() {
     </div>
   );
 
-  if (appState.kind === "onboarding") return <AwsConnectWizard email={email} onComplete={checkAccount} />;
+  // Wie hier terechtkomt zonder dat het klopt, moet weg kunnen.
+  //
+  // Dit scherm vraagt om een AWS-account en biedt verder niets: geen
+  // navigatie, geen uitlogknop. Tot nu toe zat de enige uitlogknop van de hele
+  // app op het foutscherm. Een uitgenodigd teamlid dat zich registreert vóórdat
+  // de uitnodiging is verstuurd, belandt hier terecht en zit dan vast — hij
+  // hoort bij een organisatie die nog niet bestaat voor het systeem.
+  //
+  // De tweede knop is de werkelijke uitweg. De pagina is getekend op het moment
+  // dat er nog geen uitnodiging was en weet niet dat er inmiddels één kan zijn.
+  // Verversen zou hetzelfde doen, maar niets op dit scherm suggereert dat zijn
+  // situatie ondertussen veranderd kan zijn. Een knop die de situatie benoemt
+  // wel.
+  //
+  // De voettekst staat hier en niet in AwsConnectWizard, omdat dat component
+  // ook de instellingenpagina Infrastructure vult — daar hoort geen uitlogknop
+  // onder een formulier.
+  if (appState.kind === "onboarding") return (
+    <AwsConnectWizard
+      email={email}
+      onComplete={checkAccount}
+      startLabel="Get started as a company →"
+      footer={
+        <div style={{ marginTop: 28, paddingTop: 22, borderTop: "1px solid #1e2433" }}>
+          <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6, margin: "0 0 14px" }}>
+            Invited by a colleague? Then your company is already set up and you don't
+            need an AWS account of your own.
+          </p>
+          <button
+            style={S.btn}
+            onClick={async () => {
+              setRecheckNote("");
+              await checkAccount();
+              setRecheckNote(`No invitation found for ${email} yet. Ask your administrator to send one, then press this again.`);
+            }}
+          >
+            Get started as a team member
+          </button>
+          {recheckNote && (
+            <p style={{ color: "#fbbf24", fontSize: 12.5, lineHeight: 1.6, margin: "12px 0 0" }}>{recheckNote}</p>
+          )}
+          <p style={{ color: "#4e627a", fontSize: 12, margin: "20px 0 0", textAlign: "center" }}>
+            Signed in as {email} ·{" "}
+            <button
+              onClick={signOut}
+              style={{ background: "none", border: "none", padding: 0, color: "#94a3b8", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
+            >
+              Sign out
+            </button>
+          </p>
+        </div>
+      }
+    />
+  );
   if (appState.kind === "dashboard") return <DashboardView accountId={appState.accountId} />;
   return null;
 }
