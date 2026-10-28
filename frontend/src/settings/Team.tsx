@@ -360,7 +360,14 @@ export default function Team() {
               <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{m.full_name || m.email}</div>
               {m.full_name && <div style={{ color: "#4e627a", fontSize: 11.5 }}>{m.email}</div>}
             </div>
-            {m.status === "active" && m.email !== email ? (
+            {/* Changing a role and deactivating are admin-only, the same as
+                inviting, the MFA policy and sharing. The backend refuses both
+                with a 403 for anyone else, but until now this row offered them
+                regardless of the caller's role: a viewer saw a dropdown that
+                would have demoted the admin, and only found out it was not
+                allowed by using it. The tests never caught it — they call the
+                endpoints directly and assert the 403, which was always correct. */}
+            {myRole === "admin" && m.status === "active" && m.email !== email ? (
               <select
                 value={m.role}
                 onChange={e => changeRole(m.id, e.target.value as Role)}
@@ -376,7 +383,7 @@ export default function Team() {
             ) : (
               <span style={badgeStyle("#4ade80", "rgba(22,163,74,0.12)")}>active</span>
             )}
-            {m.status === "active" && m.email !== email && (
+            {myRole === "admin" && m.status === "active" && m.email !== email && (
               <button
                 onClick={() => deactivateMember(m.id)}
                 style={{ background: "none", border: "1px solid #374151", color: "#9ca3af", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}

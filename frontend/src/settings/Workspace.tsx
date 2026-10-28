@@ -20,7 +20,7 @@ import { useRequireAuth } from "./useRequireAuth";
 //     /settings/github, and points the other way: it reads a GitHub org in
 //     order to assess it, rather than pushing findings out. It is linked
 //     from here instead of duplicated.
-//   - Communication, Identity, SIEM and CI/CD are shown as in development.
+//   - Communication, Identity, SIEM and CI/CD are shown as on request.
 //     Each needs a business account at the vendor to authenticate against,
 //     and an integration that cannot be tested is not an integration. The
 //     same approach is used for the non-AWS cloud providers in step 1.
@@ -67,6 +67,14 @@ interface Integration {
   project: string | null;
   created_at: string;
   last_sync_at: string | null;
+  // Issue #268, criterium 9. De achterkant merkt dat een token niet meer wordt
+  // geaccepteerd op het moment dat zij hem gebruikt, en zet dat hier neer. Er
+  // is geen aparte controle die vraagt "werkt dit nog": dat is alleen te weten
+  // door het te proberen, en een paginalading is het verkeerde moment om daar
+  // achter te komen.
+  status: "active" | "needs_reauth" | null;
+  credential_failed_at: string | null;
+  credential_error: string | null;
   tickets: Ticket[];
 }
 
@@ -459,7 +467,11 @@ export default function Workspace() {
     if (connected) return { text: "Connected", color: "#4ade80", bg: "rgba(22,163,74,0.12)", border: "rgba(22,163,74,0.3)" };
     if (p.availability === "ready" || p.availability === "elsewhere")
       return { text: "Available", color: "#ef4444", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)" };
-    return { text: "In development", color: "#4e627a", bg: "#0d0f14", border: "#1a2030" };
+    // "On request" rather than "In development": nothing is being built for
+    // these today. They are designed and waiting on an account at the vendor
+    // to authenticate against, and the honest thing to tell a customer is
+    // that asking is what starts it — not that work is already underway.
+    return { text: "On request", color: "#4e627a", bg: "#0d0f14", border: "#1a2030" };
   };
 
   return (
@@ -523,9 +535,16 @@ export default function Workspace() {
             <div key={i.id} style={{ borderTop: "1px solid #1a2030", padding: "14px 0" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ color: "#f1f5f9", fontSize: 13.5, fontWeight: 600 }}>
-                    {PROVIDER_LABEL[i.provider] || i.provider}
-                    {i.account_label && <span style={{ color: "#64748b", fontWeight: 400 }}> — {i.account_label}</span>}
+                  <div style={{ color: "#f1f5f9", fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                    <span>
+                      {PROVIDER_LABEL[i.provider] || i.provider}
+                      {i.account_label && <span style={{ color: "#64748b", fontWeight: 400 }}> — {i.account_label}</span>}
+                    </span>
+                    {i.status === "needs_reauth" && (
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", padding: "2px 8px", borderRadius: 4, background: "rgba(217,145,0,0.15)", color: "#d99100" }}>
+                        RECONNECT NEEDED
+                      </span>
+                    )}
                   </div>
                   <div style={{ color: "#4e627a", fontSize: 12, marginTop: 5, lineHeight: 1.7 }}>
                     {i.site_url && <>{i.site_url}<br /></>}
@@ -550,6 +569,18 @@ export default function Workspace() {
                   </button>
                 </div>
               </div>
+
+              {/* Niet alleen een label maar ook wat eraan te doen is. Een
+                  gebruiker die leest dat er iets mis is zonder te weten wat,
+                  klikt Synchronize nog drie keer voordat hij het opgeeft. */}
+              {i.status === "needs_reauth" && (
+                <div style={{ marginTop: 10, padding: "9px 12px", borderRadius: 7, background: "rgba(217,145,0,0.08)", border: "1px solid rgba(217,145,0,0.25)", color: "#d99100", fontSize: 12, lineHeight: 1.6 }}>
+                  {PROVIDER_LABEL[i.provider] || i.provider} accepteert deze koppeling niet meer
+                  {i.credential_failed_at && <> sinds {formatDate(i.credential_failed_at)}</>}.
+                  Meestal is het API-token ingetrokken of verlopen. Koppel los en opnieuw met een vers token;
+                  tot die tijd worden er geen tickets aangemaakt of bijgewerkt.
+                </div>
+              )}
 
               {rowError[i.id] && <div style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{rowError[i.id]}</div>}
               {syncResult[i.id] && <div style={{ color: "#4ade80", fontSize: 12, marginTop: 8 }}>{syncResult[i.id]}</div>}
@@ -694,12 +725,13 @@ export default function Workspace() {
 
       {/* ── Why four categories are empty ─────────────────────────────────── */}
       <div style={{ ...card, maxWidth: 760, background: "#0d0f14" }}>
-        <div style={{ ...label, marginBottom: 10 }}>Why some providers are still in development</div>
+        <div style={{ ...label, marginBottom: 10 }}>Why some providers are available on request</div>
         <div style={{ color: "#64748b", fontSize: 12.5, lineHeight: 1.8 }}>
           Every integration authenticates against the vendor itself, so it can only be released once it
           has been tested against a real account there. Ticketing is available because that test could be
-          done. Communication, identity, SIEM and CI/CD are designed and queued behind the accounts needed
-          to prove them, and are shown here so the direction is visible rather than hidden.
+          done. Communication, identity, SIEM and CI/CD are designed but not built: they are waiting on
+          an account to prove them against. If you need one of them, say so — that is what starts it.
+          They are listed here so the direction is visible rather than hidden.
         </div>
       </div>
     </SettingsLayout>

@@ -70,9 +70,28 @@ export const Steps = ({ current, total }: { current: number; total: number }) =>
   </div>
 );
 
-interface Props { email: string; onComplete: () => void; }
+interface Props {
+  email: string;
+  onComplete: () => void;
+  /** Staat onderin de kaart van het openingsscherm, onder een scheidingslijn.
+   *
+   *  Bedoeld voor de uitweg die App.tsx aanbiedt aan iemand die hier ten
+   *  onrechte belandt. Optioneel, want ditzelfde component vult ook de
+   *  instellingenpagina Infrastructure, en daar hoort geen uitlogknop onder
+   *  een formulier te staan. Alleen op stap 0: wie verder klikt heeft al een
+   *  Back-knop, en de invoerschermen moeten leeg blijven. */
+  footer?: React.ReactNode;
+  /** Het opschrift van de knop op stap 0.
+   *
+   *  Instelbaar omdat dit scherm twee betekenissen heeft. Vanuit de onboarding
+   *  is het een keuze tussen twee soorten mensen -- een bedrijf dat zich
+   *  aansluit, of iemand die bij een bestaand team komt -- en dan hoort er
+   *  "as a company" bij. Vanuit de instellingenpagina Infrastructure is de
+   *  keuze al gemaakt en voegt die toevoeging niets toe. */
+  startLabel?: string;
+}
 
-export default function AwsConnectWizard({ email, onComplete }: Props) {
+export default function AwsConnectWizard({ email, onComplete, footer, startLabel = "Get started →" }: Props) {
   const [step, setStep]             = useState(0);
   const [companyName, setCompanyName]   = useState("");
   const [awsAccountId, setAwsAccountId] = useState("");
@@ -219,7 +238,8 @@ Resources:
           <li>Your AWS Account ID (12 digits)</li>
           <li>Access to the AWS Console or CLI</li>
         </ul>
-        <button style={S.btn} onClick={() => setStep(1)}>Get started →</button>
+        <button style={S.btn} onClick={() => setStep(1)}>{startLabel}</button>
+        {footer}
       </div>
     </div>
   );
