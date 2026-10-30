@@ -7,8 +7,8 @@ Added 2026-10-26. This covers the part of #272 assigned to this branch: `app.nia
 
 | Domain | Served by | Status |
 |---|---|---|
-| `app.niagaros.com` | Amplify app `d3joqokkaynfaq`, branch `main` | Domain association created; waits for DNS at SiteGround |
-| `trust.niagaros.com` | Same app, branch `sofyan-dev` for now; the host picks the Trust Center | Domain association created; waits for DNS and TXT verification |
+| `app.niagaros.com` | Amplify app `d3joqokkaynfaq`, branch `main` | DNS records added at SiteGround on 2026-10-30 |
+| `trust.niagaros.com` | Same app, branch `sofyan-dev` for now; the host picks the Trust Center | DNS records added at SiteGround and TXT verified on 2026-10-30. The first association (26 Oct) timed out and was recreated, which changed the CloudFront target |
 | `trust.domits.com` | Same app, branch `sofyan-dev` for now | Live (HTTPS); DNS records added in the Domits Route 53 on 2026-10-26. Waits for the Domits TXT verification |
 | `developers.niagaros.com` | GitBook, from `docs/developers/` (Git Sync) | Content ready; needs a GitBook space with this domain |
 
@@ -46,8 +46,8 @@ handled by Amplify/CloudFront.
 | Type | Name | Value |
 |---|---|---|
 | CNAME | `_300e373fc99208e65085f6b43f546c95` | `_266383a255706bf364ad333424a406c6.wzccmgtwzk.acm-validations.aws.` |
-| CNAME | `app` | `d37ewp830h63fw.cloudfront.net` |
-| CNAME | `trust` | `d37ewp830h63fw.cloudfront.net` |
+| CNAME | `app` | `dk5ppe8zpz66a.cloudfront.net` |
+| CNAME | `trust` | `dk5ppe8zpz66a.cloudfront.net` |
 | TXT | `_niagaros-trust.trust` | `niagaros-verify=acda09580364326900a1aea50d7c7f5c` (set for the Niagaros account on 2026-10-26) |
 | CNAME | `developers` | the target GitBook shows when you add the custom domain (step 3) |
 
