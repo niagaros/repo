@@ -1,0 +1,341 @@
+name,vendor,category,delivers,niagaros_objects,status
+Amazon Web Services,Amazon,Cloud Infrastructure,Account and resource configuration scanning,Assets|Security findings|Compliance controls|Evidence,Available
+Microsoft Azure,Microsoft,Cloud Infrastructure,Subscription and resource configuration scanning,Assets|Security findings|Compliance controls,Planned
+Google Cloud,Google,Cloud Infrastructure,Project and resource configuration scanning,Assets|Security findings|Compliance controls,Planned
+Oracle Cloud Infrastructure,Oracle,Cloud Infrastructure,Tenancy and resource configuration scanning,Assets|Security findings|Compliance controls,Planned
+Alibaba Cloud,Alibaba,Cloud Infrastructure,Account and resource configuration scanning,Assets|Security findings,On request
+IBM Cloud,IBM,Cloud Infrastructure,Account and resource configuration scanning,Assets|Security findings,On request
+DigitalOcean,DigitalOcean,Cloud Infrastructure,Droplet and project inventory,Assets|Security findings,On request
+Hetzner Cloud,Hetzner,Cloud Infrastructure,Server and project inventory,Assets,On request
+Scaleway,Scaleway,Cloud Infrastructure,Project and resource inventory,Assets|Security findings,On request
+OVHcloud,OVH Groupe,Cloud Infrastructure,Project and resource inventory,Assets,On request
+Vultr,Vultr,Cloud Infrastructure,Instance inventory,Assets,On request
+Akamai Linode,Akamai,Cloud Infrastructure,Instance inventory,Assets,On request
+Heroku,Salesforce,Cloud Infrastructure,Application and dyno inventory,Assets,On request
+Render,Render,Cloud Infrastructure,Service inventory,Assets,On request
+Fly.io,Fly.io,Cloud Infrastructure,Application and machine inventory,Assets,On request
+Exoscale,Exoscale,Cloud Infrastructure,EU sovereign cloud resource inventory,Assets,On request
+Open Telekom Cloud,T-Systems,Cloud Infrastructure,EU sovereign cloud resource inventory,Assets,On request
+StackIT,Schwarz Digits,Cloud Infrastructure,EU sovereign cloud resource inventory,Assets,On request
+Kubernetes,Cloud Native Computing Foundation,Kubernetes & Containers,Cluster workload and RBAC configuration,Assets|Security findings|Compliance controls,On request
+Amazon EKS,Amazon,Kubernetes & Containers,Managed cluster configuration,Assets|Security findings,On request
+Azure Kubernetes Service,Microsoft,Kubernetes & Containers,Managed cluster configuration,Assets|Security findings,On request
+Google Kubernetes Engine,Google,Kubernetes & Containers,Managed cluster configuration,Assets|Security findings,On request
+Red Hat OpenShift,Red Hat,Kubernetes & Containers,Cluster and project configuration,Assets|Security findings,On request
+Rancher,SUSE,Kubernetes & Containers,Multi-cluster configuration,Assets|Security findings,On request
+Docker Hub,Docker,Kubernetes & Containers,Image repository inventory,Assets|Vulnerabilities,On request
+Amazon ECR,Amazon,Kubernetes & Containers,Container image scan results,Assets|Vulnerabilities,On request
+Harbor,Cloud Native Computing Foundation,Kubernetes & Containers,Registry inventory and scan results,Assets|Vulnerabilities,On request
+Quay,Red Hat,Kubernetes & Containers,Registry inventory and scan results,Assets|Vulnerabilities,On request
+Portainer,Portainer,Kubernetes & Containers,Container environment inventory,Assets,On request
+Microsoft Entra ID,Microsoft,Identity & Access Management,Directory users groups and conditional access,Users|Identities|Compliance controls|Evidence,On request
+Okta,Okta,Identity & Access Management,Directory users groups and MFA policy,Users|Identities|Compliance controls|Evidence,On request
+Google Workspace,Google,Identity & Access Management,Directory users groups and 2SV status,Users|Identities|Evidence,On request
+OneLogin,One Identity,Identity & Access Management,Directory users and access policy,Users|Identities|Evidence,On request
+JumpCloud,JumpCloud,Identity & Access Management,Directory users devices and policy,Users|Identities|Assets,On request
+Active Directory,Microsoft,Identity & Access Management,On-premises directory users and groups,Users|Identities,On request
+Ping Identity,Ping Identity,Identity & Access Management,Directory users and access policy,Users|Identities|Evidence,On request
+Auth0,Okta,Identity & Access Management,Application users and authentication policy,Users|Identities,On request
+Keycloak,Red Hat,Identity & Access Management,Realm users and authentication policy,Users|Identities,On request
+Duo Security,Cisco,Identity & Access Management,MFA enrolment and authentication events,Users|Evidence,On request
+CyberArk,CyberArk,Identity & Access Management,Privileged account inventory and session records,Identities|Evidence|Risks,On request
+SailPoint,SailPoint,Identity & Access Management,Identity governance and access certification,Identities|Evidence|Compliance controls,On request
+Saviynt,Saviynt,Identity & Access Management,Identity governance and access reviews,Identities|Evidence|Compliance controls,On request
+AWS IAM Identity Center,Amazon,Identity & Access Management,Workforce users and permission sets,Users|Identities|Evidence,On request
+Jamf,Jamf,Device Management,Managed Apple device inventory and posture,Assets|Evidence|Compliance controls,On request
+Microsoft Intune,Microsoft,Device Management,Managed device inventory and compliance policy,Assets|Evidence|Compliance controls,On request
+Kandji,Kandji,Device Management,Managed Apple device inventory and posture,Assets|Evidence,On request
+Mosyle,Mosyle,Device Management,Managed Apple device inventory and posture,Assets|Evidence,On request
+Hexnode,Mitsogo,Device Management,Managed device inventory and policy,Assets|Evidence,On request
+Workspace ONE,Omnissa,Device Management,Managed device inventory and policy,Assets|Evidence,On request
+Fleet,Fleet Device Management,Device Management,Open source device posture via osquery,Assets|Evidence,On request
+Addigy,Addigy,Device Management,Managed Apple device inventory,Assets|Evidence,On request
+ManageEngine Endpoint Central,Zoho,Device Management,Endpoint inventory and patch status,Assets|Vulnerabilities|Evidence,On request
+CrowdStrike Falcon,CrowdStrike,Endpoint Security,Endpoint detections and sensor coverage,Security findings|Assets|Incidents,On request
+Microsoft Defender for Endpoint,Microsoft,Endpoint Security,Endpoint detections and device risk,Security findings|Assets|Incidents,On request
+SentinelOne,SentinelOne,Endpoint Security,Endpoint detections and agent coverage,Security findings|Assets|Incidents,On request
+Sophos Intercept X,Sophos,Endpoint Security,Endpoint detections and policy state,Security findings|Assets,On request
+ESET PROTECT,ESET,Endpoint Security,Endpoint detections and agent coverage,Security findings|Assets,On request
+Trellix Endpoint Security,Trellix,Endpoint Security,Endpoint detections and policy state,Security findings|Assets,On request
+Cortex XDR,Palo Alto Networks,Endpoint Security,Cross-layer detections and incidents,Security findings|Incidents,On request
+Bitdefender GravityZone,Bitdefender,Endpoint Security,Endpoint detections and agent coverage,Security findings|Assets,On request
+Malwarebytes,Malwarebytes,Endpoint Security,Endpoint detections and agent coverage,Security findings|Assets,On request
+Huntress,Huntress,Endpoint Security,Managed endpoint detections,Security findings|Incidents,On request
+Cybereason,Cybereason,Endpoint Security,Endpoint detections and incidents,Security findings|Incidents,On request
+GitHub,GitHub,Version Control,Repository branch protection and access,Assets|Users|Compliance controls|Evidence,Available
+GitLab,GitLab,Version Control,Project protection rules and access,Assets|Users|Compliance controls|Evidence,On request
+Bitbucket,Atlassian,Version Control,Repository permissions and merge checks,Assets|Users|Evidence,On request
+Azure DevOps Repos,Microsoft,Version Control,Repository policy and access,Assets|Users|Evidence,On request
+Gitea,Gitea,Version Control,Self-hosted repository inventory and access,Assets|Users,On request
+AWS CodeCommit,Amazon,Version Control,Repository inventory and access,Assets|Users,On request
+Jenkins,Jenkins,CI/CD & DevOps,Build job configuration and history,Evidence|Compliance controls,On request
+GitHub Actions,GitHub,CI/CD & DevOps,Workflow runs and approval gates,Evidence|Compliance controls,On request
+GitLab CI,GitLab,CI/CD & DevOps,Pipeline runs and approval gates,Evidence|Compliance controls,On request
+CircleCI,CircleCI,CI/CD & DevOps,Pipeline runs and context secrets policy,Evidence,On request
+Travis CI,Travis CI,CI/CD & DevOps,Build history and configuration,Evidence,On request
+Azure Pipelines,Microsoft,CI/CD & DevOps,Pipeline runs and approval gates,Evidence|Compliance controls,On request
+Argo CD,Cloud Native Computing Foundation,CI/CD & DevOps,Deployment state and drift,Assets|Evidence,On request
+Bamboo,Atlassian,CI/CD & DevOps,Build and deployment history,Evidence,On request
+TeamCity,JetBrains,CI/CD & DevOps,Build configuration and history,Evidence,On request
+Buildkite,Buildkite,CI/CD & DevOps,Pipeline runs and agent inventory,Evidence,On request
+Harness,Harness,CI/CD & DevOps,Deployment pipelines and governance policy,Evidence|Compliance controls,On request
+Spinnaker,Netflix,CI/CD & DevOps,Deployment pipelines and approvals,Evidence,On request
+AWS CodePipeline,Amazon,CI/CD & DevOps,Pipeline runs and approval actions,Evidence,On request
+Terraform,HashiCorp,Infrastructure as Code,Plan and state analysis for drift,Assets|Security findings,On request
+Terraform Cloud,HashiCorp,Infrastructure as Code,Workspace runs and policy checks,Assets|Security findings|Evidence,On request
+Pulumi,Pulumi,Infrastructure as Code,Stack state and policy checks,Assets|Security findings,On request
+AWS CloudFormation,Amazon,Infrastructure as Code,Stack and drift detection,Assets|Security findings,On request
+Ansible,Red Hat,Infrastructure as Code,Playbook runs and host configuration,Assets|Evidence,On request
+Chef,Progress,Infrastructure as Code,Node configuration and compliance profiles,Assets|Compliance controls,On request
+Puppet,Perforce,Infrastructure as Code,Node configuration and enforcement reports,Assets|Compliance controls,On request
+Crossplane,Cloud Native Computing Foundation,Infrastructure as Code,Managed resource inventory,Assets,On request
+Tenable,Tenable,Vulnerability Management,Vulnerability scan results and asset exposure,Vulnerabilities|Assets|Risks,On request
+Qualys,Qualys,Vulnerability Management,Vulnerability scan results and asset exposure,Vulnerabilities|Assets|Risks,On request
+Rapid7 InsightVM,Rapid7,Vulnerability Management,Vulnerability scan results and remediation state,Vulnerabilities|Assets,On request
+Nessus,Tenable,Vulnerability Management,Network and host scan results,Vulnerabilities|Assets,On request
+Snyk,Snyk,Vulnerability Management,Dependency container and IaC findings,Vulnerabilities|Security findings,On request
+Mend.io,Mend.io,Vulnerability Management,Open source dependency and licence findings,Vulnerabilities|Risks,On request
+Veracode,Veracode,Vulnerability Management,Static and dynamic application scan results,Vulnerabilities|Security findings,On request
+Checkmarx,Checkmarx,Vulnerability Management,Static application and supply chain findings,Vulnerabilities|Security findings,On request
+Aikido Security,Aikido,Vulnerability Management,Code cloud and container findings,Vulnerabilities|Security findings,On request
+Intruder,Intruder,Vulnerability Management,External attack surface scan results,Vulnerabilities|Assets,On request
+Detectify,Detectify,Vulnerability Management,External attack surface scan results,Vulnerabilities|Assets,On request
+Greenbone OpenVAS,Greenbone,Vulnerability Management,Open source vulnerability scan results,Vulnerabilities|Assets,On request
+Vicarius,Vicarius,Vulnerability Management,Vulnerability and patch remediation state,Vulnerabilities|Assets,On request
+Burp Suite Enterprise,PortSwigger,Application & API Security,Web application scan results,Vulnerabilities|Security findings,On request
+Invicti,Invicti,Application & API Security,Web application scan results,Vulnerabilities|Security findings,On request
+Acunetix,Invicti,Application & API Security,Web application scan results,Vulnerabilities|Security findings,On request
+Salt Security,Salt Security,Application & API Security,API inventory and runtime findings,Assets|Security findings,On request
+Noname Security,Akamai,Application & API Security,API inventory and posture findings,Assets|Security findings,On request
+42Crunch,42Crunch,Application & API Security,API specification audit and conformance,Security findings|Compliance controls,On request
+StackHawk,StackHawk,Application & API Security,Dynamic API and application scan results,Vulnerabilities,On request
+Escape,Escape,Application & API Security,API discovery and scan results,Assets|Vulnerabilities,On request
+Traceable,Harness,Application & API Security,API runtime protection findings,Security findings|Assets,On request
+Wallarm,Wallarm,Application & API Security,API and application attack findings,Security findings|Incidents,On request
+Semgrep,Semgrep,Application & API Security,Static analysis and secret findings,Security findings|Vulnerabilities,On request
+SonarQube,Sonar,Application & API Security,Code quality and security hotspots,Security findings|Evidence,On request
+GitGuardian,GitGuardian,Application & API Security,Leaked secret detections in repositories,Security findings|Incidents,On request
+Varonis,Varonis,Data Security,Sensitive data access and permission analysis,Risks|Assets|Security findings,On request
+BigID,BigID,Data Security,Sensitive data discovery and classification,Assets|Risks|Compliance controls,On request
+Cyera,Cyera,Data Security,Data security posture and classification,Assets|Risks|Security findings,On request
+Nightfall AI,Nightfall AI,Data Security,Sensitive data detection in SaaS and code,Security findings|Risks,On request
+Netwrix,Netwrix,Data Security,File access auditing and change tracking,Evidence|Risks,On request
+Immuta,Immuta,Data Security,Data access policy and audit records,Compliance controls|Evidence,On request
+Satori,Satori,Data Security,Data access monitoring and masking policy,Evidence|Compliance controls,On request
+Securiti,Securiti,Data Security,Data discovery and privacy controls,Assets|Compliance controls,On request
+Rubrik,Rubrik,Data Security,Backup coverage and recovery testing,Evidence|Compliance controls,On request
+Druva,Druva,Data Security,Backup coverage and retention policy,Evidence|Compliance controls,On request
+Veeam,Veeam,Data Security,Backup job status and retention policy,Evidence|Compliance controls,On request
+Palo Alto Networks,Palo Alto Networks,Network Security,Firewall policy and threat logs,Security findings|Evidence,On request
+Fortinet FortiGate,Fortinet,Network Security,Firewall policy and threat logs,Security findings|Evidence,On request
+Check Point,Check Point,Network Security,Gateway policy and threat logs,Security findings|Evidence,On request
+Cisco Secure Firewall,Cisco,Network Security,Firewall policy and threat logs,Security findings|Evidence,On request
+Cloudflare,Cloudflare,Network Security,WAF DNS and edge configuration,Assets|Security findings|Evidence,On request
+Zscaler,Zscaler,Network Security,Secure web gateway policy and logs,Evidence|Security findings,On request
+Netskope,Netskope,Network Security,Cloud access policy and SaaS usage,Evidence|Risks,On request
+Tailscale,Tailscale,Network Security,Device network access and ACL policy,Assets|Evidence,On request
+Twingate,Twingate,Network Security,Zero trust access policy and session logs,Evidence|Compliance controls,On request
+F5 BIG-IP,F5,Network Security,Application delivery and WAF policy,Security findings|Evidence,On request
+Splunk,Cisco,SIEM & Log Management,Security events and correlation alerts,Security findings|Incidents|Evidence,On request
+Microsoft Sentinel,Microsoft,SIEM & Log Management,Security incidents and analytics rules,Incidents|Security findings|Evidence,On request
+IBM QRadar,IBM,SIEM & Log Management,Security offences and event records,Incidents|Security findings,On request
+Elastic Security,Elastic,SIEM & Log Management,Detection alerts and event records,Security findings|Incidents,On request
+Sumo Logic,Sumo Logic,SIEM & Log Management,Log analytics and security signals,Security findings|Evidence,On request
+Graylog,Graylog,SIEM & Log Management,Centralised log search and alerts,Evidence|Security findings,On request
+LogRhythm,Exabeam,SIEM & Log Management,Security events and case records,Incidents|Security findings,On request
+Exabeam,Exabeam,SIEM & Log Management,User behaviour analytics and alerts,Security findings|Risks,On request
+Devo,Devo,SIEM & Log Management,Log analytics and detection alerts,Security findings|Evidence,On request
+Panther,Panther Labs,SIEM & Log Management,Detection as code alerts,Security findings|Evidence,On request
+Securonix,Securonix,SIEM & Log Management,Behaviour analytics and detections,Security findings|Risks,On request
+Google Security Operations,Google,SIEM & Log Management,Detections and threat context,Security findings|Incidents,On request
+AWS Security Hub,Amazon,SIEM & Log Management,Aggregated AWS security findings,Security findings|Compliance controls,On request
+Torq,Torq,SOAR & Automation,Automated response workflow execution,Evidence|Incidents,On request
+Tines,Tines,SOAR & Automation,Automated response workflow execution,Evidence|Incidents,On request
+Cortex XSOAR,Palo Alto Networks,SOAR & Automation,Incident playbooks and case records,Incidents|Evidence,On request
+Swimlane,Swimlane,SOAR & Automation,Security case management and automation,Incidents|Evidence,On request
+Splunk SOAR,Cisco,SOAR & Automation,Automated playbook execution,Incidents|Evidence,On request
+Shuffle,Shuffle,SOAR & Automation,Open source automation workflows,Evidence|Incidents,On request
+n8n,n8n,SOAR & Automation,General workflow automation,Evidence|Tickets,On request
+Zapier,Zapier,SOAR & Automation,General workflow automation,Evidence|Tickets,On request
+Workato,Workato,SOAR & Automation,Enterprise workflow automation,Evidence|Tickets,On request
+Recorded Future,Recorded Future,Threat Detection & Intelligence,Threat intelligence and risk scores,Risks|Security findings,On request
+Mandiant,Google,Threat Detection & Intelligence,Threat intelligence and actor context,Risks|Security findings,On request
+VirusTotal,Google,Threat Detection & Intelligence,File and URL reputation analysis,Security findings,On request
+AlienVault OTX,LevelBlue,Threat Detection & Intelligence,Community threat indicators,Security findings,On request
+Intel 471,Intel 471,Threat Detection & Intelligence,Adversary and underground intelligence,Risks|Security findings,On request
+Flashpoint,Flashpoint,Threat Detection & Intelligence,Threat and exposure intelligence,Risks|Security findings,On request
+GreyNoise,GreyNoise,Threat Detection & Intelligence,Internet scanning noise classification,Security findings,On request
+Have I Been Pwned,Have I Been Pwned,Threat Detection & Intelligence,Breached credential exposure for domains,Risks|Identities,On request
+Shodan,Shodan,Threat Detection & Intelligence,Internet exposed asset discovery,Assets|Risks,On request
+CrowdSec,CrowdSec,Threat Detection & Intelligence,Community sourced attack signals,Security findings,On request
+AppOmni,AppOmni,SSPM,SaaS configuration posture and drift,Security findings|Compliance controls,On request
+Obsidian Security,Obsidian Security,SSPM,SaaS posture and identity threat detection,Security findings|Identities,On request
+Adaptive Shield,CrowdStrike,SSPM,SaaS configuration posture,Security findings|Compliance controls,On request
+Valence Security,Valence Security,SSPM,SaaS risk remediation and posture,Security findings|Risks,On request
+Grip Security,Grip Security,SSPM,SaaS discovery and access governance,Assets|Identities|Risks,On request
+DoControl,DoControl,SSPM,SaaS data access governance,Risks|Evidence,On request
+Nudge Security,Nudge Security,SSPM,Shadow SaaS discovery and governance,Assets|Risks,On request
+Wiz,Wiz,CSPM & CNAPP,Cloud risk graph and prioritised findings,Security findings|Vulnerabilities|Assets,On request
+Prisma Cloud,Palo Alto Networks,CSPM & CNAPP,Cloud posture and workload findings,Security findings|Compliance controls,On request
+Orca Security,Orca Security,CSPM & CNAPP,Agentless cloud risk findings,Security findings|Vulnerabilities,On request
+Lacework FortiCNAPP,Fortinet,CSPM & CNAPP,Cloud posture and anomaly detection,Security findings|Incidents,On request
+Sysdig,Sysdig,CSPM & CNAPP,Runtime and posture findings,Security findings|Vulnerabilities,On request
+Aqua Security,Aqua Security,CSPM & CNAPP,Container and cloud workload findings,Security findings|Vulnerabilities,On request
+Upwind,Upwind,CSPM & CNAPP,Runtime powered cloud findings,Security findings|Assets,On request
+Datadog Cloud Security,Datadog,CSPM & CNAPP,Cloud posture and threat signals,Security findings|Compliance controls,On request
+Microsoft Defender for Cloud,Microsoft,CSPM & CNAPP,Cloud posture and regulatory compliance,Security findings|Compliance controls,On request
+Jira,Atlassian,Ticketing & ITSM,Issue creation and remediation tracking,Tickets|Evidence,Available
+Jira Service Management,Atlassian,Ticketing & ITSM,Service request and change records,Tickets|Evidence|Compliance controls,On request
+ServiceNow,ServiceNow,Ticketing & ITSM,Incident change and request records,Tickets|Incidents|Evidence,On request
+Monday.com,monday.com,Ticketing & ITSM,Board item creation and tracking,Tickets|Evidence,Available
+Linear,Linear,Ticketing & ITSM,Issue creation and remediation tracking,Tickets|Evidence,On request
+Asana,Asana,Ticketing & ITSM,Task creation and tracking,Tickets|Evidence,On request
+ClickUp,ClickUp,Ticketing & ITSM,Task creation and tracking,Tickets|Evidence,On request
+Zendesk,Zendesk,Ticketing & ITSM,Support ticket records,Tickets|Evidence,On request
+Freshservice,Freshworks,Ticketing & ITSM,Service desk and change records,Tickets|Evidence,On request
+PagerDuty,PagerDuty,Ticketing & ITSM,On-call incident records and response times,Incidents|Evidence,On request
+Opsgenie,Atlassian,Ticketing & ITSM,On-call alert and escalation records,Incidents|Evidence,On request
+Trello,Atlassian,Ticketing & ITSM,Card creation and tracking,Tickets,On request
+Wrike,Wrike,Ticketing & ITSM,Task creation and tracking,Tickets,On request
+Shortcut,Shortcut,Ticketing & ITSM,Story creation and tracking,Tickets,On request
+Notion,Notion,Ticketing & ITSM,Database item creation and policy pages,Tickets|Evidence,On request
+Slack,Salesforce,Communication,Alert delivery and approval records,Evidence|Incidents,On request
+Microsoft Teams,Microsoft,Communication,Alert delivery and approval records,Evidence|Incidents,On request
+Google Chat,Google,Communication,Alert delivery,Evidence,On request
+Discord,Discord,Communication,Alert delivery,Evidence,On request
+Mattermost,Mattermost,Communication,Self-hosted alert delivery,Evidence,On request
+Zoom,Zoom,Communication,Meeting and recording retention settings,Evidence|Compliance controls,On request
+Webex,Cisco,Communication,Meeting and retention settings,Evidence|Compliance controls,On request
+Twilio,Twilio,Communication,SMS and voice alert delivery,Evidence,On request
+Workday,Workday,HR & People,Employee records joiners and leavers,Users|Evidence|Compliance controls,On request
+BambooHR,BambooHR,HR & People,Employee records joiners and leavers,Users|Evidence|Compliance controls,On request
+Personio,Personio,HR & People,Employee records and onboarding tasks,Users|Evidence,On request
+AFAS Software,AFAS,HR & People,Dutch HR and payroll employee records,Users|Evidence,On request
+Nmbrs,Visma,HR & People,Dutch HR and payroll employee records,Users|Evidence,On request
+HiBob,HiBob,HR & People,Employee records and lifecycle events,Users|Evidence,On request
+Rippling,Rippling,HR & People,Employee device and application lifecycle,Users|Assets|Evidence,On request
+Gusto,Gusto,HR & People,Employee and payroll records,Users|Evidence,On request
+Namely,Namely,HR & People,Employee records and lifecycle events,Users|Evidence,On request
+TriNet,TriNet,HR & People,Employee records and benefits administration,Users|Evidence,On request
+SAP SuccessFactors,SAP,HR & People,Employee records and learning history,Users|Evidence|Compliance controls,On request
+ADP,ADP,HR & People,Employee and payroll records,Users|Evidence,On request
+Deel,Deel,HR & People,Contractor and employee records,Users|Evidence,On request
+Remote,Remote,HR & People,International employment records,Users|Evidence,On request
+Factorial,Factorial,HR & People,Employee records and onboarding tasks,Users|Evidence,On request
+Humaans,Humaans,HR & People,Employee records and lifecycle events,Users|Evidence,On request
+Sage HR,Sage,HR & People,Employee records and leave administration,Users|Evidence,On request
+Officient,Officient,HR & People,Benelux employee records,Users|Evidence,On request
+Checkr,Checkr,Background Checks,Pre-employment screening results,Evidence|Compliance controls,On request
+Certn,Certn,Background Checks,Pre-employment screening results,Evidence|Compliance controls,On request
+Zinc,Zinc,Background Checks,Reference and background check results,Evidence,On request
+Veremark,Veremark,Background Checks,Background screening results,Evidence,On request
+Sterling,First Advantage,Background Checks,Background screening results,Evidence|Compliance controls,On request
+HireRight,HireRight,Background Checks,Background screening results,Evidence|Compliance controls,On request
+First Advantage,First Advantage,Background Checks,Background screening results,Evidence,On request
+Giant Screening,Giant Screening,Background Checks,UK background screening results,Evidence,On request
+KnowBe4,KnowBe4,Security Awareness Training,Training completion and phishing simulation results,Evidence|Compliance controls|Users,On request
+Hoxhunt,Hoxhunt,Security Awareness Training,Training and phishing simulation results,Evidence|Users,On request
+SoSafe,SoSafe,Security Awareness Training,Training completion and awareness scores,Evidence|Users,On request
+Phished,Phished,Security Awareness Training,Training and phishing simulation results,Evidence|Users,On request
+Proofpoint Security Awareness,Proofpoint,Security Awareness Training,Training completion records,Evidence|Compliance controls,On request
+Ninjio,Ninjio,Security Awareness Training,Training completion records,Evidence|Users,On request
+Curricula,Huntress,Security Awareness Training,Training completion records,Evidence|Users,On request
+Riot,Riot,Security Awareness Training,Training and phishing simulation results,Evidence|Users,On request
+CybeReady,CybeReady,Security Awareness Training,Training completion and awareness scores,Evidence|Users,On request
+Arctic Wolf Managed Awareness,Arctic Wolf,Security Awareness Training,Training completion records,Evidence|Users,On request
+1Password,1Password,Password & Secrets Management,Vault usage and device trust posture,Evidence|Compliance controls|Assets,On request
+Bitwarden,Bitwarden,Password & Secrets Management,Vault usage and policy enforcement,Evidence|Compliance controls,On request
+LastPass,LastPass,Password & Secrets Management,Vault usage and policy enforcement,Evidence|Compliance controls,On request
+Keeper Security,Keeper Security,Password & Secrets Management,Vault usage and policy enforcement,Evidence|Compliance controls,On request
+Dashlane,Dashlane,Password & Secrets Management,Vault usage and policy enforcement,Evidence|Compliance controls,On request
+HashiCorp Vault,IBM,Password & Secrets Management,Secret access and rotation audit records,Evidence|Compliance controls,On request
+AWS Secrets Manager,Amazon,Password & Secrets Management,Secret inventory and rotation state,Assets|Evidence|Compliance controls,On request
+Azure Key Vault,Microsoft,Password & Secrets Management,Key and secret inventory and access logs,Assets|Evidence,On request
+Doppler,Doppler,Password & Secrets Management,Secret inventory and access records,Assets|Evidence,On request
+Infisical,Infisical,Password & Secrets Management,Secret inventory and access records,Assets|Evidence,On request
+OneTrust,OneTrust,Compliance & GRC,Control and policy records,Compliance controls|Evidence|Risks,On request
+AuditBoard,AuditBoard,Compliance & GRC,Audit findings and control testing,Audit findings|Compliance controls|Evidence,On request
+LogicGate,LogicGate,Compliance & GRC,Risk and control register,Risks|Compliance controls,On request
+Archer,Archer,Compliance & GRC,Enterprise risk and control register,Risks|Compliance controls,On request
+ServiceNow GRC,ServiceNow,Compliance & GRC,Policy risk and control records,Compliance controls|Risks|Evidence,On request
+Hyperproof,Hyperproof,Compliance & GRC,Control evidence and audit readiness,Compliance controls|Evidence,On request
+Workiva,Workiva,Compliance & GRC,Reporting and disclosure records,Evidence|Compliance controls,On request
+Diligent,Diligent,Compliance & GRC,Board and governance records,Evidence|Compliance controls,On request
+Whistic,Whistic,Vendor & Third-Party Risk,Vendor security questionnaires and profiles,Vendors|Risks|Evidence,On request
+Panorays,Panorays,Vendor & Third-Party Risk,Vendor risk assessments and ratings,Vendors|Risks,On request
+SecurityScorecard,SecurityScorecard,Vendor & Third-Party Risk,External security ratings for vendors,Vendors|Risks,On request
+Bitsight,Bitsight,Vendor & Third-Party Risk,External security ratings for vendors,Vendors|Risks,On request
+UpGuard,UpGuard,Vendor & Third-Party Risk,Vendor risk ratings and exposure,Vendors|Risks,On request
+Prevalent,Mitratech,Vendor & Third-Party Risk,Vendor assessments and monitoring,Vendors|Risks|Evidence,On request
+ProcessUnity,ProcessUnity,Vendor & Third-Party Risk,Vendor assessments and remediation,Vendors|Risks,On request
+Venminder,Ncontracts,Vendor & Third-Party Risk,Vendor due diligence records,Vendors|Evidence,On request
+RiskRecon,Mastercard,Vendor & Third-Party Risk,Vendor security ratings,Vendors|Risks,On request
+OneTrust Privacy,OneTrust,Privacy,Data mapping and subject request records,Compliance controls|Evidence,On request
+TrustArc,TrustArc,Privacy,Privacy assessments and consent records,Compliance controls|Evidence,On request
+Usercentrics,Usercentrics,Privacy,Consent management records,Evidence|Compliance controls,On request
+Cookiebot,Usercentrics,Privacy,Cookie scanning and consent records,Evidence|Compliance controls,On request
+Didomi,Didomi,Privacy,Consent and preference records,Evidence|Compliance controls,On request
+Osano,Osano,Privacy,Consent and data subject request records,Evidence|Compliance controls,On request
+Transcend,Transcend,Privacy,Data subject request automation records,Evidence|Compliance controls,On request
+DataGrail,DataGrail,Privacy,Data mapping and subject request records,Evidence|Compliance controls,On request
+DocuSign,Docusign,Document Management & e-Signature,Signed agreement records,Evidence|Compliance controls,On request
+Adobe Acrobat Sign,Adobe,Document Management & e-Signature,Signed agreement records,Evidence|Compliance controls,On request
+Dropbox Sign,Dropbox,Document Management & e-Signature,Signed agreement records,Evidence,On request
+SignRequest,Box,Document Management & e-Signature,Signed agreement records,Evidence,On request
+Box,Box,Document Management & e-Signature,Document storage sharing and retention,Assets|Evidence|Compliance controls,On request
+Dropbox,Dropbox,Document Management & e-Signature,Document storage sharing and retention,Assets|Evidence,On request
+Google Drive,Google,Document Management & e-Signature,Document storage sharing and retention,Assets|Evidence,On request
+Microsoft SharePoint,Microsoft,Document Management & e-Signature,Document storage sharing and retention,Assets|Evidence|Compliance controls,On request
+Confluence,Atlassian,Document Management & e-Signature,Policy pages and approval history,Evidence|Compliance controls,On request
+Egnyte,Egnyte,Document Management & e-Signature,Document storage and governance records,Assets|Evidence,On request
+Datadog,Datadog,Observability & Monitoring,Monitors alerts and uptime records,Evidence|Incidents,On request
+New Relic,New Relic,Observability & Monitoring,Application performance and alert records,Evidence|Incidents,On request
+Dynatrace,Dynatrace,Observability & Monitoring,Application and infrastructure monitoring,Evidence|Incidents,On request
+Grafana,Grafana Labs,Observability & Monitoring,Dashboards and alert rules,Evidence,On request
+Prometheus,Cloud Native Computing Foundation,Observability & Monitoring,Metrics and alert rules,Evidence,On request
+AppDynamics,Cisco,Observability & Monitoring,Application performance monitoring,Evidence|Incidents,On request
+Honeycomb,Honeycomb,Observability & Monitoring,Trace analysis and alerting,Evidence,On request
+Sentry,Sentry,Observability & Monitoring,Error tracking and release health,Evidence|Incidents,On request
+Better Stack,Better Stack,Observability & Monitoring,Uptime monitoring and incident records,Evidence|Incidents,On request
+Nagios,Nagios,Observability & Monitoring,Infrastructure monitoring and alerts,Evidence,On request
+Zabbix,Zabbix,Observability & Monitoring,Infrastructure monitoring and alerts,Evidence,On request
+Checkly,Checkly,Observability & Monitoring,Synthetic monitoring results,Evidence,On request
+Snowflake,Snowflake,Data Warehouse & Analytics,Warehouse access roles and audit history,Assets|Identities|Evidence,On request
+Databricks,Databricks,Data Warehouse & Analytics,Workspace access and audit logs,Assets|Identities|Evidence,On request
+Google BigQuery,Google,Data Warehouse & Analytics,Dataset access and audit logs,Assets|Evidence,On request
+Amazon Redshift,Amazon,Data Warehouse & Analytics,Cluster access and audit logs,Assets|Evidence,On request
+Azure Synapse Analytics,Microsoft,Data Warehouse & Analytics,Workspace access and audit logs,Assets|Evidence,On request
+Looker,Google,Data Warehouse & Analytics,Report access and sharing settings,Evidence,On request
+Tableau,Salesforce,Data Warehouse & Analytics,Report access and sharing settings,Evidence,On request
+Microsoft Power BI,Microsoft,Data Warehouse & Analytics,Report access and sharing settings,Evidence,On request
+dbt,dbt Labs,Data Warehouse & Analytics,Transformation runs and test results,Evidence,On request
+Fivetran,Fivetran,Data Warehouse & Analytics,Pipeline configuration and sync history,Evidence|Assets,On request
+Metabase,Metabase,Data Warehouse & Analytics,Dashboard access and sharing settings,Evidence,On request
+OpenAI,OpenAI,AI & LLM Platforms,API key usage and data retention settings,Assets|Risks|Evidence,On request
+Anthropic,Anthropic,AI & LLM Platforms,API key usage and data retention settings,Assets|Risks|Evidence,On request
+Azure OpenAI Service,Microsoft,AI & LLM Platforms,Deployment inventory and access policy,Assets|Risks,On request
+Amazon Bedrock,Amazon,AI & LLM Platforms,Model access and invocation logging,Assets|Evidence,On request
+Google Vertex AI,Google,AI & LLM Platforms,Model inventory and access policy,Assets|Evidence,On request
+Hugging Face,Hugging Face,AI & LLM Platforms,Model and dataset inventory,Assets|Risks,On request
+LangSmith,LangChain,AI & LLM Platforms,Trace retention and access settings,Evidence|Risks,On request
+Lakera,Check Point,AI & LLM Platforms,Prompt injection and AI threat findings,Security findings|Risks,On request
+Protect AI,Palo Alto Networks,AI & LLM Platforms,Model supply chain findings,Security findings|Vulnerabilities,On request
+Robust Intelligence,Cisco,AI & LLM Platforms,AI model validation findings,Security findings|Risks,On request
+ServiceNow CMDB,ServiceNow,CMDB & Asset Management,Configuration item inventory and ownership,Assets|Evidence,On request
+Device42,Freshworks,CMDB & Asset Management,Infrastructure asset inventory,Assets,On request
+Lansweeper,Lansweeper,CMDB & Asset Management,Network and device discovery,Assets,On request
+Snipe-IT,Snipe-IT,CMDB & Asset Management,Open source IT asset register,Assets|Evidence,On request
+Axonius,Axonius,CMDB & Asset Management,Unified asset inventory and coverage gaps,Assets|Risks,On request
+runZero,runZero,CMDB & Asset Management,Network asset discovery,Assets|Risks,On request
+JupiterOne,JupiterOne,CMDB & Asset Management,Asset relationship graph,Assets|Risks,On request
+Oomnitza,Oomnitza,CMDB & Asset Management,Technology asset lifecycle records,Assets|Evidence,On request
+Microsoft 365,Microsoft,Business & Productivity,Tenant configuration and user activity,Users|Evidence|Compliance controls,On request
+Salesforce,Salesforce,Business & Productivity,Org configuration and user permissions,Users|Evidence,On request
+HubSpot,HubSpot,Business & Productivity,User access and data retention settings,Users|Evidence,On request
+Oracle NetSuite,Oracle,Business & Productivity,User roles and segregation of duties,Users|Compliance controls|Evidence,On request
+Xero,Xero,Business & Productivity,User access and approval records,Users|Evidence,On request
+QuickBooks,Intuit,Business & Productivity,User access and approval records,Users|Evidence,On request
+Stripe,Stripe,Business & Productivity,Account access and payment controls,Users|Evidence|Compliance controls,On request
+Airtable,Airtable,Business & Productivity,Base access and sharing settings,Evidence,On request
+Smartsheet,Smartsheet,Business & Productivity,Sheet access and sharing settings,Evidence,On request
+Miro,Miro,Business & Productivity,Board access and sharing settings,Evidence,On request
