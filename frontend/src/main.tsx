@@ -19,6 +19,7 @@ import Governance      from "./settings/Governance";
 import Training        from "./settings/Training";
 import OnboardingHome  from "./onboarding/OnboardingHome";
 import MfaSetup        from "./mfa/MfaSetup";
+import OnboardingAnalytics from "./analytics/OnboardingAnalytics";
 
 async function bootstrap() {
   try {
@@ -68,6 +69,9 @@ async function bootstrap() {
           <Route path="/settings/compliance"     element={<Compliance    />} />
           <Route path="/settings/governance"     element={<Governance    />} />
           <Route path="/settings/training"       element={<Training      />} />
+          {/* For Niagaros, not for the customer: the backend refuses anyone else.
+              Deliberately not in the settings sidebar. */}
+          <Route path="/analytics/onboarding"    element={<OnboardingAnalytics />} />
 
           {/* ── Existing app (login / onboarding / dashboard redirect) ── */}
           <Route path="/*" element={<App />} />

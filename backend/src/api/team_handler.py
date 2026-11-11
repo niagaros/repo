@@ -472,12 +472,23 @@ def handle_onboarding_progress(event: dict, db: Database) -> dict:
             db.record_step_completion(org, step)
 
     completions = db.get_step_completions(org)
+
+    # Steps 5 to 7 are evaluated by governance_handler, not here, so this
+    # endpoint cannot say whether they are complete *now* — only that they
+    # have been. That handler records a completion from its own database
+    # read, and a recorded completion is never removed. `available` stays
+    # false for those three, so the difference remains visible to a caller.
+    evaluated_here = set(done)
+    for step in ONBOARDING_STEPS:
+        if step not in evaluated_here:
+            done[step] = step in completions
+
     return _response(200, {
         "steps": [
             {
                 "step": step,
                 "done": done.get(step, False),
-                "available": step in done,
+                "available": step in evaluated_here,
                 "completed_at": completions.get(step),
             }
             for step in ONBOARDING_STEPS
