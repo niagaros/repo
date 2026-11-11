@@ -51,6 +51,13 @@ STUCK_AFTER_DAYS_DEFAULT = 14   # R10
 # Steps that cannot yet be completed on production, and why. The funnel shows
 # these at a 100% drop-off; the design asks for the reason to travel with the
 # number instead of the number being hidden.
+#
+# An entry here is a claim about the outside world, and the data can disprove
+# it. The first reading of production did: two of the two organizations that
+# reached the workspace step finished it, in October, while this table said
+# nobody could. So _funnel drops the reason as soon as one organization gets
+# through, rather than printing an excuse beside a step people are completing.
+# That makes each entry self-retiring — it survives only as long as it is true.
 BLOCKED_STEPS = {
     "workspace": "No Jira or Monday account is available on production, so no customer can finish this step.",
 }
@@ -210,7 +217,9 @@ def _funnel(orgs: list, completions: dict, steps: list) -> list:
             # anecdote, and the reader should be able to see that.
             "dropoff_pct": round((1 - len(completed) / len(reached)) * 100) if reached else None,
             "median_days": round(median(durations), 1) if durations else None,
-            "blocked_reason": BLOCKED_STEPS.get(step),
+            # Only while the claim still holds: one organization through the
+            # step is enough to disprove "nobody can finish this".
+            "blocked_reason": BLOCKED_STEPS.get(step) if not completed else None,
         })
         previous = step
     return out

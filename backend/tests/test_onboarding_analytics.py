@@ -146,6 +146,21 @@ def test_a_step_nobody_can_finish_shows_its_drop_off_with_the_reason_beside_it()
                if f["step"] != "workspace")
 
 
+def test_the_excuse_disappears_as_soon_as_one_customer_gets_through():
+    # The first reading of production disproved the entry above: two of the two
+    # organizations that reached step 4 had finished it. A table that says
+    # "nobody can finish this step" printed beside a 0% drop-off reads as a
+    # defect, not as a nuance, so the reason is dropped once anyone succeeds.
+    orgs = [org("a", 10), org("b", 10)]
+    completions = {
+        "a": {"infrastructure": at(9), "team": at(8), "auditor": at(7), "workspace": at(6)},
+        "b": {"infrastructure": at(9), "team": at(8), "auditor": at(7)},
+    }
+    workspace = next(f for f in ah._funnel(orgs, completions, STEPS) if f["step"] == "workspace")
+    assert (workspace["reached"], workspace["completed"]) == (2, 1)
+    assert workspace["blocked_reason"] is None
+
+
 def test_an_empty_platform_reports_no_percentage_rather_than_zero():
     funnel = ah._funnel([], {}, STEPS)
     assert all(f["dropoff_pct"] is None and f["median_days"] is None for f in funnel)
