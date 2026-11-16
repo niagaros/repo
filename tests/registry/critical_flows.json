@@ -669,6 +669,25 @@
       "paths": [
         "backend/src/collectors/github/lambda_handler.py"
       ]
+    },
+    {
+      "id": "E2E-CRIT-001",
+      "domain": "Cloud Security",
+      "name": "Zero Critical Issues: scanner critical findings -> issues with owner, deadline, plan -> escalation when overdue -> two-person risk acceptance with expiry -> resolved only when a later scan confirms -> zero claim only with fresh, complete coverage, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "PostgreSQL store/API tests + browser UI + live API isolation",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "PostgreSQL",
+        "Scanner results (findings, ciem_findings, ai_inventory_findings)"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/critical_issues_handler.py",
+        "backend/migrations/037_critical_issues.sql",
+        "frontend/public/critical_issues.html"
+      ]
     }
   ]
 }
