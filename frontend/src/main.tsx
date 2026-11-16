@@ -19,6 +19,8 @@ import Governance      from "./settings/Governance";
 import Training        from "./settings/Training";
 import OnboardingHome  from "./onboarding/OnboardingHome";
 import MfaSetup        from "./mfa/MfaSetup";
+import PrivacySecurity from "./settings/PrivacySecurity";
+import AccountRecovery from "./settings/AccountRecovery";
 
 async function bootstrap() {
   try {
@@ -68,6 +70,8 @@ async function bootstrap() {
           <Route path="/settings/compliance"     element={<Compliance    />} />
           <Route path="/settings/governance"     element={<Governance    />} />
           <Route path="/settings/training"       element={<Training      />} />
+          <Route path="/settings/user/privacy-security" element={<PrivacySecurity />} />
+          <Route path="/account-recovery"        element={<AccountRecovery />} />
 
           {/* ── Existing app (login / onboarding / dashboard redirect) ── */}
           <Route path="/*" element={<App />} />

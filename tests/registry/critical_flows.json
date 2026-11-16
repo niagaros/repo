@@ -424,7 +424,8 @@
         "frontend/public/trust_center.html",
         "frontend/public/trust_center_public.html",
         "frontend/index.html",
-        "backend/migrations/036_trust_center_custom_domain.sql"
+        "backend/migrations/036_trust_center_custom_domain.sql",
+        "backend/migrations/040_trust_center_enhancements.sql"
       ]
     },
     {
@@ -709,6 +710,27 @@
         "backend/src/collectors/aws/scanner/cost_handler.py",
         "backend/migrations/038_cloud_cost.sql",
         "frontend/public/cloud_cost.html"
+      ]
+    },
+    {
+      "id": "E2E-ACCTSEC-001",
+      "domain": "Identity",
+      "name": "Privacy & Security: status from the effective policy and enrolled methods -> TOTP and passkeys (Cognito WebAuthn) -> step-up with recent sign-in and PIN -> one-time recovery codes and public recovery (generic answer, rate-limited) -> sessions and global sign-out -> security history",
+      "severity": "P0",
+      "exists": true,
+      "environment": "PostgreSQL store/API tests + live run with a dedicated test user",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "Amazon Cognito",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/account_security_handler.py",
+        "backend/migrations/039_account_security.sql",
+        "frontend/src/settings/PrivacySecurity.tsx",
+        "frontend/src/settings/AccountRecovery.tsx",
+        "frontend/src/App.tsx"
       ]
     }
   ]
