@@ -62,7 +62,8 @@ class Cur:
         elif s.startswith("SELECT cloud_account_id, is_public"):
             r = self.row
             self._result = (ACC, r["is_public"], r["public_slug"], None, None, None, r["custom_domain"],
-                            r["custom_domain_token"], r["custom_domain_verified_at"])
+                            r["custom_domain_token"], r["custom_domain_verified_at"],
+                            None, None, None, None, None)  # branding, status page, disclosure (migration 040)
         elif s.startswith("UPDATE trust_center_settings SET custom_domain = %s"):
             self.row.update(custom_domain=params[0], custom_domain_token=params[1], custom_domain_verified_at=None)
         elif s.startswith("UPDATE trust_center_settings SET custom_domain = NULL"):

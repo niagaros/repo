@@ -174,6 +174,46 @@ input:checked + .slider::before{transform:translateX(18px)}
         <button class="btn-primary" onclick="saveSettings()">Save</button>
       </div>
 
+      <div class="card" id="branding-card">
+        <h3>Branding</h3>
+        <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Your logo and accent colour on the public page. PNG or JPEG, at most 300 KB.</div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <img id="logo-preview" alt="Current logo" style="max-height:40px;max-width:160px;display:none">
+          <input type="file" id="in-logo" accept="image/png,image/jpeg" aria-label="Logo file">
+          <button class="btn-ghost btn-sm" data-tc="upload-logo">Upload logo</button>
+          <button class="btn-ghost btn-sm" data-tc="remove-logo" id="btn-remove-logo" hidden>Remove logo</button>
+        </div>
+        <label class="f-lbl" for="in-color">Accent colour</label>
+        <input class="f-in" id="in-color" placeholder="#1D4ED8" style="max-width:160px">
+        <button class="btn-primary" data-tc="save-branding">Save branding</button>
+      </div>
+
+      <div class="card" id="status-card">
+        <h3>Status &amp; availability</h3>
+        <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Niagaros does not monitor your service's uptime. Link your own status page and publish
+          incidents and maintenance yourself; visitors see open notices and those from the last 90 days.</div>
+        <label class="f-lbl" for="in-status-url">Status page address (https://)</label>
+        <input class="f-in" id="in-status-url" placeholder="https://status.yourcompany.com">
+        <button class="btn-primary" data-tc="save-status-url">Save</button>
+        <h3 style="margin-top:16px">Publish a notice</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select class="f-sel" id="up-kind" aria-label="Kind" style="max-width:160px"><option value="incident">Incident</option><option value="maintenance">Maintenance</option><option value="notice">Notice</option></select>
+          <input class="f-in" id="up-ntitle" placeholder="Title" aria-label="Title" style="flex:1;min-width:180px">
+        </div>
+        <textarea class="f-ta" id="up-nbody" placeholder="What happened or is planned, and what customers should do" aria-label="Text"></textarea>
+        <button class="btn-primary" data-tc="publish-update">Publish</button>
+        <div id="update-list" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card" id="disclosure-card">
+        <h3>Responsible disclosure</h3>
+        <label class="f-lbl" for="in-sec-contact">Security contact (email)</label>
+        <input class="f-in" id="in-sec-contact" placeholder="security@yourcompany.com">
+        <label class="f-lbl" for="in-disclosure">How researchers should report vulnerabilities</label>
+        <textarea class="f-ta" id="in-disclosure" maxlength="5000"></textarea>
+        <button class="btn-primary" data-tc="save-disclosure">Save</button>
+      </div>
+
       <div class="card">
         <h3>Compliance status (live, same as the dashboard)</h3>
         <div class="compliance-grid" id="compliance-grid"></div>
@@ -193,8 +233,15 @@ input:checked + .slider::before{transform:translateX(18px)}
       </div>
 
       <div class="card">
+        <h3>Analytics (last 30 days)</h3>
+        <div id="analytics" style="font-size:12px;color:#374151">Loading…</div>
+      </div>
+
+      <div class="card">
         <h3>Audit log</h3>
         <div id="audit-list" style="font-size:11px;color:#6b7280"></div>
+        <h3 style="margin-top:14px">Settings history</h3>
+        <div id="event-list" style="font-size:11px;color:#6b7280"></div>
       </div>
     </div>
   </div>
@@ -243,7 +290,7 @@ function toggleAcctDd(){document.getElementById('acct-dd').classList.toggle('ope
 document.addEventListener('click',e=>{const w=document.querySelector('.acct-wrap');if(w&&!w.contains(e.target))document.getElementById('acct-dd').classList.remove('open');});
 function switchAccount(id){if(id===currentAccountId)return;currentAccountId=id;document.getElementById('acct-dd').classList.remove('open');loadAll();}
 function renderAcctList(){document.getElementById('acct-list').innerHTML=allAccounts.map(a=>`<div class="acct-item" onclick="switchAccount('${a.id}')">🏢 ${esc(a.name)}</div>`).join('');}
-function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 function closeOv(e){if(e.target===document.getElementById('ov-upload'))closeOvDirect();}
 function closeOvDirect(){document.getElementById('ov-upload').classList.remove('open');}
@@ -285,21 +332,41 @@ function render(){
   document.getElementById('in-company').value=s.company_name||'';
   document.getElementById('in-intro').value=s.intro_text||'';
   document.getElementById('in-contact').value=s.contact_email||'';
+  document.getElementById('in-color').value=s.brand_color||'';
+  document.getElementById('in-status-url').value=s.status_page_url||'';
+  document.getElementById('in-sec-contact').value=s.security_contact||'';
+  document.getElementById('in-disclosure').value=s.disclosure_policy||'';
+  const lp=document.getElementById('logo-preview');
+  if(s.logo_url){lp.src=s.logo_url;lp.style.display='';}else{lp.removeAttribute('src');lp.style.display='none';}
+  document.getElementById('btn-remove-logo').hidden=!s.logo_url;
 
   document.getElementById('compliance-grid').innerHTML=state.compliance.map(c=>{
     const clr = c.score>=75 ? '#16a34a' : c.score>=50 ? '#d97706' : '#dc2626';
     return `<div class="fw-chip"><div class="n" style="color:${clr}">${c.score}%</div>${esc(c.framework)}</div>`;
   }).join('');
 
+  const VS={valid:['#16a34a','valid'],expiring_soon:['#d97706','expires soon'],expired:['#dc2626','expired'],not_yet_valid:['#d97706','not yet valid'],no_expiry:['#9ca3af','no expiry date']};
   document.getElementById('doc-list').innerHTML=state.documents.length?state.documents.map(d=>`
-    <div class="doc-row">
-      <div class="doc-title">${esc(d.title)}<div class="doc-meta">${d.category} · v${d.versions[0]?.version_number||1} · ${new Date(d.created_at).toLocaleDateString()}</div></div>
-      <span class="badge b-${d.visibility}">${d.visibility}</span>
+    <div class="doc-row" style="flex-wrap:wrap">
+      <div class="doc-title">${esc(d.title)}<div class="doc-meta">${esc(d.category)} · v${esc(d.versions[0]?.version_number||1)} · ${new Date(d.created_at).toLocaleDateString()}
+        ${d.issuer?' · issued by '+esc(d.issuer):''}${d.valid_until?' · valid until '+esc(d.valid_until):''}</div></div>
+      <span class="badge" style="color:${VS[d.validity_status][0]};border:1px solid ${VS[d.validity_status][0]}">${VS[d.validity_status][1]}</span>
+      <span class="badge b-${esc(d.visibility)}">${esc(d.visibility)}</span>
+      <details style="width:100%;font-size:11.5px;margin-top:6px"><summary style="cursor:pointer;color:#6b7280">Validity (for certificates and reports)</summary>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <input class="f-in" type="date" data-vf="${esc(d.id)}" value="${esc(d.valid_from||'')}" aria-label="Valid from" style="max-width:160px">
+          <input class="f-in" type="date" data-vu="${esc(d.id)}" value="${esc(d.valid_until||'')}" aria-label="Valid until" style="max-width:160px">
+          <input class="f-in" data-vi="${esc(d.id)}" value="${esc(d.issuer||'')}" placeholder="Issued by (e.g. certification body)" aria-label="Issuer" style="max-width:240px">
+          <button class="btn-ghost btn-sm" data-tc="save-validity" data-id="${esc(d.id)}">Save</button>
+        </div></details>
     </div>
   `).join(''):'<div style="color:#9ca3af;font-size:12px">No documents added yet.</div>';
 
   loadRequests();
   loadAudit();
+  loadUpdates();
+  loadAnalytics();
+  loadEvents();
 
   document.getElementById('v-load').style.display='none';
   document.getElementById('v-content').hidden=false;
@@ -328,6 +395,68 @@ async function loadAudit(){
     `${new Date(e.at).toLocaleString()} — <b>${esc(e.actor||'')}</b> ${e.action} "${esc(e.document_title)}"`
   ).join('<br>') || 'No activity yet.';
 }
+
+async function tcPost(body){
+  const r=await fetch(TC_API,{method:'POST',body:JSON.stringify({cloud_account_id:currentAccountId,...body})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error||'That did not work (HTTP '+r.status+').');
+  return d;
+}
+async function tcGet(flag){
+  const r=await fetch(TC_API+'?cloud_account_id='+encodeURIComponent(currentAccountId)+'&'+flag+'=1');
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error||'Could not load (HTTP '+r.status+').');
+  return d;
+}
+async function loadUpdates(){
+  try{
+    const d=await tcGet('updates');
+    document.getElementById('update-list').innerHTML=(d.updates||[]).map(u=>`<div class="req-row"><div class="req-meta"><b>${esc(u.title)}</b> · ${esc(u.kind)} · ${new Date(u.starts_at).toLocaleString()}
+      ${u.resolved_at?' · resolved '+new Date(u.resolved_at).toLocaleString():''}<div style="white-space:pre-wrap">${esc(u.body||'')}</div><div>by ${esc(u.published_by)}</div></div>
+      ${u.resolved_at?'<span class="badge b-approved">resolved</span>':`<button class="btn-ghost btn-sm" data-tc="resolve-update" data-id="${esc(u.id)}">Mark resolved</button>`}</div>`).join('')||'<div style="color:#9ca3af;font-size:12px">No notices published.</div>';
+  }catch(e){document.getElementById('update-list').textContent=e.message;}
+}
+async function loadAnalytics(){
+  const el=document.getElementById('analytics');
+  try{
+    const a=await tcGet('analytics');
+    const max=Math.max(1,...a.page_loads_30d.map(v=>v.views));
+    el.innerHTML=`<div><b>${esc(a.page_loads_total_30d)}</b> public page loads · access requests (90 days): ${Object.entries(a.access_requests_90d).map(([k,v])=>esc(k)+' '+esc(v)).join(', ')||'none'}
+      ${a.approval_rate_pct!=null?' · '+esc(a.approval_rate_pct)+'% approved':''} · ${esc(a.approved_answers_total)} approved questionnaire answers (up to 12 shown publicly)</div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:50px;margin:8px 0" aria-label="Page loads per day">${a.page_loads_30d.map(v=>`<div title="${esc(v.day)}: ${esc(v.views)}" style="width:8px;background:#3b82f6;height:${Math.max(2,v.views/max*50)}px"></div>`).join('')}</div>
+      ${a.documents_30d.length?'<div>'+a.documents_30d.map(d=>esc(d.title)+': '+esc(d.restricted_downloads)+' approved downloads').join(' · ')+'</div>':''}
+      <div style="color:#9ca3af;margin-top:6px">${esc(a.method)}</div>`;
+  }catch(e){el.textContent=e.message;}
+}
+async function loadEvents(){
+  try{
+    const d=await tcGet('events');
+    document.getElementById('event-list').innerHTML=(d.events||[]).slice(0,20).map(e=>`${new Date(e.at).toLocaleString()} — <b>${esc(e.actor)}</b> ${esc(e.action.replace(/_/g,' '))}`).join('<br>')||'No changes yet.';
+  }catch(e){document.getElementById('event-list').textContent=e.message;}
+}
+function fileB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});}
+document.addEventListener('click',async ev=>{
+  const b=ev.target.closest('[data-tc]'); if(!b) return;
+  const v=id=>document.getElementById(id).value;
+  try{
+    switch(b.dataset.tc){
+      case 'save-branding': await tcPost({action:'update_settings',brand_color:v('in-color').trim()}); showToast('Branding saved'); break;
+      case 'upload-logo': { const f=document.getElementById('in-logo').files[0]; if(!f){showToast('Choose a PNG or JPEG first');return;}
+        await tcPost({action:'upload_logo',filename:f.name,file_base64:await fileB64(f)}); showToast('Logo uploaded'); break; }
+      case 'remove-logo': await tcPost({action:'remove_logo'}); showToast('Logo removed'); break;
+      case 'save-status-url': await tcPost({action:'update_settings',status_page_url:v('in-status-url').trim()}); showToast('Saved'); break;
+      case 'publish-update': await tcPost({action:'create_update',kind:v('up-kind'),title:v('up-ntitle'),body:v('up-nbody')});
+        document.getElementById('up-ntitle').value='';document.getElementById('up-nbody').value=''; showToast('Notice published'); break;
+      case 'resolve-update': { const note=prompt('Optional: how was it resolved?')||''; await tcPost({action:'resolve_update',update_id:b.dataset.id,note}); showToast('Marked resolved'); break; }
+      case 'save-disclosure': await tcPost({action:'update_settings',security_contact:v('in-sec-contact').trim(),disclosure_policy:v('in-disclosure')}); showToast('Saved'); break;
+      case 'save-validity': { const id=b.dataset.id;
+        await tcPost({action:'set_document_validity',document_id:id,valid_from:document.querySelector(`[data-vf="${id}"]`).value||null,
+          valid_until:document.querySelector(`[data-vu="${id}"]`).value||null,issuer:document.querySelector(`[data-vi="${id}"]`).value}); showToast('Validity saved'); break; }
+      default: return;
+    }
+    loadAll();
+  }catch(e){showToast(e.message);}
+});
 
 async function togglePublic(){
   const on=document.getElementById('toggle-public').checked;

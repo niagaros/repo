@@ -328,6 +328,35 @@ function moreButton(){
   const n=fwList().length;
   return (!query && n>FW_PREVIEW)?`<button class="btn btn-ghost" id="fw-more">${showAllFw?'Show fewer':`View all ${n} frameworks`}</button>`:'';
 }
+const VALIDITY={valid:['var(--ok)','Valid'],expiring_soon:['var(--warn)','Expires soon'],expired:['var(--bad)','Expired'],not_yet_valid:['var(--warn)','Not yet valid']};
+function validity(d){
+  const v=VALIDITY[d.validity_status]; if(!v) return '';
+  return `<div class="validity" style="font-size:12px;color:${v[0]};font-weight:600;margin-top:2px">${v[1]}${d.valid_until?(d.validity_status==='expired'?' since ':' until ')+esc(fmtDate(d.valid_until)):''}${d.issuer?` <span style="color:var(--muted);font-weight:400">· issued by ${esc(d.issuer)}</span>`:''}</div>`;
+}
+function statusSection(name){
+  const st=data.status||{}, ups=Array.isArray(st.updates)?st.updates:[], link=safeUrl(st.status_page_url);
+  if(!link && !ups.length) return '';
+  const open=ups.filter(u=>!u.resolved_at);
+  const KIND={incident:'Incident',maintenance:'Maintenance',notice:'Notice'};
+  return `<section class="sec" id="status">
+    <div class="sec-h"><div><div class="eyebrow">Status</div><h2>Availability and notices</h2>
+      <div class="sec-sub">${open.length?`${open.length} open notice${open.length>1?'s':''}.`:'No open incidents or maintenance.'} Published by ${esc(name)}${link?'; live status is on their status page':''}.</div></div>
+      ${link?`<a class="btn btn-ghost" href="${esc(link)}" rel="noopener noreferrer" target="_blank">Live status page ${svg(I.arrow,14)}</a>`:''}</div>
+    ${ups.length?`<div class="card">${ups.map(u=>`<div style="padding:12px 0;border-bottom:1px solid var(--line-soft)">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="tag">${esc(KIND[u.kind]||u.kind)}</span><b>${esc(u.title)}</b>
+      <span style="font-size:12px;color:${u.resolved_at?'var(--ok)':'var(--warn)'}">${u.resolved_at?'Resolved '+esc(fmtDate(u.resolved_at)):'Open since '+esc(fmtDate(u.starts_at))}</span></div>
+      ${u.body?`<div style="white-space:pre-wrap;color:var(--ink-2);font-size:13px;margin-top:4px">${esc(u.body)}</div>`:''}</div>`).join('')}</div>`:''}
+  </section>`;
+}
+function disclosureSection(name){
+  const d=data.disclosure||{};
+  if(!d.security_contact && !d.policy) return '';
+  return `<section class="sec" id="disclosure">
+    <div class="sec-h"><div><div class="eyebrow">Responsible disclosure</div><h2>Report a vulnerability</h2></div></div>
+    <div class="card" style="padding:18px 20px">${d.policy?`<div style="white-space:pre-wrap;color:var(--ink-2);font-size:13.5px">${esc(d.policy)}</div>`:''}
+      ${d.security_contact?`<p style="margin-top:10px">Security contact: <a href="mailto:${esc(d.security_contact)}">${esc(d.security_contact)}</a></p>`:''}</div>
+  </section>`;
+}
 function docItems(){
   const docs=data.documents.filter(d=>(docFilter==='all'||(docFilter==='public')===(d.visibility==='public'))&&matches(d.title,d.category));
   if(!docs.length) return `<div class="empty-note">${data.documents.length?'No documents match.':'No documents published yet.'}</div>`;
@@ -335,7 +364,7 @@ function docItems(){
     const pub=d.visibility==='public', url=pub&&safeUrl(d.download_url);
     return `<div class="doc">
       <div class="doc-ic">${svg(I.doc)}</div>
-      <div class="doc-b"><div class="tag">${esc(d.category||'Document')}</div><div class="doc-t">${esc(d.title)}</div></div>
+      <div class="doc-b"><div class="tag">${esc(d.category||'Document')}</div><div class="doc-t">${esc(d.title)}</div>${validity(d)}</div>
       <div class="doc-act" style="display:flex;align-items:center;gap:14px">
         <span class="vis">${pub?svg(I.globe,13)+' Public':svg(I.lock,13)+' Access on request'}</span>
         ${url?`<a class="btn btn-sm" href="${esc(url)}" rel="noopener">Download</a>`
@@ -373,12 +402,16 @@ function render(){
   const pubDocs=data.documents.filter(d=>d.visibility==='public').length, privDocs=data.documents.length-pubDocs;
   const intro=data.intro_text||`This page shows how ${name} keeps its platform and customer data secure. The compliance scores come from automated checks on ${name}'s live cloud environment, and each one shows when it was last verified.`;
   const initial=esc(name.charAt(0).toUpperCase());
+  const br=data.branding||{}, logoUrl=safeUrl(br.logo_url);
+  if(br.brand_color && /^#[0-9a-fA-F]{6}$/.test(br.brand_color)) document.documentElement.style.setProperty('--accent', br.brand_color);
+  const mark=(cls)=>logoUrl?`<img class="${cls}" src="${esc(logoUrl)}" alt="${esc(name)} logo" style="object-fit:contain;background:#fff">`:`<div class="${cls}">${initial}</div>`;
   const cats=CATS.map(c=>[c[0],fws.filter(f=>fwCatOf(f.framework)===c).length]).filter(c=>c[1]);
-  const links=[['compliance','Compliance'],...(data.documents.length?[['documents','Documents']]:[]),['security','Security'],...(data.qa_highlights.length?[['faq','FAQ']]:[])];
+  const hasStatus=!!(data.status&&(safeUrl(data.status.status_page_url)||(data.status.updates||[]).length));
+  const links=[['compliance','Compliance'],...(data.documents.length?[['documents','Documents']]:[]),['security','Security'],...(hasStatus?[['status','Status']]:[]),...(data.qa_highlights.length?[['faq','FAQ']]:[])];
   document.title=`${name} Trust Center`;
   document.getElementById('v-content').innerHTML=`
     <header class="top"><div class="wrap">
-      <a class="brand" href="#"><div class="logo">${initial}</div><div class="brand-name">${esc(name)}</div><div class="brand-tc">Trust Center</div></a>
+      <a class="brand" href="#">${mark('logo')}<div class="brand-name">${esc(name)}</div><div class="brand-tc">Trust Center</div></a>
       <nav class="links">${links.map(([id,l])=>`<a href="#${id}" data-nav="${id}">${l}</a>`).join('')}</nav>
       <div class="top-actions">
         ${data.contact_email?`<a class="btn btn-ghost" href="mailto:${esc(data.contact_email)}">Contact</a>`:''}
@@ -389,7 +422,7 @@ function render(){
     <section class="hero"><div class="wrap">
       <div>
         <div class="live"><span class="live-dot"></span>Continuously monitored${latest?' · last verified '+esc(fmtDate(latest)):''}</div>
-        <div class="hero-logo">${initial}</div>
+        ${mark('hero-logo')}
         <h1>${esc(name)} Trust Center</h1>
         <p>${esc(intro)}</p>
         <div class="hero-cta">
@@ -428,6 +461,9 @@ function render(){
         <div class="sec-h"><div><div class="eyebrow">Security</div><h2>How ${esc(name)} protects your data</h2><div class="sec-sub">The security practices ${esc(name)} has published. Open a topic to read it in full.</div></div></div>
         <div class="sp-grid" id="sp-grid">${securityCards()}</div>
       </section>
+
+      ${statusSection(name)}
+      ${disclosureSection(name)}
 
       ${data.qa_highlights.length?`
       <section class="sec" id="faq">
