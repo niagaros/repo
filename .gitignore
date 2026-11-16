@@ -23,3 +23,6 @@ __pycache__/
 # Local scratch space (one-off scripts, generated documents, never commit —
 # this is also where short-lived credentials end up during manual testing)
 scratch/
+
+# Enterprise readiness (#294): the live infrastructure inventory is access-controlled evidence; this repository is public.
+docs/enterprise-readiness/inventory/
