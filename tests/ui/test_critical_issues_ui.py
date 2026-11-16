@@ -90,6 +90,11 @@ class FakeBackend:
             i = next(x for x in self.issues if x["id"] == qs["issue_id"])
             return self._json(route, {"issue": i, "evidence": {"failed": 1}, "description": None, "recommendation": "Enable hardware MFA",
                                       "recommendation_detail": None,
+                                      "attack_paths": {"available": True, "scope": "identities in this account", "scan_finished_at": NOW.isoformat(),
+                                                       "basis": "Escalation paths recorded by the latest CIEM scan",
+                                                       "paths": [{"from": XSS, "title": "Attach any policy", "how": "attach AdministratorAccess",
+                                                                  "gains": ["admin"], "targets": ["arn:aws:iam::1:role/x"]}]},
+                                      "integrations": [{"id": "10000000-0000-0000-0000-00000000000a", "provider": "jira", "project": "SEC"}],
                                       "history": [{"at": NOW.isoformat(), "actor": "scanner", "event": "detected", "detail": {}},
                                                   {"at": NOW.isoformat(), "actor": "system", "event": "escalated", "detail": {"reason": "deadline passed"}}]})
         if v == "history":
@@ -192,3 +197,20 @@ def test_backend_error_is_shown_plainly(page, site):
     page.goto(f"{site}/critical_issues.html?account_id={ACCOUNT}")
     page.wait_for_selector("#view .err")
     assert "Please try again" in page.locator("#view .err").inner_text()
+
+
+def test_attack_paths_ticket_and_ai_explanation(crit):
+    page, backend, errors = crit
+    page.click("[data-tab=issues]")
+    page.locator("tr.click", has_text="<img").click()
+    page.wait_for_selector("text=Attack paths")
+    d = page.locator("#drawer").inner_text()
+    assert "Attach any policy" in d and "Reaches: arn:aws:iam::1:role/x" in d
+    page.click("[data-act=ticket]")
+    page.wait_for_function("document.getElementById('toast').textContent.length > 0")
+    assert backend.posts[-1] == {"cloud_account_id": ACCOUNT, "action": "create_ticket", "issue_id": backend.issues[0]["id"],
+                                 "integration_id": "10000000-0000-0000-0000-00000000000a"}
+    page.click("[data-act=explain]")
+    page.wait_for_function("document.getElementById('toast').textContent.length > 0")
+    assert backend.posts[-1]["action"] == "explain"
+    assert page.evaluate("window.__xss") is None and not errors

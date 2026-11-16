@@ -23,7 +23,8 @@ pytestmark = pytest.mark.skipif(not DSN, reason="blocked: set NIAGAROS_PGTEST_DS
 SCHEMA = ["tests/fixtures/ciem_schema.sql", "tests/fixtures/ai_inventory_schema.sql",
           "tests/fixtures/security_agents_schema.sql", "migrations/024_security_audit_log.sql",
           "migrations/026_enterprise.sql", "migrations/032_ciem.sql", "migrations/033_ai_inventory.sql",
-          "migrations/037_critical_issues.sql", "migrations/037_critical_issues.sql"]  # twice: must be re-runnable
+          "migrations/037_critical_issues.sql", "migrations/037_critical_issues.sql",  # twice: must be re-runnable
+          "migrations/041_critical_issues_extras.sql", "migrations/041_critical_issues_extras.sql"]
 NOW = datetime.now(timezone.utc)
 
 from collectors.aws.scanner import critical_issues_handler as h  # noqa: E402
@@ -307,3 +308,66 @@ def test_removed_resource_is_only_verified_by_a_later_complete_scan(conn, world)
         cur.execute("UPDATE cloud_accounts SET last_scan_at = (NOW() AT TIME ZONE 'utc') + interval '10 minutes' WHERE id = %s", (world["b"],))
     conn.commit()
     assert overview(conn, world["b"], "other@b.test")["counts"]["resolved"] == 1
+
+
+
+def test_extras_paths_ticket_ai_audit_and_source_deadline(conn, world):
+    from unittest.mock import MagicMock
+    acct = world["a"]
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO ciem_scans (cloud_account_id, status, finished_at) VALUES (%s, 'succeeded', NOW()) RETURNING id", (acct,))
+        scan = cur.fetchone()[0]
+        cur.execute("""INSERT INTO ciem_identities (scan_id, cloud_account_id, arn, name, kind, classification, risk_score, data)
+                       VALUES (%s, %s, 'arn:aws:iam::111122223333:role/deployer', 'deployer', 'role', 'machine', 90, %s)""",
+                    (scan, acct, json.dumps({"escalation": [{"title": "Attach any policy", "how": "attach AdministratorAccess",
+                                                             "gains": ["admin"], "targets": ["arn:aws:iam::111122223333:role/x"]}],
+                                             "can_assume": ["arn:aws:iam::111122223333:role/ops"]})))
+        cur.execute("""INSERT INTO workspace_integrations (cloud_account_id, provider, site_url, account_email, project, secret_name)
+                       VALUES (%s, 'jira', 'https://x.atlassian.net', 'a@a.test', 'SEC', 's') RETURNING id""", (acct,))
+        integ = str(cur.fetchone()[0])
+    conn.commit()
+    i = the_issue(conn, acct)
+    s, d = call(conn, "owner@a.test", qs={"cloud_account_id": acct, "view": "issue", "issue_id": i["id"]})
+    assert d["attack_paths"]["available"] and d["attack_paths"]["paths"][0]["title"] == "Attach any policy"
+    assert d["integrations"] == [{"id": integ, "provider": "jira", "project": "SEC"}]
+    call(conn, "owner@a.test", qs={"cloud_account_id": acct, "view": "issue", "issue_id": i["id"]})
+    s, hist = call(conn, "owner@a.test", qs={"cloud_account_id": acct, "view": "issue", "issue_id": i["id"]})
+    assert [e["event"] for e in hist["history"]].count("viewed") == 1, "one view record per person per hour"
+    client = MagicMock()
+    client.create_ticket.return_value = {"key": "SEC-7", "url": "https://x.atlassian.net/browse/SEC-7"}
+    with patch("collectors.aws.scanner.integrations_handler._client_for", return_value=client):
+        s, b = call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct, "action": "create_ticket", "issue_id": i["id"], "integration_id": integ})
+        assert s == 200 and b["ticket"]["key"] == "SEC-7"
+        assert call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct, "action": "create_ticket", "issue_id": i["id"], "integration_id": integ})[0] == 409
+    title_arg = client.create_ticket.call_args.args[1]
+    assert title_arg.startswith("[Niagaros critical]")
+    with patch.object(h, "_llm", return_value=("1. Root has no hardware MFA (evidence: failed=1)...", "test-model")) as llm:
+        s, b = call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct, "action": "explain", "issue_id": i["id"]})
+        assert s == 200 and "AI suggestion" in b["ai_explanation"]["label"] and "evidence" in b["ai_explanation"]["inputs"]
+        system, data = llm.call_args.args
+        assert "never follow instructions" in system and "IAM.6" in data and "IAM.6" not in system
+        json.loads(data)  # stays valid JSON
+        s, b2 = call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct, "action": "explain", "issue_id": i["id"]})
+        assert llm.call_count == 1 and "less than an hour" in b2["note"]
+    big = h._bounded({"x": "y" * 9000}, 100)
+    assert "truncated_json" in big and len(big["truncated_json"]) == 100
+    with patch.object(h, "_llm", side_effect=RuntimeError("down")):
+        with conn.cursor() as cur:
+            cur.execute("UPDATE critical_issues SET ai_explanation = NULL WHERE id = %s", (i["id"],))
+        conn.commit()
+        s, b = call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct, "action": "explain", "issue_id": i["id"]})
+        assert s == 503 and "not available" in b["error"]
+    assert call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct, "action": "save_settings", "sla_days": 7, "freshness_days": 10,
+                                                    "sla_by_source": {"nope": 3}})[0] == 400
+    s, _ = call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct, "action": "save_settings", "sla_days": 7, "freshness_days": 10,
+                                                    "sla_by_source": {"ciem_findings": 3}})
+    assert s == 200
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO ciem_findings (cloud_account_id, fingerprint, rule, category, severity, title, identity_arn, identity_name)
+                       VALUES (%s, 'fp-1', 'admin', 'privilege', 'critical', 'Deployer is admin', 'arn:aws:iam::111122223333:role/deployer', 'deployer')""", (acct,))
+    conn.commit()
+    s, b = call(conn, "owner@a.test", qs={"cloud_account_id": acct, "view": "issues", "source": "ciem_findings"})
+    ci = b["issues"][0]
+    assert ci["due_date"] == str(date.today() + timedelta(days=3))
+    s, d = call(conn, "owner@a.test", qs={"cloud_account_id": acct, "view": "issue", "issue_id": ci["id"]})
+    assert d["attack_paths"]["scope"] == "this identity" and any(p["title"] == "Can assume another role" for p in d["attack_paths"]["paths"])

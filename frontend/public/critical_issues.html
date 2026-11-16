@@ -119,6 +119,7 @@ const EVENT = {
   verification_failed: 'Fix not confirmed: a later scan still reports it', verified_resolved: 'Resolved: confirmed by scan',
   risk_acceptance_requested: 'Risk acceptance requested', risk_accepted: 'Risk acceptance approved', risk_rejected: 'Risk acceptance rejected',
   risk_acceptance_expired: 'Risk acceptance expired', marked_false_positive: 'Marked as false positive',
+  viewed: 'Viewed', ticket_created: 'Engineering ticket created', ai_explanation_created: 'AI explanation requested',
   reopened_by_user: 'Reopened by a person', escalated: 'Escalated: deadline passed',
 };
 
@@ -235,6 +236,9 @@ const RENDER = {
     view.innerHTML = `<div class="card"><h2>Deadlines and evidence</h2>
       <label for="sla">Remediation deadline for a new critical issue (days)</label><input id="sla" type="number" min="1" max="90" value="${esc(s.sla_days)}">
       <label for="fresh">Maximum evidence age for a zero claim (days)</label><input id="fresh" type="number" min="1" max="60" value="${esc(s.freshness_days)}">
+      <h3>Deadline per area (optional, overrides the default)</h3>
+      ${[['findings', 'Cloud posture'], ['ciem_findings', 'Identity (CIEM)'], ['ai_inventory_findings', 'AI assets']].map(([k, l]) =>
+        `<label for="sla-${k}">${esc(l)} (days)</label><input id="sla-${k}" data-sla-src="${k}" type="number" min="1" max="90" placeholder="${esc(s.sla_days)}" value="${esc((s.sla_by_source || {})[k] ?? '')}">`).join('')}
       <div class="note" style="margin-top:8px">${s.default ? 'Using the defaults.' : 'Last changed by ' + esc(s.updated_by) + ' on ' + esc(fmt(s.updated_at)) + '.'}</div>
       <button data-act="save-settings">Save</button></div>
       <div class="card"><h2>Export</h2><div class="note">Includes the status, how it was calculated, coverage, and every issue with its owner, deadline and history fields.</div>
@@ -272,6 +276,22 @@ async function openIssue(id) {
       <h3>Recommended fix</h3><div class="note" style="color:#111827">${esc(d.recommendation || 'See the source module for guidance.')}</div>
       ${d.recommendation_detail && typeof d.recommendation_detail === 'object' ? `<div class="kv">${['reason', 'impact', 'rollback', 'approvals'].filter(k => d.recommendation_detail[k]).map(k => `<div>${esc(k)}</div><div>${esc(d.recommendation_detail[k])}</div>`).join('')}</div>` : ''}
       ${d.evidence ? `<h3>Evidence from the scanner</h3><pre>${esc(JSON.stringify(d.evidence, null, 2))}</pre>` : ''}
+      <h3>Attack paths</h3>${d.attack_paths && d.attack_paths.available
+        ? (d.attack_paths.paths.length ? `<div class="note">${esc(d.attack_paths.basis)} (${esc(fmt(d.attack_paths.scan_finished_at))}), for ${esc(d.attack_paths.scope)}.</div>
+            ${d.attack_paths.paths.map(pth => `<div class="form" style="margin-top:6px;padding:8px 12px"><b>${esc(pth.from)}</b>: ${esc(pth.title)}
+              ${pth.how ? `<div class="note" style="margin:2px 0 0">${esc(pth.how)}</div>` : ''}
+              ${pth.targets.length ? `<div class="note" style="margin:2px 0 0">Reaches: ${pth.targets.map(esc).join(', ')}</div>` : ''}
+              ${pth.gains.length ? `<div class="note" style="margin:2px 0 0">Gains: ${pth.gains.map(esc).join(', ')}</div>` : ''}</div>`).join('')}`
+          : `<div class="note">The latest identity scan found no escalation path or assumable role for ${esc(d.attack_paths.scope)}.</div>`)
+        : `<div class="note">${esc((d.attack_paths || {}).reason || 'Not available')}.</div>`}
+      <h3>AI explanation</h3>${i.ai_explanation ? `<div class="form" style="margin-top:0"><div class="note" style="color:#92400e">${esc(i.ai_explanation.label)} · ${esc(i.ai_explanation.model)} · ${esc(fmt(i.ai_explanation.at))}</div>
+          <div style="white-space:pre-wrap;font-size:12.5px">${esc(i.ai_explanation.text)}</div><div class="note" style="margin-top:6px">Based on: ${esc((i.ai_explanation.inputs || []).join(', '))}</div>
+          ${unresolved && Date.now() - new Date(i.ai_explanation.at).getTime() > 3600e3 ? '<button class="ghost" data-act="explain">Explain again with the current evidence</button>' : ''}</div>`
+        : (unresolved ? `<button class="ghost" data-act="explain">Explain with AI (uses only the evidence above)</button>` : '<div class="note">—</div>')}
+      <h3>Engineering ticket</h3>${i.ticket ? `<div class="note" style="color:#111827">${esc(i.ticket.provider)} ${i.ticket.url ? `<a href="${esc(i.ticket.url)}" target="_blank" rel="noopener noreferrer">${esc(i.ticket.key || 'ticket')}</a>` : esc(i.ticket.key || '')}
+          · ${esc(i.ticket.status || 'created')} <button class="ghost" data-act="ticket-refresh">Check status</button></div>`
+        : (d.integrations && d.integrations.length && unresolved ? `<div class="row"><select id="f-integ" aria-label="Integration" style="width:auto">${d.integrations.map(g => `<option value="${esc(g.id)}">${esc(g.provider)} · ${esc(g.project || 'no project')}</option>`).join('')}</select>
+            <button class="ghost" data-act="ticket">Create ticket</button></div>` : `<div class="note">${d.integrations && d.integrations.length ? '—' : 'Connect Jira or Monday on the Integrations page to create tickets from here.'}</div>`)}
       <h3>Remediation plan</h3><div class="note" style="color:#111827">${esc(i.remediation_plan || 'No plan yet.')}</div>
       ${working ? `
         <div class="form"><h3 style="margin-top:0">Owner and deadline</h3>
@@ -326,7 +346,13 @@ document.addEventListener('click', async e => {
       compensating_controls: val('r-comp'), residual_risk: val('r-res'), expires_on: val('r-exp'), review_every_days: Number(val('r-rev'))}, 'Request sent'); break;
     case 'fp': act({action: 'mark_false_positive', issue_id: id, evidence: val('f-fp')}, 'Marked as false positive'); break;
     case 'reopen': act({action: 'reopen', issue_id: id, reason: val('f-reopen')}, 'Reopened'); break;
-    case 'save-settings': act({action: 'save_settings', sla_days: Number(val('sla')), freshness_days: Number(val('fresh'))}, 'Settings saved'); break;
+    case 'save-settings': {
+      const by = {}; document.querySelectorAll('[data-sla-src]').forEach(el => { if (el.value) by[el.dataset.slaSrc] = Number(el.value); });
+      act({action: 'save_settings', sla_days: Number(val('sla')), freshness_days: Number(val('fresh')), sla_by_source: by}, 'Settings saved'); break;
+    }
+    case 'ticket': act({action: 'create_ticket', issue_id: id, integration_id: val('f-integ')}, 'Ticket created'); break;
+    case 'ticket-refresh': act({action: 'refresh_ticket', issue_id: id}, 'Ticket status updated'); break;
+    case 'explain': b.disabled = true; b.textContent = 'Asking…'; act({action: 'explain', issue_id: id}, 'Explanation added'); break;
     case 'export': {
       try {
         const fmtx = b.dataset.format, data = await api('export', {format: fmtx});
