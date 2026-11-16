@@ -688,6 +688,28 @@
         "backend/migrations/037_critical_issues.sql",
         "frontend/public/critical_issues.html"
       ]
+    },
+    {
+      "id": "E2E-COST-001",
+      "domain": "FinOps",
+      "name": "Cloud Cost: opt-in for paid AWS Cost Explorer requests -> daily ingestion with record types, estimates and revisions -> explorer, allocation, forecast -> budgets and anomalies -> idle-resource opportunities with two-person approval and verification by a later ingestion, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "engine unit tests + PostgreSQL store/API tests + browser UI + live API isolation",
+      "owner": "Platform",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS Cost Explorer / EC2 / ELB (read-only scanner role)",
+        "AWS Pricing API",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/cost_engine.py",
+        "backend/src/collectors/aws/scanner/cost_scanner_handler.py",
+        "backend/src/collectors/aws/scanner/cost_handler.py",
+        "backend/migrations/038_cloud_cost.sql",
+        "frontend/public/cloud_cost.html"
+      ]
     }
   ]
 }
