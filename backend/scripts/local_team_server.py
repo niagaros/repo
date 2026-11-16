@@ -348,12 +348,33 @@ class SqliteTeamDb:
         return [{"auditor_email": r[0], "action": r[1], "details": json.loads(r[2]), "created_at": ""} for r in rows]
 
     def get_cloud_account_compliance(self, cloud_account_id):
+        """Volgt de echte methode in config/database.py: het bewijsstuk komt uit
+        de nieuwste rij van compliance_snapshots, niet uit een kolom die door
+        de laatste scanner is overschreven.
+
+        Deze stond hier eerder als een vast verzonnen cijfer van 88. Daardoor
+        testte de brug op dit punt niets -- en juist hier zat de fout die op
+        20 oktober boven kwam, waarbij een auditor tegelijk "geen score
+        vastgelegd" en 76 controles met 8 tekortkomingen te zien kreeg."""
         row = self.conn.execute(
             "SELECT account_name FROM cloud_accounts WHERE id = ?", (cloud_account_id,),
         ).fetchone()
         if not row:
             return None
-        return {"account_name": row[0], "compliance_score": {"score": 88}, "last_scan_at": None}
+        snap = self.conn.execute(
+            "SELECT total_checks, passed, failed, by_severity, generated_at, snapshot_type "
+            "FROM compliance_snapshots WHERE cloud_account_id = ? "
+            "ORDER BY generated_at DESC LIMIT 1",
+            (cloud_account_id,),
+        ).fetchone()
+        if not snap:
+            return {"account_name": row[0], "measured_at": None, "total_checks": None,
+                    "passed": None, "failed": None, "by_severity": None, "snapshot_type": None}
+        return {
+            "account_name": row[0], "total_checks": snap[0], "passed": snap[1], "failed": snap[2],
+            "by_severity": json.loads(snap[3]) if snap[3] else None,
+            "measured_at": snap[4], "snapshot_type": snap[5],
+        }
 
     def close(self):
         self.conn.close()
@@ -390,6 +411,11 @@ def seed_database():
         id TEXT PRIMARY KEY, engagement_id TEXT, auditor_email TEXT,
         cloud_account_id TEXT, status TEXT DEFAULT 'pending', resolved_at TEXT
     )""")
+    conn.execute("""CREATE TABLE compliance_snapshots (
+        id TEXT PRIMARY KEY, cloud_account_id TEXT, total_checks INTEGER,
+        passed INTEGER, failed INTEGER, by_severity TEXT,
+        generated_at TEXT, snapshot_type TEXT
+    )""")
     conn.execute("""CREATE TABLE engagement_activity_log (
         id TEXT PRIMARY KEY, engagement_id TEXT, auditor_email TEXT,
         action TEXT, details TEXT, rowid_order INTEGER
@@ -423,6 +449,18 @@ def seed_database():
     conn.execute("INSERT INTO engagement_scope VALUES (?, ?)", (engagement_id, cloud_account_id))
     conn.execute("INSERT INTO engagement_auditors VALUES (?, ?, ?)",
                  (str(uuid.uuid4()), engagement_id, "external.auditor@example.com"))
+
+    # Een momentopname met echte verhoudingen, zodat het bewijsstuk in het
+    # auditorportaal meteen iets te tonen heeft -- inclusief een kritieke
+    # tekortkoming, want juist die regel wil je met eigen ogen zien kloppen.
+    # Het tijdstempel heeft een offset, net als TIMESTAMPTZ in productie.
+    conn.execute("INSERT INTO compliance_snapshots VALUES (?, ?, 118, 107, 11, ?, ?, 'scan')",
+                 (str(uuid.uuid4()), cloud_account_id,
+                  json.dumps({"CRITICAL": {"passed": 13, "failed": 1},
+                              "HIGH": {"passed": 57, "failed": 1},
+                              "MEDIUM": {"passed": 32, "failed": 9},
+                              "LOW": {"passed": 5, "failed": 0}}),
+                  "2026-10-15 12:58:46.095272+00:00"))
 
     conn.commit()
     conn.close()

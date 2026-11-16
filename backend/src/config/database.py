@@ -882,21 +882,61 @@ class Database:
 
     def get_cloud_account_compliance(self, cloud_account_id: str) -> dict | None:
         """
-        Issue #266, acceptance criterion #4's "evidence": the same
-        compliance_score issue #269 already computes and stores per
-        cloud account, not a fabricated document.
+        Issue #266, acceptance criterion #4's "evidence": real scan results,
+        not a fabricated document.
+
+        This used to read cloud_accounts.compliance_score, on the assumption
+        that it held the account's score. It does not. That column is written
+        by whichever collector finished last, so what an auditor was handed
+        depended on which scanner ran most recently — and not even with a
+        stable set of fields.
+
+        Seen on 15 October: an auditor was shown 100 out of 100 with fifteen
+        checks and nothing failed, while the scan recorded at that same moment
+        counted 118 checks with eleven failures, one of them critical. On
+        20 October the same screen reported "no compliance score has been
+        recorded" and then listed 76 checks with 8 failures underneath,
+        because by then the column held an object without a `score` key.
+
+        For an audit product that is worse than showing nothing: an auditor
+        who is given a clean bill asks no further questions. So the evidence
+        now comes from the most recent row in compliance_snapshots, which is
+        written as a whole by one scan and has a fixed shape.
+
+        No snapshot means no evidence: the caller gets nulls and says so,
+        rather than half-filling a record from whatever happens to be lying
+        around.
         """
         with self.conn.cursor() as cur:
-            cur.execute(
-                "SELECT account_name, compliance_score, last_scan_at FROM cloud_accounts WHERE id = %s",
-                (cloud_account_id,),
-            )
-            row = cur.fetchone()
-        if not row:
-            return None
+            cur.execute("SELECT account_name FROM cloud_accounts WHERE id = %s", (cloud_account_id,))
+            account = cur.fetchone()
+            if not account:
+                return None
+
+            cur.execute("""
+                SELECT total_checks, passed, failed, by_severity, generated_at, snapshot_type
+                FROM compliance_snapshots
+                WHERE cloud_account_id = %s
+                ORDER BY generated_at DESC
+                LIMIT 1
+            """, (cloud_account_id,))
+            snapshot = cur.fetchone()
+
+        if not snapshot:
+            return {
+                "account_name": account[0], "measured_at": None,
+                "total_checks": None, "passed": None, "failed": None,
+                "by_severity": None, "snapshot_type": None,
+            }
+
         return {
-            "account_name": row[0], "compliance_score": row[1],
-            "last_scan_at": str(row[2]) if row[2] else None,
+            "account_name": account[0],
+            "total_checks": snapshot[0],
+            "passed": snapshot[1],
+            "failed": snapshot[2],
+            "by_severity": snapshot[3],
+            "measured_at": str(snapshot[4]) if snapshot[4] else None,
+            "snapshot_type": snapshot[5],
         }
 
     def is_cloud_account_in_engagement_scope(self, engagement_id: str, cloud_account_id: str) -> bool:

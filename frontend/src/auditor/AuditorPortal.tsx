@@ -47,8 +47,12 @@ interface AuditLogEntry {
 
 interface Evidence {
   account_name: string | null;
-  compliance_score: unknown;
-  last_scan_at: string | null;
+  total_checks: number | null;
+  passed: number | null;
+  failed: number | null;
+  by_severity: Record<string, { passed?: number; failed?: number }> | null;
+  measured_at: string | null;
+  snapshot_type: string | null;
 }
 
 // What an auditor actually does with this screen is write it down: which
@@ -56,97 +60,227 @@ interface Evidence {
 // record to be cited rather than a dashboard to be skimmed — labelled rows,
 // one value each, in a fixed order.
 //
-// The score bar is deliberately NOT colour-coded by how good the number is.
-// Nobody has defined what counts as a passing score, so colouring 77 green or
-// red would be the interface inventing a verdict the data does not support.
-// It uses the same accent as the onboarding progress bar, so it reads as a
-// measurement. The number is always written out beside it, never colour alone.
-const ACCENT = "#ef4444";
+// There is deliberately no single score here any more. The record used to
+// open with a number out of 100, taken from a column that turned out to hold
+// whatever the last collector wrote. On 20 October that produced a record
+// stating "no compliance score has been recorded" directly above a count of
+// 76 checks with 8 failures — two answers on one screen.
+//
+// Counts come from one scan and mean one thing, and a derived percentage
+// would add nothing: nobody has defined what a passing score is, so putting
+// one at the top would have the interface deliver a verdict the data does not
+// support. What an auditor needs is how many checks ran, how many failed, and
+// how serious those failures were.
+const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
 
-interface ComplianceScore {
-  score?: number;
-  total?: number;
-  passed?: number;
-  failed?: number;
+const SEVERITY_COLOR: Record<string, string> = {
+  CRITICAL: "#ef4444",
+  HIGH: "#f97316",
+  MEDIUM: "#eab308",
+  LOW: "#64748b",
+};
+
+// The record is built for the screen but has to survive leaving it. Filing
+// evidence is the whole job, so the one thing an auditor will do with this
+// card is keep a copy of it — and a screenshot of a dark web page is a poor
+// thing to put in a dossier.
+//
+// Rather than a second rendering path on the server (a PDF library in the
+// Lambda package, a second endpoint, its own tests, and a second copy of this
+// layout to keep in step), the card prints itself. The rules below hide the
+// rest of the portal, turn the dark palette into ink on white, and drop the
+// button from the page. What comes out of Ctrl+P — or of "Save as PDF", which
+// every current browser offers in that same dialog — is the record the auditor
+// just read, on one sheet, carrying the account, both timestamps and who
+// retrieved it.
+//
+// !important throughout, because every colour on this page is an inline style
+// and a stylesheet only outranks those when it is marked.
+const PRINT_STYLES = `
+@media print {
+  @page { margin: 18mm; }
+  body { background: #fff !important; }
+  body * { visibility: hidden !important; }
+  .ev-printing, .ev-printing * { visibility: visible !important; }
+  .ev-printing {
+    position: absolute !important; left: 0 !important; top: 0 !important;
+    width: 100% !important; margin: 0 !important; padding: 0 !important;
+    background: #fff !important; border: none !important;
+  }
+  .ev-printing .ev-ink { color: #000 !important; }
+  .ev-printing .ev-muted { color: #3f3f46 !important; }
+  .ev-printing .ev-rule { border-top-color: #d4d4d8 !important; }
+  .ev-printing .ev-track { background: #e4e4e7 !important; }
+  .ev-printing .ev-track, .ev-printing .ev-bar {
+    -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+  }
+  .ev-noprint { display: none !important; }
 }
+`;
 
-function asScore(value: unknown): ComplianceScore | null {
-  if (!value || typeof value !== "object") return null;
-  const v = value as Record<string, unknown>;
-  const num = (x: unknown) => (typeof x === "number" ? x : undefined);
-  return { score: num(v.score), total: num(v.total), passed: num(v.passed), failed: num(v.failed) };
-}
-
-// The database stores last_scan_at without a timezone, so it is shown as
-// recorded rather than converted — a converted timestamp in an evidence
+// Shown as recorded, never converted: a converted timestamp in an evidence
 // record is a claim about a timezone nobody verified.
+//
+// generated_at is a timestamptz, so it arrives as "2026-10-15 12:58:46.095272+00:00".
+// Only the microseconds are dropped — the offset stays, because it is what
+// makes the moment unambiguous to whoever reads the record later. The earlier
+// version stripped a fraction only at the end of the string, which silently
+// did nothing once the offset was there.
 function tidyTimestamp(value: string | null): string {
   if (!value) return "not recorded";
-  return value.replace("T", " ").replace(/\.\d+$/, "");
+  return value.replace("T", " ").replace(/\.\d+/, "");
 }
 
 function RecordRow({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
   return (
-    <div style={{ display: "flex", gap: 16, padding: "7px 0", borderTop: "1px solid #151b28" }}>
-      <span style={{ flex: "0 0 170px", color: "#6b7280", fontSize: 12 }}>{label}</span>
-      <span style={{ color: strong ? "#f1f5f9" : "#cbd5e1", fontSize: 12.5, fontWeight: strong ? 700 : 400 }}>
+    <div className="ev-rule" style={{ display: "flex", gap: 16, padding: "7px 0", borderTop: "1px solid #151b28" }}>
+      <span className="ev-muted" style={{ flex: "0 0 170px", color: "#6b7280", fontSize: 12 }}>{label}</span>
+      <span className={strong ? "ev-ink" : "ev-muted"} style={{ color: strong ? "#f1f5f9" : "#cbd5e1", fontSize: 12.5, fontWeight: strong ? 700 : 400 }}>
         {value}
       </span>
     </div>
   );
 }
 
+// Bars are scaled against the worst severity rather than against the total,
+// because the counts that matter here are small: one critical failure out of
+// 118 checks is invisible on a bar drawn to scale, and it is the single most
+// important line on the card. Scaled this way the rows still read in order of
+// seriousness, and the exact number sits beside every bar, so nothing has to
+// be judged by eye.
+function SeverityBar({ level, failed, widest }: { level: string; failed: number; widest: number }) {
+  const pct = widest > 0 && failed > 0 ? Math.max(8, (failed / widest) * 100) : 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "3.5px 0" }}>
+      <span className="ev-muted" style={{ flex: "0 0 76px", color: "#6b7280", fontSize: 10, letterSpacing: "0.09em", fontWeight: 700 }}>
+        {level}
+      </span>
+      <div className="ev-track" style={{ flex: 1, height: 7, background: "#151b28", borderRadius: 4, overflow: "hidden" }}>
+        {failed > 0 && (
+          <div className="ev-bar" style={{ width: `${pct}%`, height: "100%", background: SEVERITY_COLOR[level], borderRadius: 4 }} />
+        )}
+      </div>
+      <span className={failed > 0 ? "ev-ink" : "ev-muted"} style={{ flex: "0 0 26px", textAlign: "right", color: failed > 0 ? "#f1f5f9" : "#4e627a", fontSize: 12.5, fontWeight: failed > 0 ? 700 : 400 }}>
+        {failed}
+      </span>
+    </div>
+  );
+}
+
+// What an auditor actually does with this screen is write it down: which
+// account, measured when, retrieved when, by whom. So it is laid out as a
+// record to be cited rather than a dashboard to be skimmed — labelled rows,
+// one value each, in a fixed order.
+//
+// There is deliberately no compliance score here any more. The record used to
+// open with a number out of 100, taken from a column that turned out to hold
+// whatever the last collector wrote. On 20 October that produced a record
+// stating "no compliance score has been recorded" directly above a count of
+// 76 checks with 8 failures — two answers on one screen.
+//
+// The percentage under the bar is not that number returning. It is the two
+// counts printed above it, divided, and it is labelled as such: no threshold
+// for "compliant" has ever been defined, so the card states the share of
+// checks that passed and stops short of calling it a grade.
 function EvidenceRecord({ account, evidence, retrievedBy, retrievedAt }: {
   account: ScopeAccount;
   evidence: Evidence;
   retrievedBy: string;
   retrievedAt: string;
 }) {
-  const s = asScore(evidence.compliance_score);
-  const pct = typeof s?.score === "number" ? Math.max(0, Math.min(100, s.score)) : null;
+  // The class has to be on the node before the print dialog reads the page,
+  // so the call waits a tick instead of going out with the click.
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    if (!printing) return;
+    const id = window.setTimeout(() => {
+      window.print();
+      setPrinting(false);
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [printing]);
+
+  // Either there is a scan to cite or there is not. Never both at once.
+  const scanned = evidence.total_checks !== null && evidence.total_checks !== undefined;
+
+  const bySev = evidence.by_severity || {};
+  const failedAt = (level: string) => bySev[level]?.failed ?? 0;
+  const widest = Math.max(0, ...SEVERITY_ORDER.map(failedAt));
+  const total = evidence.total_checks || 0;
+  const passedPct = total > 0 ? ((evidence.passed || 0) / total) * 100 : 0;
 
   return (
-    <div style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "14px 16px", marginTop: 10 }}>
-      <div style={{ color: "#f1f5f9", fontSize: 12.5, fontWeight: 700, marginBottom: 12 }}>
-        Compliance evidence — {evidence.account_name || account.account_name || "unnamed account"}
-        <span style={{ color: "#4e627a", fontWeight: 400 }}> · {account.account_id}</span>
+    <div
+      className={`ev-sheet${printing ? " ev-printing" : ""}`}
+      style={{ background: "#0d1017", border: "1px solid #1e2433", borderRadius: 8, padding: "16px 18px", marginTop: 10 }}
+    >
+      <div className="ev-muted" style={{ color: "#ef4444", fontSize: 9.5, fontWeight: 700, letterSpacing: "0.18em", marginBottom: 8 }}>
+        COMPLIANCE EVIDENCE
+      </div>
+      <div className="ev-ink" style={{ color: "#f1f5f9", fontSize: 14.5, fontWeight: 700 }}>
+        {evidence.account_name || account.account_name || "unnamed account"}
+      </div>
+      <div className="ev-muted" style={{ color: "#4e627a", fontSize: 11.5, marginBottom: 16 }}>
+        AWS account {account.account_id}
       </div>
 
-      {pct === null ? (
-        <div style={{ color: "#6b7280", fontSize: 12.5, paddingBottom: 10 }}>
-          No compliance score has been recorded for this account yet.
+      {!scanned ? (
+        <div className="ev-muted" style={{ color: "#6b7280", fontSize: 12.5, paddingBottom: 10 }}>
+          This account has not been scanned yet, so there is no evidence to show.
         </div>
       ) : (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 7 }}>
-            <span style={{ color: "#f1f5f9", fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{pct}</span>
-            <span style={{ color: "#6b7280", fontSize: 12 }}>/ 100 compliance score</span>
-          </div>
-          <div
-            role="img"
-            aria-label={`Compliance score ${pct} out of 100`}
-            style={{ height: 6, background: "#1a2030", borderRadius: 3, overflow: "hidden", maxWidth: 320 }}
-          >
-            <div style={{ height: "100%", width: `${pct}%`, background: ACCENT, borderRadius: 3 }} />
-          </div>
-        </div>
-      )}
-
-      {s && (
         <>
-          <RecordRow label="Checks performed" value={s.total ?? "—"} />
-          <RecordRow label="Passed" value={s.passed ?? "—"} />
-          <RecordRow label="Failed" value={s.failed ?? "—"} strong={!!s.failed} />
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span className="ev-ink" style={{ color: "#f1f5f9", fontSize: 30, fontWeight: 700, lineHeight: 1 }}>
+              {evidence.passed}
+            </span>
+            <span className="ev-muted" style={{ color: "#6b7280", fontSize: 13 }}>
+              of {evidence.total_checks} checks passed
+            </span>
+          </div>
+          <div className="ev-track" style={{ height: 8, background: "#151b28", borderRadius: 5, overflow: "hidden", margin: "12px 0 7px" }}>
+            <div className="ev-bar" style={{ width: `${passedPct}%`, height: "100%", background: "#22c55e", borderRadius: 5 }} />
+          </div>
+          <div className="ev-muted" style={{ color: "#4e627a", fontSize: 11, marginBottom: 20, lineHeight: 1.5 }}>
+            {passedPct.toFixed(1)}% of the checks that ran — a proportion, not a grade:
+            no passing threshold has been defined.
+          </div>
+
+          <div className="ev-muted" style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, letterSpacing: "0.13em", marginBottom: 7 }}>
+            FAILURES BY SEVERITY
+          </div>
+          {SEVERITY_ORDER.map(level => (
+            <SeverityBar key={level} level={level} failed={failedAt(level)} widest={widest} />
+          ))}
+          {widest === 0 && (
+            <div className="ev-muted" style={{ color: "#4e627a", fontSize: 11, marginTop: 7 }}>
+              Nothing failed in this scan.
+            </div>
+          )}
+
+          <div style={{ height: 18 }} />
+          <RecordRow label="Checks performed" value={evidence.total_checks} />
+          <RecordRow label="Passed" value={evidence.passed} />
+          <RecordRow label="Failed" value={evidence.failed} strong={!!evidence.failed} />
         </>
       )}
 
       <div style={{ height: 10 }} />
-      <RecordRow label="Measured at" value={tidyTimestamp(evidence.last_scan_at)} />
+      <RecordRow label="Measured at" value={tidyTimestamp(evidence.measured_at)} />
       <RecordRow label="Retrieved by" value={retrievedBy} />
       <RecordRow label="Retrieved at" value={retrievedAt} />
 
-      <div style={{ color: "#4e627a", fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>
-        This retrieval has been recorded in the audited organization's activity log.
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 14, marginTop: 12 }}>
+        <div className="ev-muted" style={{ flex: 1, color: "#4e627a", fontSize: 11, lineHeight: 1.5 }}>
+          This retrieval has been recorded in the audited organization's activity log.
+        </div>
+        <button
+          className="ev-noprint"
+          onClick={() => setPrinting(true)}
+          style={{ background: "none", border: "1px solid #374151", color: "#9ca3af", borderRadius: 6, padding: "5px 11px", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}
+        >
+          Print / save as PDF
+        </button>
       </div>
     </div>
   );
@@ -263,6 +397,7 @@ export default function AuditorPortal() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#080b12", fontFamily: "system-ui,-apple-system,sans-serif", padding: "48px 24px" }}>
+      <style>{PRINT_STYLES}</style>
       <div style={{ maxWidth: 720, margin: "0 auto" }}>
         <div style={{ marginBottom: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", letterSpacing: "0.15em" }}>AUDITOR PORTAL</span>

@@ -226,14 +226,41 @@ class TestDatabaseEngagementMethods:
             "details": {"cloud_account_id": "acct-1"}, "created_at": "2026-01-01T00:00:00",
         }]
 
-    def test_get_cloud_account_compliance_found(self):
+    def test_get_cloud_account_compliance_reads_the_latest_snapshot(self):
+        """The evidence comes from compliance_snapshots, which one scan writes
+        as a whole. It used to come from cloud_accounts.compliance_score, a
+        column written by whichever collector finished last — which is how an
+        auditor came to be shown 100 out of 100 while the scan of that same
+        moment had recorded eleven failures."""
         db, mock_conn = self._make_db()
         cur = mock_conn.cursor.return_value.__enter__.return_value
-        cur.fetchone.return_value = ("Prod AWS", {"score": 82}, "2026-01-01T00:00:00")
+        cur.fetchone.side_effect = [
+            ("Prod AWS",),
+            (118, 107, 11, {"CRITICAL": {"passed": 13, "failed": 1}}, "2026-01-01T00:00:00", "scan"),
+        ]
 
         result = db.get_cloud_account_compliance("acct-1")
 
-        assert result == {"account_name": "Prod AWS", "compliance_score": {"score": 82}, "last_scan_at": "2026-01-01T00:00:00"}
+        assert result["account_name"] == "Prod AWS"
+        assert result["total_checks"] == 118
+        assert result["passed"] == 107
+        assert result["failed"] == 11
+        assert result["by_severity"] == {"CRITICAL": {"passed": 13, "failed": 1}}
+        assert result["measured_at"] == "2026-01-01T00:00:00"
+
+    def test_get_cloud_account_compliance_without_a_scan_reports_nothing(self):
+        """No snapshot means no evidence. Half-filling the record from another
+        source is what caused the contradiction this replaced."""
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.side_effect = [("Prod AWS",), None]
+
+        result = db.get_cloud_account_compliance("acct-1")
+
+        assert result["account_name"] == "Prod AWS"
+        assert result["total_checks"] is None
+        assert result["failed"] is None
+        assert result["measured_at"] is None
 
     def test_get_cloud_account_compliance_not_found(self):
         db, mock_conn = self._make_db()
@@ -241,6 +268,19 @@ class TestDatabaseEngagementMethods:
         cur.fetchone.return_value = None
 
         assert db.get_cloud_account_compliance("does-not-exist") is None
+
+    def test_get_cloud_account_compliance_never_reads_the_old_column(self):
+        """The column is still there and still being written by the collectors;
+        this guards against quietly going back to it."""
+        db, mock_conn = self._make_db()
+        cur = mock_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.side_effect = [("Prod AWS",), None]
+
+        db.get_cloud_account_compliance("acct-1")
+
+        uitgevoerd = " ".join(str(c) for c in cur.execute.call_args_list)
+        assert "compliance_score" not in uitgevoerd
+        assert "compliance_snapshots" in uitgevoerd
 
 
 # ── api/auditor_handler.py ────────────────────────────────────────────
@@ -376,6 +416,56 @@ class TestHandleListEngagements:
         with patch.object(th, "_get_authenticated_email", return_value=VIEWER["email"]):
             resp = ah.handle_list_engagements({}, db)
         assert resp["statusCode"] == 403
+
+
+class TestAuditorSession:
+    """The routing question — does this person have a running engagement? —
+    asked without leaving a trace.
+
+    Issue #266, acceptance criterion #5 is what makes these tests matter. The
+    activity dashboard has to show logins, and it is only truthful if one
+    visit produces one row. The frontend asks this question on every page
+    load to decide where someone belongs; when it asked /auditor/scope for
+    that, each visit was counted twice, because the portal itself asks the
+    same route again once it opens."""
+
+    def test_active_engagement_is_accepted(self):
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            resp = ah.handle_auditor_session({}, db)
+        assert resp["statusCode"] == 200
+        assert json.loads(resp["body"]) == {"has_engagement": True}
+
+    def test_no_active_engagement_is_unauthorized(self):
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = None
+        with patch.object(ah, "_get_authenticated_email", return_value="nobody@firm.com"):
+            resp = ah.handle_auditor_session({}, db)
+        assert resp["statusCode"] == 401
+
+    def test_logs_nothing(self):
+        """The whole reason this route exists. If it ever starts recording
+        something, one visit to the portal counts as two again."""
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            ah.handle_auditor_session({}, db)
+        db.log_engagement_activity.assert_not_called()
+
+    def test_reveals_nothing_about_the_organization(self):
+        """Whoever asks has not been placed yet, so the answer stays a bare
+        yes — no engagement name, no end date, no cloud accounts."""
+        import api.auditor_handler as ah
+        db = MagicMock()
+        db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            resp = ah.handle_auditor_session({}, db)
+        assert set(json.loads(resp["body"])) == {"has_engagement"}
+        db.list_engagement_scope.assert_not_called()
 
 
 class TestGetAuditorRejectsClosedOrUnknown:
@@ -661,6 +751,13 @@ class TestLambdaHandlerRouting:
         with patch.object(ah, "Database") as MockDatabase:
             MockDatabase.return_value.get_user_by_email.return_value = ADMIN
             resp = ah.lambda_handler(self._event("GET", "/auditor/scope"), None)
+        assert resp["statusCode"] == 401
+
+    def test_auditor_session_route_dispatches_correctly(self):
+        import api.auditor_handler as ah
+        with patch.object(ah, "Database") as MockDatabase:
+            MockDatabase.return_value.get_user_by_email.return_value = ADMIN
+            resp = ah.lambda_handler(self._event("GET", "/auditor/session"), None)
         assert resp["statusCode"] == 401
 
     def test_download_evidence_route_dispatches_with_path_param(self):

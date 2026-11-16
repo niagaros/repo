@@ -174,6 +174,30 @@ def handle_close_engagement(event: dict, db: Database, engagement_id: str) -> di
     return _response(200, {"engagement_id": engagement_id, "closed": True})
 
 
+def handle_auditor_session(event: dict, db: Database) -> dict:
+    """
+    Answers one question, cheaply and without recording anything: does the
+    caller have a running engagement?
+
+    The frontend has to ask this on every page load, because it decides
+    where someone belongs after signing in — an auditor is not a member of
+    the audited organization and has no business on its dashboard. Asking
+    /auditor/scope for that answer is what the routing did at first, and it
+    cost an extra "login" row on every visit: that route records one, by
+    design, as the single place a visit to the portal is counted. Two
+    callers, two rows, one visit. In an audit trail that is not a cosmetic
+    problem, so the question gets its own route and this one logs nothing.
+
+    Deliberately no detail in the answer. Whoever asks has not been placed
+    yet, so anything beyond yes-or-no would be handing out the audited
+    organization's particulars before establishing who is asking.
+    """
+    auditor = _get_auditor(event, db)
+    if not auditor:
+        return _response(401, {"error": "unauthorized"})
+    return _response(200, {"has_engagement": True})
+
+
 def handle_auditor_view_scope(event: dict, db: Database) -> dict:
     """
     Issue #266, acceptance criterion #1 — the read side, from the
@@ -376,6 +400,7 @@ def lambda_handler(event, context):
         PATCH  /auditors/engagements/{engagement_id}/requests/{request_id} -> handle_resolve_evidence_request
         DELETE /auditors/engagements/{engagement_id}           -> handle_close_engagement
         GET    /auditors/engagements/{engagement_id}/activity  -> handle_view_engagement_activity
+        GET    /auditor/session                                -> handle_auditor_session
         GET    /auditor/scope                                  -> handle_auditor_view_scope
         GET    /auditor/audit-log                              -> handle_auditor_view_audit_log
         POST   /auditor/evidence-requests                      -> handle_request_evidence
@@ -393,6 +418,8 @@ def lambda_handler(event, context):
             return handle_create_engagement(event, db)
         if method == "GET" and path.rstrip("/") == "/auditors/engagements":
             return handle_list_engagements(event, db)
+        if method == "GET" and path.rstrip("/") == "/auditor/session":
+            return handle_auditor_session(event, db)
         if method == "GET" and path.rstrip("/") == "/auditor/scope":
             return handle_auditor_view_scope(event, db)
         if method == "GET" and path.rstrip("/") == "/auditor/audit-log":
