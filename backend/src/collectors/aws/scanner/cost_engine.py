@@ -336,3 +336,148 @@ def inventory_ids(volumes, addresses, instances, load_balancers):
     ids |= {i["InstanceId"] for i in instances or [] if (i.get("State") or {}).get("Name") != "terminated"}
     ids |= {lb["LoadBalancerArn"] for lb in load_balancers or []}
     return ids
+
+
+# ── commitments (#295 second pass) ──────────────────────────────────────────
+
+EXPIRY_WARN_DAYS = (90, 60, 30)
+
+
+def _as_date(v):
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def commitment_inventory(savings_plans, reserved_instances, reserved_db, today=None):
+    """Every Savings Plan and reservation as AWS reports it, with its end date and days left. Inactive / retired
+    items are kept (so an expiry is visible after the fact) but never warned about."""
+    today = today or date.today()
+    items = []
+    for sp in savings_plans or []:
+        end = _as_date(sp.get("end"))
+        items.append({"kind": "savings_plan", "id": sp.get("savingsPlanId"), "type": sp.get("savingsPlanType"),
+                      "region": sp.get("region") or "global", "state": sp.get("state"), "start_ts": str(sp.get("start") or ""),
+                      "start": _as_date(sp.get("start")), "end": end, "days_left": (end - today).days if end else None,
+                      "commitment": f"{sp.get('commitment')} {sp.get('currency') or 'USD'}/hour", "payment": sp.get("paymentOption"),
+                      "term_years": round(int(sp.get("termDurationInSeconds") or 0) / 31536000, 1) or None})
+    for ri in reserved_instances or []:
+        end = _as_date(ri.get("End"))
+        items.append({"kind": "ec2_reservation", "id": ri.get("ReservedInstancesId"), "type": ri.get("InstanceType"),
+                      "region": ri.get("_region"), "state": ri.get("State"), "start_ts": str(ri.get("Start") or ""),
+                      "start": _as_date(ri.get("Start")), "end": end,
+                      "days_left": (end - today).days if end else None, "commitment": f"{ri.get('InstanceCount')} instance(s)",
+                      "payment": ri.get("OfferingType"), "term_years": round(int(ri.get("Duration") or 0) / 31536000, 1) or None})
+    for db in reserved_db or []:
+        start = _as_date(db.get("StartTime"))
+        end = start + timedelta(seconds=int(db.get("Duration") or 0)) if start else None
+        items.append({"kind": "rds_reservation", "id": db.get("ReservedDBInstanceId"), "type": db.get("DBInstanceClass"),
+                      "region": db.get("_region"), "state": db.get("State"), "start": start, "end": end,
+                      "days_left": (end - today).days if end else None, "commitment": f"{db.get('DBInstanceCount')} instance(s)",
+                      "payment": db.get("OfferingType"), "term_years": round(int(db.get("Duration") or 0) / 31536000, 1) or None})
+    return items
+
+
+def expiry_alerts(items):
+    """One alert per commitment and warning window (90/60/30 days), only for active commitments."""
+    out = []
+    for c in items:
+        if (c.get("state") or "").lower() not in ("active", "payment-pending") or c.get("days_left") is None:
+            continue
+        for w in sorted(EXPIRY_WARN_DAYS):
+            if 0 <= c["days_left"] <= w:
+                out.append({"fingerprint": f"commitment_expiry:{c['id']}:{w}", "window": w, **c})
+                break
+    return out
+
+
+def normalize_sp_recommendation(resp):
+    rec = (resp or {}).get("SavingsPlansPurchaseRecommendation") or {}
+    s = rec.get("SavingsPlansPurchaseRecommendationSummary")
+    if not s:
+        return {"available": False, "reason": "AWS has no Savings Plans recommendation for this usage"}
+    return {"available": True, "type": rec.get("SavingsPlansType"), "term": rec.get("TermInYears"),
+            "payment": rec.get("PaymentOption"), "lookback": rec.get("LookbackPeriodInDays"),
+            "hourly_commitment": _num(s.get("HourlyCommitmentToPurchase")),
+            "estimated_monthly_savings": round(_num(s.get("EstimatedMonthlySavingsAmount")), 2),
+            "estimated_savings_pct": round(_num(s.get("EstimatedSavingsPercentage")), 1),
+            "estimated_roi_pct": round(_num(s.get("EstimatedROI")), 1), "currency": s.get("CurrencyCode") or "USD",
+            "recommendation_id": ((resp or {}).get("Metadata") or {}).get("RecommendationId"),
+            "basis": "AWS Cost Explorer Savings Plans recommendation (AWS's own estimate)"}
+
+
+def normalize_ri_recommendation(resp):
+    recs = (resp or {}).get("Recommendations") or []
+    if not recs:
+        return {"available": False, "reason": "AWS has no reservation recommendation for this usage"}
+    r = recs[0]
+    s = r.get("RecommendationSummary") or {}
+    return {"available": True, "service": "Amazon EC2", "term": r.get("TermInYears"), "payment": r.get("PaymentOption"),
+            "lookback": r.get("LookbackPeriodInDays"), "details": len(r.get("RecommendationDetails") or []),
+            "estimated_monthly_savings": round(_num(s.get("TotalEstimatedMonthlySavingsAmount")), 2),
+            "estimated_savings_pct": round(_num(s.get("TotalEstimatedMonthlySavingsPercentage")), 1),
+            "currency": s.get("CurrencyCode") or "USD", "basis": "AWS Cost Explorer reservation recommendation (AWS's own estimate)"}
+
+
+# ── AI spend per usage type ─────────────────────────────────────────────────
+
+def normalize_usage_types(results_by_time):
+    out = []
+    for period in results_by_time or []:
+        month = period["TimePeriod"]["Start"]
+        for g in period.get("Groups") or []:
+            keys = g.get("Keys") or []
+            m = g.get("Metrics") or {}
+            amount = _num((m.get("UnblendedCost") or {}).get("Amount"))
+            qty = (m.get("UsageQuantity") or {})
+            if abs(amount) < 0.0000005 and not _num(qty.get("Amount")):
+                continue
+            out.append({"month": month, "service": keys[0] if keys else "Unknown", "usage_type": keys[1] if len(keys) > 1 else "",
+                        "amount": round(amount, 6), "usage_quantity": round(_num(qty.get("Amount")), 6), "unit": qty.get("Unit"),
+                        "currency": (m.get("UnblendedCost") or {}).get("Unit") or "USD", "estimated": bool(period.get("Estimated"))})
+    return out
+
+
+def describe_ai_usage_type(usage_type):
+    """Best-effort reading of an AWS AI usage type, e.g. 'EUC1-Claude3Haiku-input-tokens' -> model 'Claude3Haiku',
+    direction 'input tokens'. Labelled as parsed from the AWS usage type; never guessed beyond that string."""
+    ut = usage_type or ""
+    parts = ut.split("-")
+    if len(parts) > 1 and len(parts[0]) <= 5 and parts[0][:2].isalpha() and parts[0].isupper():
+        parts = parts[1:]  # region prefix such as EUC1 or USE1
+    low = ut.lower()
+    direction = ("input tokens" if "input" in low else "output tokens" if "output" in low else
+                 "images" if "image" in low else "inference / other")
+    model_parts = [p for p in parts if p.lower() not in ("input", "output", "tokens", "token", "count", "units")]
+    return {"model": "-".join(model_parts) or ut, "direction": direction, "basis": "parsed from the AWS usage type"}
+
+
+PURCHASE_KIND = {"savings_plans": "savings_plan", "reservations": "ec2_reservation"}
+
+
+def match_purchase(which, approved_at, items, already_used):
+    """The commitment that proves an approved purchase: same kind, active, started at or after the moment the purchase
+    was approved (it is bought after approval and marked as done after that), and not already used to verify another
+    purchase. None when there is no such commitment."""
+    want = PURCHASE_KIND.get(which)
+    for c in sorted(items, key=lambda c: c.get("start_ts") or ""):
+        if c.get("kind") != want or c.get("id") in already_used:
+            continue
+        if (c.get("state") or "").lower() not in ("active", "payment-pending"):
+            continue
+        try:
+            started = datetime.fromisoformat(str(c.get("start_ts")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if approved_at and started >= approved_at:
+            return c
+    return None

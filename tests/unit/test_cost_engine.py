@@ -115,3 +115,41 @@ def test_aws_anomalies_are_normalised():
     a = E.normalize_aws_anomalies({"Anomalies": [{"AnomalyId": "x", "AnomalyStartDate": "2026-11-12", "DimensionValue": "S3",
                                                   "Impact": {"TotalImpact": 4.2, "MaxImpact": 2}, "RootCauses": [{"Service": "S3", "Region": "eu-west-1"}]}]})
     assert a[0]["impact"] == 4.2 and a[0]["root_causes"][0]["Region"] == "eu-west-1"
+
+
+def test_commitment_inventory_and_expiry_windows():
+    today = date(2026, 11, 17)
+    items = E.commitment_inventory(
+        [{"savingsPlanId": "sp1", "savingsPlanType": "Compute", "state": "active", "start": "2025-11-20T00:00:00Z", "end": "2026-12-10T00:00:00Z",
+          "commitment": "0.1", "termDurationInSeconds": 31536000}],
+        [{"ReservedInstancesId": "ri1", "InstanceType": "t3.micro", "State": "retired", "Start": "2024-01-01T00:00:00Z",
+          "End": "2026-11-20T00:00:00Z", "InstanceCount": 1, "Duration": 31536000, "_region": "eu-west-1"}],
+        [{"ReservedDBInstanceId": "db1", "DBInstanceClass": "db.t3.micro", "State": "active", "StartTime": "2026-01-01T00:00:00Z",
+          "Duration": 31536000, "DBInstanceCount": 1, "_region": "eu-west-1"}], today)
+    by = {i["id"]: i for i in items}
+    assert by["sp1"]["days_left"] == 23 and by["db1"]["end"] == date(2027, 1, 1)
+    alerts = {a["id"]: a["window"] for a in E.expiry_alerts(items)}
+    assert alerts == {"sp1": 30, "db1": 60}, "retired ri1 is never warned about; each active one in its smallest window"
+
+
+def test_ai_usage_types_are_read_not_guessed():
+    d = E.describe_ai_usage_type("EUC1-Claude3Haiku-input-tokens")
+    assert d == {"model": "Claude3Haiku", "direction": "input tokens", "basis": "parsed from the AWS usage type"}
+    assert E.describe_ai_usage_type("USE1-TitanEmbeddings-output-tokens")["direction"] == "output tokens"
+    assert E.describe_ai_usage_type("SomethingElse")["model"] == "SomethingElse"
+
+
+def test_recommendations_without_data_say_so():
+    assert E.normalize_sp_recommendation({})["available"] is False
+    assert E.normalize_ri_recommendation({"Recommendations": []})["available"] is False
+
+
+def test_purchase_is_only_verified_by_a_matching_new_commitment():
+    done = datetime(2026, 11, 17, 18, 0, tzinfo=timezone.utc)  # approval time
+    items = [{"kind": "rds_reservation", "id": "db-morning", "state": "active", "start_ts": "2026-11-17T09:00:00Z"},
+             {"kind": "savings_plan", "id": "sp-morning", "state": "active", "start_ts": "2026-11-17T09:00:00Z"},
+             {"kind": "savings_plan", "id": "sp-evening", "state": "active", "start_ts": "2026-11-17T18:05:00Z"},
+             {"kind": "savings_plan", "id": "sp-queued", "state": "queued", "start_ts": "2026-11-18T00:00:00Z"}]
+    assert E.match_purchase("savings_plans", done, items, set())["id"] == "sp-evening"
+    assert E.match_purchase("savings_plans", done, items, {"sp-evening"}) is None, "one commitment verifies one purchase"
+    assert E.match_purchase("reservations", done, items, set()) is None, "an RDS reservation never verifies an EC2 one"

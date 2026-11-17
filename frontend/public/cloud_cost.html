@@ -236,7 +236,20 @@ const RENDER = {
       ${d.commitments.length ? d.commitments.map(c => `<h3>${esc(c.kind === 'reservations' ? 'Reserved Instances' : 'Savings Plans')}</h3>${c.available
         ? `<div class="kv">${Object.entries(c.data || {}).filter(([, v]) => typeof v !== 'object').slice(0, 12).map(([k, v]) => `<div>${esc(k)}</div><div>${esc(v)}</div>`).join('') || '<div>No commitments</div><div></div>'}</div>`
         : `<div class="note">${stateChip(c.data.state)} ${esc(c.data.reason || '')}</div>`}<div class="note">Read ${esc(fmt(c.read_at))}</div>`).join('') : '<div class="empty">Not read yet.</div>'}
-      <h3>Not covered yet</h3><div class="note">${d.not_covered.map(esc).join(' · ')}</div></div>`;
+      <h3>Not covered yet</h3><div class="note">${d.not_covered.map(esc).join(' · ')}</div></div>
+      <div class="card"><h2>Your commitments</h2><div class="note">${esc(d.expiry_rule || '')}. Read ${esc(fmt(d.inventory_read_at))}.</div>
+      ${d.inventory_complete === false ? '<div class="warn">Not every commitment could be read at the last refresh, so this list may be incomplete.</div>' : ''}
+      ${(d.inventory || []).length ? `<table><thead><tr><th>Commitment</th><th>Type</th><th>State</th><th>Ends</th><th class="n">Days left</th><th class="hide-sm">Size</th></tr></thead><tbody>${d.inventory.map(c =>
+        `<tr><td>${esc(c.kind.replace(/_/g, ' '))}<div class="note" style="margin:0">${esc(c.id)}</div></td><td>${esc(c.type || '')}</td><td>${esc(c.state || '')}</td>
+         <td>${esc(day(c.end))}</td><td class="n">${c.days_left != null ? (c.days_left <= 90 && c.days_left >= 0 && /active/i.test(c.state || '') ? chip(c.days_left <= 30 ? 'c-red' : 'c-orange', c.days_left) : esc(c.days_left)) : '—'}</td>
+         <td class="hide-sm">${esc(c.commitment || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No Savings Plans or reservations in this account.</div>'}</div>
+      <div class="card"><h2>Purchase recommendations from AWS</h2><div class="note">AWS's own estimate based on the last 30 days. Buying is a financial commitment: propose it, a second person approves, you buy it in AWS, and the next refresh checks that it exists.</div>
+      ${d.recommendations && d.recommendations.note ? `<div class="note">${esc(d.recommendations.note)}</div>` : ''}
+      ${[['savings_plans', 'Compute Savings Plan'], ['reservations', 'EC2 reservation']].map(([k, l]) => { const r = (d.recommendations || {})[k]; if (!r) return '';
+        return `<h3>${esc(l)}</h3>` + (r.available ? `<div class="kv"><div>Estimated saving</div><div>${esc(money(r.estimated_monthly_savings, r.currency))} per month (${esc(r.estimated_savings_pct)}%)</div>
+          ${r.hourly_commitment != null ? `<div>Commitment</div><div>${esc(r.hourly_commitment)} per hour, ${esc(r.term)}, ${esc(r.payment)}</div>` : ''}<div>Source</div><div>${esc(r.basis)}</div></div>
+          <button class="ghost" data-act="propose" data-which="${k}" style="margin-top:8px">Propose this purchase for approval</button>` : `<div class="note">${esc(r.reason || 'Not available')}</div>`); }).join('')}
+      ${(d.proposals || []).length ? `<h3>Proposals</h3><table><tbody>${d.proposals.map(p => `<tr class="click" data-opp="${esc(p.id)}"><td>${esc(p.title)}</td><td>${esc(p.status.replace('_', ' '))}</td><td class="n">${esc(money(p.monthly_savings))}</td></tr>`).join('')}</tbody></table>` : ''}</div>`;
   },
   async ai() { await subsetView('ai'); },
   async k8s() { await subsetView('kubernetes'); },
@@ -271,6 +284,10 @@ async function subsetView(which) {
     <div class="grid">${metric(money(d.summary.month_to_date), 'This month')}${metric(money(d.summary.previous_month), 'Last month')}</div>
     ${d.summary.by_service.length ? `<table><tbody>${d.summary.by_service.map(x => `<tr><td>${esc(x.service)}</td><td class="n">${esc(money(x.amount))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No spend on these services in the last 90 days.</div>'}
     ${d.summary.daily.length ? chart(d.summary.daily) : ''}
+    ${d.by_model ? `<h3>Per model (last 90 days)</h3><div class="note">${esc(d.model_basis)}.</div>${d.by_model.length ? `<table><tbody>${d.by_model.map(m => `<tr><td>${esc(m.model)}</td><td class="n">${esc(money(m.amount))}</td></tr>`).join('')}</tbody></table>
+      <h3>Per usage type</h3><table><thead><tr><th>Month</th><th>Model</th><th>What</th><th class="n">Quantity</th><th class="n">Cost</th></tr></thead><tbody>${d.by_usage_type.map(r => `<tr><td>${esc(day(r.month))}</td><td>${esc(r.model)}</td><td>${esc(r.direction)}</td><td class="n">${esc(r.quantity != null ? r.quantity.toLocaleString() + ' ' + (r.unit || '') : '—')}</td><td class="n">${esc(money(r.amount))}${r.estimated ? ' *' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No AI usage types recorded.</div>'}` : ''}
+    ${d.clusters ? `<h3>Clusters</h3>${d.clusters_readable === false ? '<div class="warn">Clusters could not be read in every region at the last refresh.</div>' : ''}${d.clusters.length ? `<table><tbody>${d.clusters.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.region)}</td><td>${esc(c.status)}</td><td>Kubernetes ${esc(c.version)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No EKS clusters found in the regions with spend.</div>'}
+      <h3>Cost per cluster this month</h3>${(d.cost_by_cluster || []).length ? `<table><tbody>${d.cost_by_cluster.map(c => `<tr><td>${esc(c.cluster)}</td><td class="n">${esc(money(c.amount))}</td></tr>`).join('')}</tbody></table>` : `<div class="note">${esc((d.cluster_cost_status || {}).reason || 'Not available yet')}.</div>`}` : ''}
     <h3>Services counted</h3><div class="note">${d.services_considered.map(esc).join(', ')}</div>
     <h3>What this does not show</h3><div class="note">${d.limitations.map(esc).join('. ')}.</div></div>`;
 }
@@ -344,6 +361,7 @@ document.addEventListener('click', e => {
     case 'ex-csv': download('daily', 'csv'); break;
     case 'opp-csv': download('opportunities', 'csv'); break;
     case 'export-json': download('daily', 'json'); break;
+    case 'propose': act({action: 'propose_commitment_purchase', which: b.dataset.which}); break;
   }
 });
 render();

@@ -96,11 +96,24 @@ class Fake:
             return self._json(route, {"alerts": [{"id": "a1", "kind": "anomaly", "title": "Unusual spend on EC2", "status": "open",
                                                   "created_at": NOW.isoformat(), "detail": {"method": "actual > mean + 3σ"}, "amount": 50}]})
         if v == "commitments":
-            return self._json(route, {"commitments": [{"kind": "savings_plans", "available": False, "data": {"state": "no_data", "reason": "No Savings Plans"}, "read_at": NOW.isoformat()},
+            return self._json(route, {"expiry_rule": "Alerts at 90, 60 and 30 days", "inventory_read_at": NOW.isoformat(),
+                                      "inventory": [{"kind": "savings_plan", "id": "sp-1", "type": "Compute", "state": "active",
+                                                     "end": str(TODAY + timedelta(days=20)), "days_left": 20, "commitment": "0.1 USD/hour"}],
+                                      "recommendations": {"savings_plans": {"available": True, "estimated_monthly_savings": 21.5, "estimated_savings_pct": 18,
+                                                                            "hourly_commitment": 0.12, "term": "ONE_YEAR", "payment": "NO_UPFRONT",
+                                                                            "currency": "USD", "basis": "AWS recommendation"},
+                                                          "reservations": {"available": False, "reason": "AWS has no reservation recommendation"}},
+                                      "proposals": [], "commitments": [{"kind": "savings_plans", "available": False, "data": {"state": "no_data", "reason": "No Savings Plans"}, "read_at": NOW.isoformat()},
                                                       {"kind": "reservations", "available": True, "data": {"UtilizationPercentage": "0"}, "read_at": NOW.isoformat()}],
                                       "period": "last 30 days", "not_covered": ["Purchase recommendations"]})
         if v in ("ai", "kubernetes"):
-            return self._json(route, {"label": v, "services_considered": ["Amazon Bedrock"], "summary": E.summarize([], TODAY), "limitations": ["Provider usage not ingested"]})
+            extra = ({"by_model": [{"model": XSS, "amount": 6}], "model_basis": "Read from the AWS usage type",
+                      "by_usage_type": [{"month": str(TODAY), "model": "Claude3Haiku", "direction": "input tokens", "quantity": 1600000,
+                                         "unit": "Tokens", "amount": 4, "estimated": True}]} if v == "ai" else
+                     {"clusters": [{"name": "prod", "region": "eu-west-1", "status": "ACTIVE", "version": "1.31"}], "cost_by_cluster": [],
+                      "cluster_cost_status": {"state": "not_configured", "reason": "Activate the cost allocation tag aws:eks:cluster-name"}})
+            return self._json(route, {"label": v, "services_considered": ["Amazon Bedrock"], "summary": E.summarize([], TODAY),
+                                      "limitations": ["Provider usage not ingested"], **extra})
         if v == "portfolio":
             return self._json(route, {"accounts": [{"cloud_account_id": ACCOUNT, "account_name": XSS, "enabled": True, "business_units": "Payments",
                                                     "month_to_date": 60, "currency": "USD", "last_ingested": NOW.isoformat()}]})
@@ -181,3 +194,24 @@ def test_backend_failure_is_shown_plainly(page, site):
     page.goto(f"{site}/cloud_cost.html?account_id={ACCOUNT}")
     page.wait_for_selector("#view .err")
     assert "Please try again" in page.locator("#view .err").inner_text()
+
+
+
+def test_commitments_ai_and_kubernetes_tabs(page, site):
+    fake = Fake()
+    errors = _open(page, site, fake)
+    page.wait_for_selector("text=Daily cost, last 90 days")
+    page.click("[data-tab=commitments]")
+    page.wait_for_selector("text=Your commitments")
+    txt = page.locator("#view").inner_text()
+    assert "sp-1" in txt and "AWS has no reservation recommendation" in txt
+    page.click("[data-act=propose]")
+    page.wait_for_function("document.getElementById('toast').textContent.length > 0")
+    assert fake.posts[-1] == {"cloud_account_id": ACCOUNT, "action": "propose_commitment_purchase", "which": "savings_plans"}
+    page.click("[data-tab=ai]")
+    page.wait_for_selector("text=Per model")
+    assert "input tokens" in page.locator("#view").inner_text()
+    page.click("[data-tab=k8s]")
+    page.wait_for_selector("text=Cost per cluster this month")
+    assert "aws:eks:cluster-name" in page.locator("#view").inner_text()
+    assert page.evaluate("window.__xss") is None and not errors

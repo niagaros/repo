@@ -199,6 +199,143 @@ def collect_idle(session, regions, coverage, inventory):
     return opps
 
 
+# ── commitments, AI usage types, EKS (#295 second pass) ─────────────────────
+
+EKS_TAG = "aws:eks:cluster-name"
+
+
+def collect_commitments(session, ce, regions, coverage, used_services):
+    """Inventory (free describe calls) and, when there is compute usage to base them on, AWS's own purchase
+    recommendations (two paid Cost Explorer requests)."""
+    sps, ris, dbs = [], [], []
+    errs = {}
+    try:
+        sp = session.client("savingsplans", region_name="us-east-1")
+        token = None
+        while True:
+            r = sp.describe_savings_plans(**({"nextToken": token} if token else {}))
+            sps += r.get("savingsPlans") or []
+            token = r.get("nextToken")
+            if not token:
+                break
+    except Exception as e:  # noqa: BLE001
+        errs["savings_plans"] = _err(e)
+    for region in sorted(regions):
+        try:
+            ris += [{**r, "_region": region} for r in session.client("ec2", region_name=region).describe_reserved_instances().get("ReservedInstances") or []]
+        except Exception as e:  # noqa: BLE001
+            errs[f"ec2_reservations:{region}"] = _err(e)
+        try:
+            rds = session.client("rds", region_name=region)
+            marker = None
+            while True:
+                r = rds.describe_reserved_db_instances(**({"Marker": marker} if marker else {}))
+                dbs += [{**x, "_region": region} for x in r.get("ReservedDBInstances") or []]
+                marker = r.get("Marker")
+                if not marker:
+                    break
+        except Exception as e:  # noqa: BLE001
+            errs[f"rds_reservations:{region}"] = _err(e)
+    items = E.commitment_inventory(sps, ris, dbs)
+    recs = {}
+    compute = {"Amazon Elastic Compute Cloud - Compute", "AWS Lambda", "Amazon Elastic Container Service", "AWS Fargate"}
+    if used_services & compute:
+        try:
+            recs["savings_plans"] = E.normalize_sp_recommendation(ce.call(
+                "get_savings_plans_purchase_recommendation", SavingsPlansType="COMPUTE_SP", TermInYears="ONE_YEAR",
+                PaymentOption="NO_UPFRONT", LookbackPeriodInDays="THIRTY_DAYS"))
+        except Exception as e:  # noqa: BLE001
+            recs["savings_plans"] = {"available": False, **_err(e)}
+        if "Amazon Elastic Compute Cloud - Compute" in used_services:
+            try:
+                recs["reservations"] = E.normalize_ri_recommendation(ce.call(
+                    "get_reservation_purchase_recommendation", Service="Amazon Elastic Compute Cloud - Compute",
+                    TermInYears="ONE_YEAR", PaymentOption="NO_UPFRONT", LookbackPeriodInDays="THIRTY_DAYS"))
+            except Exception as e:  # noqa: BLE001
+                recs["reservations"] = {"available": False, **_err(e)}
+    else:
+        recs["note"] = "No compute usage (EC2, Lambda, ECS/Fargate) in the last 90 days, so no purchase recommendation was requested"
+    coverage["commitment_inventory"] = {"state": "ok" if not errs else "partial", "items": len(items), "errors": errs}
+    return items, recs
+
+
+def collect_ai_usage(ce, start, end, ai_services, coverage):
+    if not ai_services:
+        coverage["ai_usage_types"] = {"state": "no_data", "reason": "No spend on AI services in the last 90 days"}
+        return []  # reconciles: anything stored earlier for this period becomes zero
+    try:
+        res = _merge_periods(ce.cost_and_usage(
+            TimePeriod={"Start": str(start.replace(day=1)), "End": str(end)}, Granularity="MONTHLY",
+            Metrics=["UnblendedCost", "UsageQuantity"], Filter={"Dimensions": {"Key": "SERVICE", "Values": sorted(ai_services)}},
+            GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}, {"Type": "DIMENSION", "Key": "USAGE_TYPE"}]))
+        rows = E.normalize_usage_types(res)
+        coverage["ai_usage_types"] = {"state": "ok", "rows": len(rows)}
+        return rows
+    except Exception as e:  # noqa: BLE001
+        coverage["ai_usage_types"] = _err(e)
+        return None
+
+
+def collect_eks(session, ce, regions, start, end, eks_spend, coverage, reuse=None):
+    clusters = []
+    for region in sorted(regions):
+        try:
+            eks = session.client("eks", region_name=region)
+            names, token = [], None
+            while True:
+                r = eks.list_clusters(**({"nextToken": token} if token else {}))
+                names += r.get("clusters") or []
+                token = r.get("nextToken")
+                if not token:
+                    break
+            for name in names:
+                c = eks.describe_cluster(name=name).get("cluster") or {}
+                clusters.append({"name": name, "region": region, "status": c.get("status"), "version": c.get("version"),
+                                 "created": c.get("createdAt")})
+        except Exception as e:  # noqa: BLE001
+            coverage.setdefault("eks_errors", {})[region] = _err(e)
+    alloc, fetched = [], False
+    if eks_spend and reuse is not None:
+        alloc, fetched = reuse, True  # the account's allocation tag is already the cluster tag: no second paid request
+    elif eks_spend:
+        try:
+            alloc = E.normalize_tag_daily(_merge_periods(ce.cost_and_usage(
+                TimePeriod={"Start": str(start), "End": str(end)}, Granularity="DAILY", Metrics=["UnblendedCost"],
+                GroupBy=[{"Type": "TAG", "Key": EKS_TAG}])), EKS_TAG)
+            fetched = True
+        except Exception as e:  # noqa: BLE001
+            coverage["eks_cost"] = _err(e)
+    tagged = any(r["tag_value"] for r in alloc)
+    coverage["eks_cost"] = coverage.get("eks_cost") or (
+        {"state": "ok", "clusters": len(clusters)} if tagged else
+        {"state": "not_configured" if eks_spend else "no_data",
+         "reason": ("Activate the AWS-generated cost allocation tag aws:eks:cluster-name in Billing to see cost per cluster"
+                    if eks_spend else "No EKS spend in the last 90 days")})
+    return clusters, alloc, fetched
+
+
+def store_usage_types(cur, account, ingestion_id, rows, period_start=None):
+    seen = {(str(r["month"]), r["service"], r["usage_type"]) for r in rows}
+    if period_start is not None:
+        # A charge AWS no longer reports for a refreshed month (corrected away) becomes zero, not stale.
+        cur.execute("""SELECT month, service, usage_type FROM cost_usage_type_monthly WHERE cloud_account_id = %s
+                       AND month >= %s AND amount <> 0""", (account, period_start))
+        for m, s, u in cur.fetchall():
+            if (str(m), s, u) not in seen:
+                cur.execute("""UPDATE cost_usage_type_monthly SET amount = 0, usage_quantity = 0, ingestion_id = %s, updated_at = NOW()
+                               WHERE cloud_account_id = %s AND month = %s AND service = %s AND usage_type = %s""",
+                            (ingestion_id, account, m, s, u))
+    for r in rows:
+        cur.execute("""INSERT INTO cost_usage_type_monthly (cloud_account_id, month, service, usage_type, amount, usage_quantity, unit,
+                                                            currency, estimated, ingestion_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (cloud_account_id, month, service, usage_type) DO UPDATE SET amount = EXCLUDED.amount,
+                         usage_quantity = EXCLUDED.usage_quantity, unit = EXCLUDED.unit, estimated = EXCLUDED.estimated,
+                         ingestion_id = EXCLUDED.ingestion_id, updated_at = NOW()""",
+                    (account, r["month"], r["service"], r["usage_type"], r["amount"], r["usage_quantity"], r["unit"],
+                     r["currency"], r["estimated"], ingestion_id))
+
+
 # ── storage ────────────────────────────────────────────────────────────────
 
 def store_daily(cur, account, ingestion_id, records, start, end, estimated_by_day=None):
@@ -412,6 +549,14 @@ def run(conn, account, session, trigger="schedule", requested_by=None, today=Non
         inventory = {}
         found = collect_idle(session, regions, coverage, inventory)
         regions_ok = {r for r, v in coverage["idle_resources"].items() if v.get("state") == "ok"}
+        used = {r["service"] for r in records if r["record_type"] == "Usage" and r["amount"] > 0}
+        lookback = str(today - timedelta(days=30))
+        used_30d = {r["service"] for r in records if r["record_type"] == "Usage" and r["amount"] > 0 and r["day"] >= lookback}
+        commit_items, commit_recs = collect_commitments(session, ce, regions, coverage, used_30d)
+        ai_rows = collect_ai_usage(ce, start, end, used & set(E.AI_SERVICES), coverage)
+        reuse = alloc if (st[0] == EKS_TAG and coverage.get("allocation", {}).get("state") == "ok") else None
+        eks_clusters, eks_alloc, eks_fetched = collect_eks(session, ce, regions, start, end, bool(used & set(E.KUBERNETES_SERVICES)),
+                                                           coverage, reuse)
 
         with conn.cursor() as cur:
             revisions = store_daily(cur, account, ingestion_id, records, start, end, estimated_by_day)
@@ -425,6 +570,40 @@ def run(conn, account, session, trigger="schedule", requested_by=None, today=Non
                 cur.execute("""INSERT INTO cost_commitment_snapshots (cloud_account_id, ingestion_id, kind, available, data)
                                VALUES (%s, %s, %s, %s, %s)""", (account, ingestion_id, kind, v["available"], _J(v["data"])))
             opp_events = sync_opportunities(cur, account, ingestion_id, found, regions_ok, inventory, evidence_at)
+            # A read that failed is stored as unavailable (with the errors), never as an empty list.
+            inv_ok = not (coverage.get("commitment_inventory") or {}).get("errors")
+            eks_ok = not coverage.get("eks_errors")
+            for kind, ok, data in (("inventory", inv_ok, {"items": commit_items, "errors": (coverage.get("commitment_inventory") or {}).get("errors")}),
+                                   ("recommendations", True, commit_recs),
+                                   ("eks_clusters", eks_ok, {"clusters": eks_clusters, "errors": coverage.get("eks_errors")})):
+                cur.execute("""INSERT INTO cost_commitment_snapshots (cloud_account_id, ingestion_id, kind, available, data)
+                               VALUES (%s, %s, %s, %s, %s)""", (account, ingestion_id, kind, ok, _J(data)))
+            if ai_rows is not None:
+                store_usage_types(cur, account, ingestion_id, ai_rows, start.replace(day=1))
+            if eks_fetched and st[0] != EKS_TAG:
+                store_allocation(cur, account, ingestion_id, eks_alloc, EKS_TAG, start, end, estimated_by_day)
+            # A proposed commitment purchase counts as verified once AWS lists an active commitment that started after
+            # it was marked as done.
+            cur.execute("""SELECT detail->>'verified_commitment' FROM cost_opportunities WHERE cloud_account_id = %s
+                           AND kind = 'commitment_purchase' AND status = 'verified'""", (account,))
+            used_ids = {r[0] for r in cur.fetchall() if r[0]}
+            cur.execute("""SELECT id, approved_at, fingerprint FROM cost_opportunities WHERE cloud_account_id = %s
+                           AND kind = 'commitment_purchase' AND status = 'executed' ORDER BY approved_at FOR UPDATE""", (account,))
+            for oid, approved, fp in cur.fetchall():
+                which = fp.split(":")[1] if fp.count(":") >= 2 else None
+                bought = E.match_purchase(which, approved, commit_items, used_ids)
+                if bought:
+                    used_ids.add(bought["id"])
+                    cur.execute("""UPDATE cost_opportunities SET status = 'verified', verified_at = NOW(),
+                                   detail = detail || jsonb_build_object('verified_commitment', %s::text) WHERE id = %s""",
+                                (bought["id"], oid))
+                    cur.execute("""INSERT INTO cost_audit_log (cloud_account_id, actor_email, action, target, details)
+                                   VALUES (%s, 'cost-scanner', 'opportunity_verified_by_ingestion', %s, %s)""",
+                                (account, str(oid), _J({"commitment": bought["id"]})))
+            for c in E.expiry_alerts(commit_items):
+                _alert(cur, account, c["fingerprint"], "commitment_expiry",
+                       f"{c['kind'].replace('_', ' ').capitalize()} {c['id']} ends in {c['days_left']} days ({c['end']})",
+                       None, {k: v for k, v in c.items() if k != "fingerprint"}, notify)
             # budgets and anomalies on the stored (current) numbers
             cur.execute("""SELECT day, service, record_type, amount, estimated, currency FROM cost_daily
                            WHERE cloud_account_id = %s AND day >= %s""", (account, start))

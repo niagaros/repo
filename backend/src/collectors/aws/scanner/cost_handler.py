@@ -320,12 +320,27 @@ def view_alerts(cur, account):
     return {"alerts": rows}
 
 
-def view_commitments(cur, account):
+def _latest_snapshots(cur, account):
     cur.execute("""SELECT DISTINCT ON (kind) kind, available, data, created_at FROM cost_commitment_snapshots
                    WHERE cloud_account_id = %s ORDER BY kind, created_at DESC""", (account,))
-    return {"commitments": [{"kind": k, "available": a, "data": d, "read_at": t} for k, a, d, t in cur.fetchall()],
-            "period": "last 30 days",
-            "not_covered": ["Purchase recommendations", "Expiry dates per reservation", "Approval workflow for purchases"]}
+    return {k: {"available": a, "data": d, "read_at": t} for k, a, d, t in cur.fetchall()}
+
+
+def view_commitments(cur, account):
+    snaps = _latest_snapshots(cur, account)
+    util = [{"kind": k, **snaps[k]} for k in ("reservations", "savings_plans") if k in snaps]
+    inv = (snaps.get("inventory") or {}).get("data") or {}
+    inv_ok = (snaps.get("inventory") or {}).get("available", True)
+    recs = (snaps.get("recommendations") or {}).get("data") or {}
+    cur.execute("""SELECT id, status, title, monthly_savings FROM cost_opportunities WHERE cloud_account_id = %s
+                   AND kind = 'commitment_purchase' ORDER BY first_seen DESC LIMIT 10""", (account,))
+    proposals = [{"id": str(a), "status": b, "title": c, "monthly_savings": float(d) if d is not None else None} for a, b, c, d in cur.fetchall()]
+    return {"commitments": util, "period": "last 30 days",
+            "inventory": inv.get("items") or [], "inventory_read_at": (snaps.get("inventory") or {}).get("read_at"),
+            "inventory_complete": inv_ok, "inventory_errors": inv.get("errors"),
+            "recommendations": recs, "proposals": proposals,
+            "expiry_rule": "Active commitments ending within 90, 60 and 30 days raise an alert",
+            "not_covered": ["Purchases are made by you in AWS; Niagaros only tracks approval and verifies the result"]}
 
 
 def view_subset(cur, account, services, label, limits):
@@ -333,6 +348,38 @@ def view_subset(cur, account, services, label, limits):
     recs = _records(cur, account, today - timedelta(days=E_HISTORY), services=services)
     s = E.summarize(recs, today)
     return {"label": label, "services_considered": list(services), "summary": s, "limitations": limits}
+
+
+def view_ai(cur, account):
+    out = view_subset(cur, account, E.AI_SERVICES, "AI services", AI_LIMITS)
+    cur.execute("""SELECT month, service, usage_type, amount, usage_quantity, unit, estimated FROM cost_usage_type_monthly
+                   WHERE cloud_account_id = %s AND month >= %s ORDER BY month DESC, amount DESC""",
+                (account, (date.today() - timedelta(days=E_HISTORY)).replace(day=1)))
+    rows = []
+    for m, svc, ut, amt, qty, unit, est in cur.fetchall():
+        d = E.describe_ai_usage_type(ut)
+        rows.append({"month": m, "service": svc, "usage_type": ut, "model": d["model"], "direction": d["direction"],
+                     "amount": round(float(amt), 4), "quantity": float(qty) if qty is not None else None, "unit": unit, "estimated": est})
+    by_model = {}
+    for r in rows:
+        by_model[r["model"]] = round(by_model.get(r["model"], 0) + r["amount"], 4)
+    out.update({"by_usage_type": rows, "by_model": sorted(({"model": k, "amount": v} for k, v in by_model.items()), key=lambda x: -x["amount"]),
+                "model_basis": "Model and token direction are read from the AWS usage type name"})
+    return out
+
+
+def view_kubernetes(cur, account):
+    out = view_subset(cur, account, E.KUBERNETES_SERVICES, "Kubernetes (EKS)", K8S_LIMITS)
+    snaps = _latest_snapshots(cur, account)
+    out["clusters"] = ((snaps.get("eks_clusters") or {}).get("data") or {}).get("clusters") or []
+    # Only spend that carries the cluster tag; untagged spend is the rest of the account, not a cluster.
+    cur.execute("""SELECT tag_value, sum(amount) FROM cost_allocation_daily WHERE cloud_account_id = %s AND tag_key = 'aws:eks:cluster-name'
+                   AND tag_value <> '' AND day >= %s GROUP BY 1 ORDER BY 2 DESC""", (account, date.today().replace(day=1)))
+    out["cost_by_cluster"] = [{"cluster": v, "amount": round(float(a), 2)} for v, a in cur.fetchall()]
+    out["clusters_readable"] = (snaps.get("eks_clusters") or {}).get("available", True)
+    ing = _latest_ingestion(cur, account, ok_only=True)
+    out["cluster_cost_status"] = ((ing or {}).get("coverage") or {}).get("eks_cost")
+    return out
 
 
 def view_portfolio(cur, email):
@@ -528,6 +575,31 @@ def do_action(cur, account, actor, body):
                         (actor, note, aid))
         _audit(cur, account, actor, a, aid, {"note": note})
         return {"saved": True}, None
+    if a == "propose_commitment_purchase":
+        which = body.get("which")
+        if which not in ("savings_plans", "reservations"):
+            raise BadRequest(400, "Choose savings_plans or reservations")
+        rec = ((_latest_snapshots(cur, account).get("recommendations") or {}).get("data") or {}).get(which) or {}
+        if not rec.get("available"):
+            raise BadRequest(409, "AWS has no current recommendation of this kind")
+        label = "Compute Savings Plan" if which == "savings_plans" else "EC2 reservation"
+        detail = {k: v for k, v in rec.items() if k != "available"}
+        fp = f"commitment_purchase:{which}:{rec.get('recommendation_id') or date.today().isoformat()}"
+        cur.execute("""INSERT INTO cost_opportunities (cloud_account_id, fingerprint, kind, region, resource_id, title, monthly_savings,
+                               savings_basis, confidence, risk, detail, recommendation, rollback)
+                       VALUES (%s, %s, 'commitment_purchase', 'global', %s, %s, %s, %s, 'medium', 'high', %s, %s, %s)
+                       ON CONFLICT (cloud_account_id, fingerprint) DO NOTHING RETURNING id""",
+                    (account, fp, rec.get("recommendation_id") or which,
+                     f"Buy a {label} ({rec.get('term')}, {rec.get('payment')})"[:500], rec.get("estimated_monthly_savings"),
+                     rec.get("basis"), _J(detail),
+                     f"Buy the {label} AWS recommends in the AWS console, after approval.",
+                     "A commitment cannot be cancelled; it can only be sold (reservations) or left to expire."))
+        row = cur.fetchone()
+        if not row:
+            raise BadRequest(409, "This recommendation was already proposed")
+        _audit(cur, account, actor, "propose_commitment_purchase", str(row[0]), {"which": which})
+        return {"saved": True, "opportunity_id": str(row[0]),
+                "note": "Proposed. It needs approval by a second person before anyone buys it."}, None
     if a in ("request_approval", "decide_opportunity", "mark_executed", "dismiss", "restore"):
         oid = body.get("opportunity_id")
         status, requested_by, savings = _load_opp(cur, account, oid)
@@ -647,9 +719,9 @@ def handler(event, context):
             elif v == "commitments":
                 r = view_commitments(cur, account)
             elif v == "ai":
-                r = view_subset(cur, account, E.AI_SERVICES, "AI services", AI_LIMITS)
+                r = view_ai(cur, account)
             elif v == "kubernetes":
-                r = view_subset(cur, account, E.KUBERNETES_SERVICES, "Kubernetes (EKS)", K8S_LIMITS)
+                r = view_kubernetes(cur, account)
             elif v == "ingestions":
                 cur.execute("""SELECT id, status, started_at, finished_at, trigger, requested_by, ce_requests, coverage, error
                                FROM cost_ingestions WHERE cloud_account_id = %s ORDER BY started_at DESC LIMIT 50""", (account,))

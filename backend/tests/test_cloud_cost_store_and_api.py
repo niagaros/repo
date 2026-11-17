@@ -22,7 +22,7 @@ DSN = os.environ.get("NIAGAROS_PGTEST_DSN", "")
 pytestmark = pytest.mark.skipif(not DSN, reason="blocked: set NIAGAROS_PGTEST_DSN to a throwaway PostgreSQL")
 
 SCHEMA = ["tests/fixtures/ciem_schema.sql", "tests/fixtures/security_agents_schema.sql", "migrations/024_security_audit_log.sql",
-          "migrations/026_enterprise.sql", "migrations/038_cloud_cost.sql", "migrations/038_cloud_cost.sql"]
+          "migrations/026_enterprise.sql", "migrations/038_cloud_cost.sql", "migrations/038_cloud_cost.sql", "migrations/042_cloud_cost_extras.sql"]
 TODAY = date.today()
 
 from collectors.aws.scanner import cost_handler as H  # noqa: E402
@@ -90,8 +90,16 @@ class FakeAWS:
         self.daily[((TODAY - timedelta(days=1)).isoformat(), "Amazon Elastic Compute Cloud - Compute", "Usage")] = 80.0
         self.daily[((TODAY - timedelta(days=2)).isoformat(), "Tax", "Tax")] = 3.0
 
+    savings_plans = []
+    reserved = []
+    clusters = []
+    sp_rec = {"SavingsPlansPurchaseRecommendation": {"SavingsPlansType": "COMPUTE_SP", "TermInYears": "ONE_YEAR",
+              "PaymentOption": "NO_UPFRONT", "SavingsPlansPurchaseRecommendationSummary": {
+                  "HourlyCommitmentToPurchase": "0.12", "EstimatedMonthlySavingsAmount": "21.5", "EstimatedSavingsPercentage": "18",
+                  "EstimatedROI": "22", "CurrencyCode": "USD"}}, "Metadata": {"RecommendationId": "rec-1"}}
+
     def client(self, name, region_name=None):
-        return {"ce": FakeCE, "ec2": FakeEC2, "elbv2": FakeELB}[name](self)
+        return {"ce": FakeCE, "ec2": FakeEC2, "elbv2": FakeELB, "savingsplans": FakeSP, "rds": FakeRDS, "eks": FakeEKS}[name](self)
 
 
 class _Pag:
@@ -134,10 +142,45 @@ class FakeCE:
         self.aws.ce_calls += 1
         return {"Total": {"UtilizationPercentage": "0"}}
 
+    def get_savings_plans_purchase_recommendation(self, **kw):
+        self.aws.ce_calls += 1
+        return self.aws.sp_rec
+
+    def get_reservation_purchase_recommendation(self, **kw):
+        self.aws.ce_calls += 1
+        return {"Recommendations": []}
+
     def get_savings_plans_utilization(self, **kw):
         self.aws.ce_calls += 1
         from botocore.exceptions import ClientError
         raise ClientError({"Error": {"Code": "DataUnavailableException", "Message": ""}}, "GetSavingsPlansUtilization")
+
+
+class FakeSP:
+    def __init__(self, aws):
+        self.aws = aws
+
+    def describe_savings_plans(self, **kw):
+        return {"savingsPlans": self.aws.savings_plans}
+
+
+class FakeRDS:
+    def __init__(self, aws):
+        self.aws = aws
+
+    def describe_reserved_db_instances(self, **kw):
+        return {"ReservedDBInstances": []}
+
+
+class FakeEKS:
+    def __init__(self, aws):
+        self.aws = aws
+
+    def list_clusters(self, **kw):
+        return {"clusters": [c["name"] for c in self.aws.clusters]}
+
+    def describe_cluster(self, name):
+        return {"cluster": next(c for c in self.aws.clusters if c["name"] == name)}
 
 
 class FakeEC2:
@@ -147,6 +190,9 @@ class FakeEC2:
     def get_paginator(self, op):
         return {"describe_volumes": _Pag(lambda: self.aws.volumes, "Volumes"),
                 "describe_instances": _Pag(lambda: [], "Reservations")}[op]
+
+    def describe_reserved_instances(self):
+        return {"ReservedInstances": self.aws.reserved}
 
     def describe_addresses(self):
         return {"Addresses": []}
@@ -225,7 +271,8 @@ def test_ingestion_stores_costs_alerts_and_opportunities(conn, world):
     aws = FakeAWS()
     r = ingest(conn, world["a"], aws)
     assert r["status"] == "succeeded", r
-    assert r["ce_requests"] == aws.ce_calls == 7
+    # 7 base requests + 2 purchase recommendations (there is EC2 compute usage)
+    assert r["ce_requests"] == aws.ce_calls == 9
     s, ov, _ = call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "overview"})
     assert s == 200
     assert ov["summary"]["by_service"][0]["service"] == "Amazon Elastic Compute Cloud - Compute"
@@ -355,3 +402,66 @@ def test_bad_input(conn, world):
         s, _, _ = call(conn, "owner@a.test", "POST", body={"cloud_account_id": world["a"], **body})
         assert s == 400, body
     assert call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "explorer", "from": "2026-01-01", "to": "2025-01-01"})[0] == 400
+
+
+
+def test_commitments_expiry_purchase_proposal_and_verification(conn, world):
+    aws = FakeAWS()
+    soon = (datetime.now(timezone.utc) + timedelta(days=20)).isoformat()
+    aws.savings_plans = [{"savingsPlanId": "sp-old", "savingsPlanType": "Compute", "state": "active", "start": "2025-12-01T00:00:00Z",
+                          "end": soon, "commitment": "0.10", "currency": "USD", "paymentOption": "No Upfront", "termDurationInSeconds": 31536000}]
+    ingest(conn, world["a"], aws)
+    s, c, _ = call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "commitments"})
+    assert c["inventory"][0]["id"] == "sp-old" and c["inventory"][0]["days_left"] in (19, 20)
+    assert c["recommendations"]["savings_plans"]["estimated_monthly_savings"] == 21.5
+    assert c["recommendations"]["reservations"]["available"] is False
+    s, al, _ = call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "alerts"})
+    assert any(a["kind"] == "commitment_expiry" and "sp-old" in a["title"] for a in al["alerts"])
+    s, b, _ = call(conn, "owner@a.test", "POST", body={"cloud_account_id": world["a"], "action": "propose_commitment_purchase", "which": "savings_plans"})
+    assert s == 200
+    oid = b["opportunity_id"]
+    assert call(conn, "owner@a.test", "POST", body={"cloud_account_id": world["a"], "action": "propose_commitment_purchase", "which": "savings_plans"})[0] == 409
+    assert call(conn, "owner@a.test", "POST", body={"cloud_account_id": world["a"], "action": "propose_commitment_purchase", "which": "reservations"})[0] == 409
+    call(conn, "owner@a.test", "POST", body={"cloud_account_id": world["a"], "action": "request_approval", "opportunity_id": oid})
+    call(conn, "admin2@a.test", "POST", body={"cloud_account_id": world["a"], "action": "decide_opportunity", "opportunity_id": oid, "decision": "approve"})
+    call(conn, "owner@a.test", "POST", body={"cloud_account_id": world["a"], "action": "mark_executed", "opportunity_id": oid, "note": "Bought in console"})
+    ingest(conn, world["a"], aws)  # nothing new bought yet
+    s, o, _ = call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "opportunity", "opportunity_id": oid})
+    assert o["status"] == "executed"
+    aws.savings_plans = aws.savings_plans + [{"savingsPlanId": "sp-new", "savingsPlanType": "Compute", "state": "active",
+                                               "start": (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(),  # bought after approval
+                                               "end": "2027-11-17T00:00:00Z", "commitment": "0.12", "termDurationInSeconds": 31536000}]
+    ingest(conn, world["a"], aws)
+    s, o, _ = call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "opportunity", "opportunity_id": oid})
+    assert o["status"] == "verified"
+
+
+def test_ai_cost_per_model_and_eks_clusters(conn, world):
+    aws = FakeAWS()
+    d = (TODAY - timedelta(days=3)).isoformat()
+    aws.daily[(d, "Amazon Bedrock", "Usage")] = 6.0
+    aws.daily[(d, "Amazon Elastic Container Service for Kubernetes", "Usage")] = 2.4
+    aws.clusters = [{"name": "prod", "status": "ACTIVE", "version": "1.31"}]
+    orig = FakeCE.get_cost_and_usage
+
+    def with_usage_types(self, TimePeriod, Granularity, Metrics, GroupBy, **kw):
+        if [g["Key"] for g in GroupBy] == ["SERVICE", "USAGE_TYPE"]:
+            self.aws.ce_calls += 1
+            assert kw["Filter"]["Dimensions"]["Values"] == ["Amazon Bedrock"]
+            return {"ResultsByTime": [{"TimePeriod": {"Start": TODAY.replace(day=1).isoformat()}, "Estimated": True, "Groups": [
+                {"Keys": ["Amazon Bedrock", "EUC1-Claude3Haiku-input-tokens"],
+                 "Metrics": {"UnblendedCost": {"Amount": "4", "Unit": "USD"}, "UsageQuantity": {"Amount": "1600000", "Unit": "Tokens"}}},
+                {"Keys": ["Amazon Bedrock", "EUC1-Claude3Haiku-output-tokens"],
+                 "Metrics": {"UnblendedCost": {"Amount": "2", "Unit": "USD"}, "UsageQuantity": {"Amount": "160000", "Unit": "Tokens"}}}]}]}
+        if GroupBy[0]["Type"] == "TAG" and GroupBy[0]["Key"] == "aws:eks:cluster-name":
+            self.aws.ce_calls += 1
+            return {"ResultsByTime": [{"TimePeriod": {"Start": d}, "Estimated": False, "Groups": [
+                {"Keys": ["aws:eks:cluster-name$prod"], "Metrics": {"UnblendedCost": {"Amount": "2.4", "Unit": "USD"}}}]}]}
+        return orig(self, TimePeriod, Granularity, Metrics, GroupBy, **kw)
+    with patch.object(FakeCE, "get_cost_and_usage", with_usage_types):
+        ingest(conn, world["a"], aws)
+    s, ai, _ = call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "ai"})
+    assert ai["by_model"][0] == {"model": "Claude3Haiku", "amount": 6.0}
+    assert {r["direction"] for r in ai["by_usage_type"]} == {"input tokens", "output tokens"}
+    s, k8, _ = call(conn, "owner@a.test", qs={"cloud_account_id": world["a"], "view": "kubernetes"})
+    assert k8["clusters"][0]["name"] == "prod" and k8["cost_by_cluster"][0]["cluster"] == "prod"
