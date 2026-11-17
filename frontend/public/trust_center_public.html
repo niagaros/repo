@@ -292,7 +292,10 @@ async function load(){
   const domain=customHost ? location.hostname : null;
   if(!slug && !domain){ showError('No Trust Center specified.'); return; }
   try{
-    const r=await fetch(TC_API+(slug?'?slug='+encodeURIComponent(slug):'?domain='+encodeURIComponent(domain)));
+    // Signed in to Niagaros on this site? Send the token so documents you were approved for can be downloaded.
+    // Sent explicitly (this page does not load auth-fetch.js, which would redirect anonymous visitors on a 401).
+    let tok=null; try{ tok=localStorage.getItem('niagaros_token'); }catch(e){}
+    const r=await fetch(TC_API+(slug?'?slug='+encodeURIComponent(slug):'?domain='+encodeURIComponent(domain)), tok?{headers:{Authorization:'Bearer '+tok}}:{});
     const d=await r.json();
     if(!r.ok){ showError(d.error||'This page does not exist.'); return; }
     data=d;
@@ -361,12 +364,12 @@ function docItems(){
   const docs=data.documents.filter(d=>(docFilter==='all'||(docFilter==='public')===(d.visibility==='public'))&&matches(d.title,d.category));
   if(!docs.length) return `<div class="empty-note">${data.documents.length?'No documents match.':'No documents published yet.'}</div>`;
   return docs.map(d=>{
-    const pub=d.visibility==='public', url=pub&&safeUrl(d.download_url);
+    const pub=d.visibility==='public', url=(pub||d.granted_until)&&safeUrl(d.download_url);
     return `<div class="doc">
       <div class="doc-ic">${svg(I.doc)}</div>
       <div class="doc-b"><div class="tag">${esc(d.category||'Document')}</div><div class="doc-t">${esc(d.title)}</div>${validity(d)}</div>
       <div class="doc-act" style="display:flex;align-items:center;gap:14px">
-        <span class="vis">${pub?svg(I.globe,13)+' Public':svg(I.lock,13)+' Access on request'}</span>
+        <span class="vis">${pub?svg(I.globe,13)+' Public':d.granted_until?svg(I.lock,13)+' Granted to you until '+esc(fmtDate(d.granted_until)):svg(I.lock,13)+' Access on request'}</span>
         ${url?`<a class="btn btn-sm" href="${esc(url)}" rel="noopener">Download</a>`
              :pub?'':`<button class="btn btn-sm btn-ghost" data-request="${esc(d.id)}">Request access</button>`}
       </div>

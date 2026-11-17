@@ -52,6 +52,18 @@ def _issued_by_our_pool(token):
             and claims.get("token_use") == "access")
 
 
+# MFA settings Cognito returned for the token authenticate() just verified (one entry; a Lambda handles one request
+# at a time). Used by the organization MFA check so it needs no second Cognito call.
+_MFA_BY_TOKEN = {}
+_EMAIL_VERIFIED_BY_TOKEN = {}
+
+
+def _bearer(event):
+    headers = (event or {}).get("headers") or {}
+    auth = headers.get("Authorization") or headers.get("authorization") or ""
+    return auth[7:].strip() if auth.startswith("Bearer ") else ""
+
+
 def authenticate(event):
     """Returns the caller's verified email, or None when the token is missing/invalid/expired."""
     headers = (event or {}).get("headers") or {}
@@ -66,7 +78,57 @@ def authenticate(event):
         user = cognito.get_user(AccessToken=token)
     except Exception:
         return None
+    _MFA_BY_TOKEN.clear()
+    _MFA_BY_TOKEN[token] = list(user.get("UserMFASettingList") or [])
+    _EMAIL_VERIFIED_BY_TOKEN.clear()
+    _EMAIL_VERIFIED_BY_TOKEN[token] = any(a["Name"] == "email_verified" and a["Value"] == "true" for a in user["UserAttributes"])
     return next((a["Value"] for a in user["UserAttributes"] if a["Name"] == "email"), None)
+
+
+def email_verified(event):
+    """Whether the email of the token authenticate() just verified is itself verified in Cognito (mailbox ownership).
+    False when unknown."""
+    return bool(_EMAIL_VERIFIED_BY_TOKEN.get(_bearer(event)))
+
+
+def _org_requires_mfa(conn, email):
+    """True when the caller's organization (Team settings, issue #265) requires two-step verification. An
+    environment without that column or table has no such policy."""
+    with conn.cursor() as cur:
+        cur.execute("SAVEPOINT org_mfa")
+        try:
+            cur.execute("""SELECT o.mfa_required FROM users u JOIN organizations o ON o.id = u.organization_id
+                           WHERE lower(u.email) = lower(%s) AND u.status = 'active' LIMIT 1""", (email,))
+            r = cur.fetchone()
+            cur.execute("RELEASE SAVEPOINT org_mfa")
+        except Exception as e:  # noqa: BLE001
+            cur.execute("ROLLBACK TO SAVEPOINT org_mfa")
+            # Only a missing table or column (an environment without the Team feature) means "no policy";
+            # any other failure must not silently switch enforcement off.
+            if getattr(e, "pgcode", None) in ("42P01", "42703"):
+                return False
+            raise
+    return bool(r and r[0])
+
+
+MFA_REQUIRED_MESSAGE = ("Your organization requires two-step verification. Set up an authenticator app under "
+                        "Settings > Privacy & Security, then try again.")
+
+
+def mfa_policy_denial(event, conn, email):
+    """Server-side enforcement of an organization's MFA requirement (#291): the web app already redirects, this makes
+    sure a token used directly against the API is refused too. TENANT_AUTH_ENFORCE_MFA=0 switches it off."""
+    if os.environ.get("TENANT_AUTH_ENFORCE_MFA", "1") == "0" or not _org_requires_mfa(conn, email):
+        return None
+    token = _bearer(event)
+    mfa = _MFA_BY_TOKEN.get(token)
+    if mfa is None:
+        try:
+            cognito = boto3.client("cognito-idp", region_name=os.environ.get("SECRET_REGION", "eu-west-1"))
+            mfa = list(cognito.get_user(AccessToken=token).get("UserMFASettingList") or [])
+        except Exception:  # noqa: BLE001 - cannot confirm MFA: fail closed
+            return 403, MFA_REQUIRED_MESSAGE
+    return None if "SOFTWARE_TOKEN_MFA" in mfa else (403, MFA_REQUIRED_MESSAGE)
 
 
 # POST actions that only read (everything else that is not GET counts as a change).
@@ -162,6 +224,9 @@ def guard(event, conn, qs, body, refs=None, public=None):
     email = authenticate(event)
     if not email:
         return 401, "Unauthorized"
+    denied = mfa_policy_denial(event, conn, email)
+    if denied:
+        return denied
     with conn.cursor() as cur:
         accounts = _accounts_touched(cur, qs, body, refs)
         if accounts:

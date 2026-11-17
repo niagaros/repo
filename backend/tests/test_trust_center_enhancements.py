@@ -189,3 +189,38 @@ def test_tenant_isolation_on_new_ids(conn, acct):
     assert s == 403
     s, _, _ = call(conn, "other@b.test", qs={"cloud_account_id": acct["a"], "analytics": "1"})
     assert s == 403
+
+
+def test_signed_in_visitor_sees_documents_they_were_approved_for(conn, acct):
+    s, b, _ = call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct["a"], "action": "upload_document", "title": "SOC 2 report",
+                                                       "category": "soc_report", "visibility": "restricted", "filename": "soc2.pdf",
+                                                       "file_base64": base64.b64encode(b"%PDF").decode()})
+    doc = b["id"]
+    s, r, _ = call(conn, None, "POST", body={"action": "request_access", "document_id": doc, "requester_name": "Auditor",
+                                            "requester_email": "Auditor@Client.test", "reason": "vendor review", "nda_accepted_name": "A. Uditor"})
+    with patch.object(T, "_send_approval_email", return_value=("sent", None)):
+        call(conn, "owner@a.test", "POST", body={"cloud_account_id": acct["a"], "action": "decide_access_request", "request_id": r["id"], "approve": True})
+    s, settings, _ = call(conn, "owner@a.test", qs={"cloud_account_id": acct["a"]})
+    slug = settings["settings"]["public_slug"]
+
+    def public(email):
+        event = {"httpMethod": "GET", "headers": {"Authorization": "Bearer t"} if email else {}, "queryStringParameters": {"slug": slug}}
+        s3 = MagicMock()
+        s3.generate_presigned_url.return_value = "https://s3.example/signed"
+        with patch.object(T, "_get_connection", return_value=_NoClose(conn)), patch.object(T, "_s3", return_value=s3), \
+                patch.object(T, "authenticate", return_value=email), patch.object(T, "email_verified", return_value=verified):
+            out = T.handler(event, None)
+        return json.loads(out["body"])
+    verified = False
+    unverified = {x["title"]: x for x in public("auditor@client.test")["documents"]}
+    assert "download_url" not in unverified["SOC 2 report"], "an unverified email does not prove mailbox ownership"
+    verified = True
+    anon = {d["title"]: d for d in public(None)["documents"]}
+    assert "download_url" not in anon["SOC 2 report"]
+    other = {d["title"]: d for d in public("someone@else.test")["documents"]}
+    assert "download_url" not in other["SOC 2 report"]
+    mine = public("auditor@client.test")
+    d = {x["title"]: x for x in mine["documents"]}["SOC 2 report"]
+    assert d["download_url"] and d["granted_until"] and mine["viewer"] == {"signed_in": True, "granted_documents": 1}
+    s, log, _ = call(conn, "owner@a.test", qs={"cloud_account_id": acct["a"], "audit_log": "1"})
+    assert any(e["action"] == "granted_view" and e["actor"] == "auditor@client.test" for e in log["entries"])

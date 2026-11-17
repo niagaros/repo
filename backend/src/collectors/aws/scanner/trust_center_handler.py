@@ -937,7 +937,20 @@ def _events(cur, cloud_account_id):
 
 # ── public view ───────────────────────────────────────────────────────
 
-def _get_public_view(cur, slug):
+def _granted_documents(cur, cloud_account_id, viewer_email):
+    """Restricted documents this signed-in visitor was approved for (approved request, token not expired), so they
+    can download them after signing in instead of keeping the e-mailed link."""
+    if not viewer_email:
+        return {}
+    cur.execute("""SELECT DISTINCT ON (r.document_id) r.document_id, r.token_expires_at FROM trust_document_access_requests r
+                   JOIN trust_documents d ON d.id = r.document_id
+                   WHERE d.cloud_account_id = %s AND lower(r.requester_email) = lower(%s) AND r.status = 'approved'
+                     AND r.token_expires_at > NOW()
+                   ORDER BY r.document_id, r.token_expires_at DESC""", (cloud_account_id, viewer_email))
+    return {str(d): exp for d, exp in cur.fetchall()}
+
+
+def _get_public_view(cur, slug, viewer_email=None):
     cur.execute("""
         SELECT cloud_account_id, is_public, company_name, intro_text, contact_email, brand_color, logo_s3_key,
                status_page_url, security_contact, disclosure_policy
@@ -954,6 +967,7 @@ def _get_public_view(cur, slug):
 
     compliance = _get_compliance_status(cur, cloud_account_id)
 
+    granted = _granted_documents(cur, cloud_account_id, viewer_email)
     cur.execute("""
         SELECT id, title, category, visibility, valid_from, valid_until, issuer FROM trust_documents
         WHERE cloud_account_id = %s ORDER BY category, title
@@ -968,6 +982,11 @@ def _get_public_view(cur, slug):
             entry["download_url"] = _presign_latest(cur, doc_id)
             cur.execute("INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'viewed')",
                         (doc_id, "public"))
+        elif str(doc_id) in granted:
+            entry["download_url"] = _presign_latest(cur, doc_id)
+            entry["granted_until"] = granted[str(doc_id)].isoformat()
+            cur.execute("INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'granted_view')",
+                        (doc_id, viewer_email))
         documents.append(entry)
 
     security_posture = _get_security_posture(cur)
@@ -980,6 +999,7 @@ def _get_public_view(cur, slug):
         "branding": {"brand_color": brand_color, "logo_url": _presign_key(logo_key) if logo_key else None},
         "status": {"status_page_url": status_page_url, "updates": _list_updates(cur, cloud_account_id, public=True)},
         "disclosure": {"security_contact": security_contact, "policy": disclosure_policy},
+        "viewer": {"signed_in": bool(viewer_email), "granted_documents": len(granted)},
     }
 
 
@@ -1011,7 +1031,7 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
 
 
-from collectors.aws.scanner.tenant_auth import authenticate, guard
+from collectors.aws.scanner.tenant_auth import authenticate, email_verified, guard
 
 REFS = {
     "document_id": (
@@ -1022,6 +1042,11 @@ REFS = {
     ),
     "update_id": "SELECT cloud_account_id FROM trust_center_updates WHERE id = %s",
 }
+
+
+def _bearer_present(event):
+    h = (event or {}).get("headers") or {}
+    return (h.get("Authorization") or h.get("authorization") or "").startswith("Bearer ")
 
 
 def _is_public(event, qs, body):
@@ -1084,7 +1109,12 @@ def handler(event, context):
         if method == "GET":
             if qs.get("slug") or qs.get("domain"):
                 slug = qs.get("slug") or _slug_for_domain(conn.cursor(), qs["domain"])
-                view = _get_public_view(conn.cursor(), slug) if slug else None
+                # Optional sign-in: a valid token unlocks documents this person was approved for; an invalid or
+                # missing one simply gives the anonymous view (never an error on a public page).
+                viewer = authenticate(event) if _bearer_present(event) else None
+                if viewer and not email_verified(event):
+                    viewer = None  # access by email needs a verified mailbox, like the e-mailed link
+                view = _get_public_view(conn.cursor(), slug, viewer) if slug else None
                 conn.commit()
                 if not view:
                     return _resp(404, {"error": "This Trust Center page does not exist or is not public."})
