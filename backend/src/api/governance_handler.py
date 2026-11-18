@@ -294,6 +294,22 @@ def _audit_trail(db: Database, organization_id: str, limit: int = 100) -> list:
     return [{"action": r[0], "details": r[1], "created_at": _iso(r[2]), "actor_email": r[3]} for r in rows]
 
 
+def _record_if_done(db: Database, organization_id: str, step: str, done: bool) -> bool:
+    """Records the first moment this step was complete, and hands `done` straight back so it can
+    wrap a value on its way out.
+
+    Steps 1 to 4 are recorded centrally in team_handler.handle_onboarding_progress, which reads
+    every signal from the database itself. These three cannot be: what counts as done lives in
+    this module, in the *_step_complete functions. So the recording happens at the same place and
+    from the same read, and never from something a client asserted.
+
+    Writing here is safe. record_step_completion commits on its own, and every call site below
+    either holds no open transaction or has already committed its own."""
+    if done:
+        db.record_step_completion(organization_id, step)
+    return done
+
+
 # ── step 5: compliance ───────────────────────────────────────────────────
 
 def _frameworks(db: Database, organization_id: str) -> list:
@@ -329,7 +345,8 @@ def compliance_step_complete(db: Database, organization_id: str) -> bool:
     with db.conn.cursor() as cur:
         cur.execute("SELECT 1 FROM compliance_frameworks WHERE organization_id = %s AND enabled LIMIT 1",
                     (organization_id,))
-        return cur.fetchone() is not None
+        done = cur.fetchone() is not None
+    return _record_if_done(db, organization_id, "compliance", done)
 
 
 def handle_get_compliance(caller: dict, db: Database, event: dict) -> dict:
@@ -504,7 +521,8 @@ def governance_step_complete(db: Database, organization_id: str) -> bool:
         cur.execute("""SELECT 1 FROM governance_policies
                        WHERE organization_id = %s AND NOT retired AND published_version IS NOT NULL LIMIT 1""",
                     (organization_id,))
-        return cur.fetchone() is not None
+        done = cur.fetchone() is not None
+    return _record_if_done(db, organization_id, "governance", done)
 
 
 def handle_get_governance(caller: dict, db: Database, event: dict) -> dict:
@@ -789,7 +807,7 @@ def _training_state(db: Database, organization_id: str) -> dict:
 
 
 def training_step_complete(db: Database, organization_id: str) -> bool:
-    return _training_state(db, organization_id)["complete"]
+    return _record_if_done(db, organization_id, "training", _training_state(db, organization_id)["complete"])
 
 
 def handle_get_training(caller: dict, db: Database, event: dict) -> dict:
@@ -802,7 +820,7 @@ def handle_get_training(caller: dict, db: Database, event: dict) -> dict:
         # Only roles that manage the program see everyone's progress.
         "progress": state["progress"] if caller["role"] in GOVERNANCE_AUTHORS else None,
         "member_count": state["member_count"],
-        "step_complete": state["complete"],
+        "step_complete": _record_if_done(db, caller["organization_id"], "training", state["complete"]),
     })
 
 

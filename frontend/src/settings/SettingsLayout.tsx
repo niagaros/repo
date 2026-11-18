@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useAnalyticsAccess } from "../analytics/useAnalyticsAccess";
 
 const NiagarosLogo = ({ size = 32 }: { size?: number }) => (
   <svg width={size * 0.75} height={size} viewBox="0 0 36 48" fill="none">
@@ -25,6 +26,15 @@ const SUB_NAV = [
   { label: "Security Training",   href: "/settings/training" },
 ];
 
+// Pages that read across every customer rather than showing one their own
+// data. They live in their own group, under their own heading, because the
+// eleven entries above are a customer's settings and these are not. The group
+// is drawn only for a caller the backend has already said may open it — see
+// useAnalyticsAccess, which asks rather than deciding.
+const PLATFORM_NAV = [
+  { label: "Onboarding Analytics", href: "/analytics/onboarding" },
+];
+
 interface Props {
   children: React.ReactNode;
   breadcrumb?: string;
@@ -36,6 +46,32 @@ interface Props {
 export default function SettingsLayout({ children, breadcrumb, title, subtitle, email }: Props) {
   const navigate  = useNavigate();
   const { pathname } = useLocation();
+  // Only ask once the page has a signed-in user to ask about.
+  const mayViewPlatform = useAnalyticsAccess(Boolean(email));
+
+  const subItem = (item: { label: string; href: string }) => {
+    const isActive = pathname === item.href;
+    return (
+      <div
+        key={item.href}
+        className="nsl-sub"
+        onClick={() => navigate(item.href)}
+        style={{
+          display: "flex", alignItems: "center",
+          padding: "7px 14px 7px 40px", margin: "1px 6px", borderRadius: 7,
+          background: isActive ? "#16131e" : "transparent",
+          color: isActive ? "#f1f5f9" : "#6b7280",
+          fontSize: 12.5, fontWeight: isActive ? 600 : 400,
+          cursor: "pointer", transition: "all 0.12s",
+          borderLeft: isActive ? "2px solid #ef4444" : "2px solid transparent",
+        }}
+        onMouseEnter={e => { if (!isActive) { const el = e.currentTarget as HTMLElement; el.style.color = "#d1d5db"; el.style.background = "#111520"; } }}
+        onMouseLeave={e => { if (!isActive) { const el = e.currentTarget as HTMLElement; el.style.color = "#6b7280"; el.style.background = "transparent"; } }}
+      >
+        {item.label}
+      </div>
+    );
+  };
 
   return (
     <div className="nsl-root" style={{ display: "flex", minHeight: "100vh", background: "#080b12", fontFamily: "system-ui,-apple-system,sans-serif" }}>
@@ -95,29 +131,24 @@ export default function SettingsLayout({ children, breadcrumb, title, subtitle, 
           </div>
 
           {/* Sub-items */}
-          {SUB_NAV.map(item => {
-            const isActive = pathname === item.href;
-            return (
-              <div
-                key={item.href}
-                className="nsl-sub"
-                onClick={() => navigate(item.href)}
-                style={{
-                  display: "flex", alignItems: "center",
-                  padding: "7px 14px 7px 40px", margin: "1px 6px", borderRadius: 7,
-                  background: isActive ? "#16131e" : "transparent",
-                  color: isActive ? "#f1f5f9" : "#6b7280",
-                  fontSize: 12.5, fontWeight: isActive ? 600 : 400,
-                  cursor: "pointer", transition: "all 0.12s",
-                  borderLeft: isActive ? "2px solid #ef4444" : "2px solid transparent",
-                }}
-                onMouseEnter={e => { if (!isActive) { const el = e.currentTarget as HTMLElement; el.style.color = "#d1d5db"; el.style.background = "#111520"; } }}
-                onMouseLeave={e => { if (!isActive) { const el = e.currentTarget as HTMLElement; el.style.color = "#6b7280"; el.style.background = "transparent"; } }}
-              >
-                {item.label}
+          {SUB_NAV.map(subItem)}
+
+          {/* Platform group — not a customer's settings, and drawn only for
+              someone the backend has confirmed may open it. While the answer
+              is still on its way (null) nothing is drawn, so the entry does
+              not appear and vanish again. */}
+          {mayViewPlatform === true && (
+            <>
+              <div style={{
+                margin: "16px 6px 2px", padding: "0 14px",
+                fontSize: 9.5, fontWeight: 700, letterSpacing: "0.14em",
+                color: "#334155", textTransform: "uppercase",
+              }}>
+                Niagaros only
               </div>
-            );
-          })}
+              {PLATFORM_NAV.map(subItem)}
+            </>
+          )}
         </nav>
       </aside>
 
