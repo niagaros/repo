@@ -732,6 +732,26 @@
         "frontend/src/settings/AccountRecovery.tsx",
         "frontend/src/App.tsx"
       ]
+    },
+    {
+      "id": "E2E-MKT-001",
+      "domain": "Integrations",
+      "name": "Marketplace: search/browse/filter 340+ integrations -> detail with real permissions -> guided connect via the existing setup pages -> connection health from real data -> request/withdraw, review, report problem, AI recommendations, tenant-isolated",
+      "severity": "P2",
+      "exists": true,
+      "environment": "catalog unit tests + PostgreSQL store/API tests + browser UI",
+      "owner": "Product",
+      "frequency": "Every PR",
+      "dependencies": [
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/marketplace_lib.py",
+        "backend/src/collectors/aws/scanner/marketplace_handler.py",
+        "backend/src/collectors/aws/scanner/marketplace_catalog.csv",
+        "backend/migrations/043_marketplace.sql",
+        "frontend/public/marketplace.html"
+      ]
     }
   ]
 }

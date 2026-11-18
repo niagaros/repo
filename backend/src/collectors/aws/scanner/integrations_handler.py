@@ -280,6 +280,24 @@ def _set_credential_state(conn, integration_id, ok, error=None):
         return False
 
 
+def _notify_rejected(conn, integ):
+    """Issue #90: "Given an integration fails ... the administrator is notified and the failure is recorded."
+    Only on the first rejection (the caller checks that), so a broken token does not raise an alert per click.
+    Never raises: the provider error is what the caller has to see."""
+    try:
+        from collectors.aws.scanner.notification_lib import create_notification
+        name = "Jira" if integ.get("provider") == "jira" else "Monday.com"
+        # create_notification de-duplicates per event type and resource link for 24 hours; a link per integration keeps
+        # a Monday alert from being swallowed by an earlier Jira one.
+        create_notification(conn, integ["cloud_account_id"], domain="platform", event_type="integration_credentials_rejected",
+                            severity="P2", title=f"{name} no longer accepts the Niagaros token",
+                            description=f"Ticket creation and synchronization with {name} have stopped. Reconnect it "
+                                        "with a new API token on the Integrations page.",
+                            resource_link=f"integrations.html?account_id={integ['cloud_account_id']}&integration_id={integ['id']}")
+    except Exception:
+        logger.exception("could not notify about the rejected %s token", integ.get("provider"))
+
+
 def _provider_call(conn, integ, actor, fn):
     """Runs a call against Jira or Monday and keeps the credential's state in
     step with the answer.
@@ -296,6 +314,7 @@ def _provider_call(conn, integ, actor, fn):
             if first:
                 _log(conn, integ["cloud_account_id"], "credentials_rejected", actor,
                      integration=integ, status_code=e.status_code)
+                _notify_rejected(conn, integ)
         raise
     _set_credential_state(conn, integ["id"], ok=True)
     return out
