@@ -195,7 +195,7 @@ INTERNET_FACING_CHECK_PREFIXES = ("S3.2.", "S3.3.")
 INTENTS = (
     "highest_risks", "account_compliance", "accounts_compliance", "internet_facing_critical",
     "framework_status", "vendor_certs_expiring", "audit_evidence_needed",
-    "executive_summary", "general_data_question", "unsupported",
+    "executive_summary", "integration_recommendations", "general_data_question", "unsupported",
 )
 
 BOOTSTRAP_SQL = """
@@ -368,15 +368,18 @@ def _classify_intent(question, has_page_context=False, previous_question=None):
         "- audit_evidence_needed: asking what evidence is needed for an audit of one named framework.\n"
         "- executive_summary: asking for an executive summary, board-level report, or an overview "
         "of security/compliance/risk posture across the whole account (not one specific framework).\n"
+        "- integration_recommendations: asking which integrations/tools to connect to Niagaros, which "
+        "integrations are missing, what an integration would add, or why a connected integration is not "
+        "working (the Niagaros Marketplace).\n"
         "- general_data_question: ANY OTHER real question about this account's security/compliance "
         "posture, controls, or Niagaros' own published security practices that isn't a better fit "
         "above — e.g. RPO/RTO targets, backup policy, encryption details, a specific control's exact "
         "requirement, incident response process, access control policy. This is the default for a "
         "specific, on-topic question, not 'unsupported' — a real answer will be searched for and it "
         "is fine to say plainly if nothing is found.\n"
-        "- unsupported: ONLY for things with no real connection to this AWS-only product at all — "
-        "a different cloud provider, a tool this platform doesn't integrate with (Jira, ServiceNow, "
-        "Okta, CrowdStrike, Wiz, etc.), or asking the agent to autonomously change/remediate "
+        "- unsupported: ONLY for things with no real connection to this product at all — reading data "
+        "out of a different cloud provider or out of a tool such as ServiceNow, Okta, CrowdStrike or Wiz "
+        "(asking whether to CONNECT such a tool is integration_recommendations), or asking the agent to autonomously change/remediate "
         "infrastructure itself. Do not use this just because a question isn't in the list above — "
         "use general_data_question instead.\n\n"
         f"If the question names a specific framework, match it to exactly one of these short "
@@ -753,6 +756,25 @@ def _q_general_data_question(cur, account_id, question, previous_question=None):
     return result
 
 
+def _q_integration_recommendations(cur, account_id):
+    """Issue #90: the AI Agent recommends integrations from the same facts the Marketplace page shows -- what is
+    connected, whether it works, and the account's own open checks. Only catalog entries marked Available are
+    offered as connectable; the rest are offered as something to request."""
+    from collectors.aws.scanner import marketplace_lib as M
+    state = M.connections(cur, account_id)
+    cat = M.by_slug()
+    return {
+        "connected_integrations": [{"name": cat[s]["name"], "health": v["health"], "health_reason": v["health_reason"]}
+                                   for s, v in state.items()],
+        "recommendations": [{"integration": r["name"], "action": r["kind"], "reason": r["reason"],
+                             "alternatives": [cat[a]["name"] for a in r.get("alternatives", []) if a in cat]}
+                            for r in M.recommendations(cur, account_id, state)],
+        "available_to_connect_now": [e["name"] for e in M.catalog() if e["status"] == "Available"],
+        "catalog_size": len(cat),
+        "where": "Marketplace page (marketplace.html); integrations that are not available yet can be requested there.",
+    }
+
+
 def _run_intent(cur, account_id, intent, framework_code, question=None, previous_question=None):
     if intent == "highest_risks":
         return {"findings": _q_highest_risks(cur, account_id)}
@@ -768,6 +790,8 @@ def _run_intent(cur, account_id, intent, framework_code, question=None, previous
         return {"certificates": _q_vendor_certs_expiring(cur, account_id)}
     if intent == "audit_evidence_needed":
         return _q_audit_evidence_needed(cur, account_id, framework_code)
+    if intent == "integration_recommendations":
+        return _q_integration_recommendations(cur, account_id)
     if intent == "general_data_question":
         return _q_general_data_question(cur, account_id, question, previous_question)
     return None
@@ -775,10 +799,10 @@ def _run_intent(cur, account_id, intent, framework_code, question=None, previous
 
 UNSUPPORTED_MESSAGE = (
     "I can only answer questions with a real connection to this AWS account's own data or "
-    "Niagaros' published security documentation — I'm not connected to Azure, GCP, Kubernetes, "
-    "GitHub, GitLab, Jira, ServiceNow, Okta, CrowdStrike, Wiz, or any other tool, and I can't "
-    "autonomously change your infrastructure. Ask me about your risks, compliance, vendors, "
-    "audits, or specific security practices — I'll search for a real answer."
+    "Niagaros' published security documentation — I can't read data out of Azure, GCP, GitLab, "
+    "ServiceNow, Okta, CrowdStrike, Wiz or other tools, and I can't autonomously change your "
+    "infrastructure. Ask me about your risks, compliance, vendors, audits, or specific security "
+    "practices, or which integrations you should connect — I'll search for a real answer."
 )
 
 

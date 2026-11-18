@@ -14,6 +14,7 @@ const NiagarosLogo = ({ size = 32 }: { size?: number }) => (
 
 const SUB_NAV = [
   { label: "Personal Data",       href: "/settings/personal-data" },
+  { label: "Privacy & Security",  href: "/settings/user/privacy-security" },
   { label: "Company",             href: "/settings/company" },
   { label: "Rate Plans",          href: "/settings/plans" },
   { label: "Cloud Infrastructure", href: "/settings/infrastructure" },

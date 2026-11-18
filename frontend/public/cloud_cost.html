@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Cloud Cost</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700;flex-wrap:wrap}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer}
+header a:hover{color:#fff}
+main{max-width:1180px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 14px;max-width:820px;line-height:1.55}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;overflow-x:auto}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+h3{font-size:12.5px;font-weight:700;margin:14px 0 6px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:10px;line-height:1.5}
+label{display:block;font-size:11.5px;font-weight:600;color:#374151;margin:10px 0 4px}
+input,select,textarea{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;background:#fff}
+textarea{width:100%;min-height:60px}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+button.danger{background:#fff;color:#b91c1c;border:1px solid #fecaca;padding:5px 10px;font-size:11.5px}
+button:disabled{opacity:.55;cursor:default}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid #e5e7eb}
+.tab{background:none;color:#6b7280;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 10px;font-weight:600}
+.tab.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.metric{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+.metric .v{font-size:22px;font-weight:800}
+.metric .l{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.35}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6;vertical-align:top}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr.click{cursor:pointer} tr.click:hover td{background:#f9fafb}
+.chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;background:#f3f4f6;color:#374151}
+.c-red{background:#fee2e2;color:#991b1b}.c-orange{background:#ffedd5;color:#9a3412}.c-yellow{background:#fef9c3;color:#854d0e}
+.c-green{background:#dcfce7;color:#166534}.c-blue{background:#dbeafe;color:#1e40af}.c-purple{background:#ede9fe;color:#5b21b6}.c-grey{background:#f3f4f6;color:#4b5563}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:12px}
+.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:12px;line-height:1.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chart{width:100%;height:160px;display:block}
+.chart rect.b{fill:#3b82f6}.chart rect.e{fill:#93c5fd}
+.legend{font-size:11px;color:#6b7280;display:flex;gap:14px;margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.drawer{position:fixed;top:0;right:0;width:min(680px,100%);height:100%;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.15);z-index:20;overflow-y:auto;padding:20px 22px 60px;display:none}
+.drawer.open{display:block}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:19;display:none}.shade.open{display:block}
+.kv{display:grid;grid-template-columns:160px 1fr;gap:4px 10px;font-size:12px}.kv div:nth-child(odd){color:#6b7280}
+.form{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-top:10px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:30}
+@media (max-width:700px){header{padding:12px 16px}main{padding:0 12px 40px}.kv{grid-template-columns:1fr}.hide-sm{display:none}}
+@media print{header,.tabs,button,.drawer,.shade{display:none!important}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-crit">Zero Critical Issues</a></header>
+<main>
+  <h1>Cloud Cost</h1>
+  <div class="sub">What this AWS account costs, where the money goes, what can be saved and what changed — read from your
+    AWS bill through the read-only scanner role. Every amount says where it comes from; savings are only shown when they
+    can be calculated from an AWS list price.</div>
+  <div id="banner"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="explorer">Cost explorer</button>
+    <button class="tab" data-tab="optimize">Optimization</button>
+    <button class="tab" data-tab="monitors">Budgets &amp; alerts</button>
+    <button class="tab" data-tab="commitments">Commitments</button>
+    <button class="tab" data-tab="ai">AI cost</button>
+    <button class="tab" data-tab="k8s">Kubernetes</button>
+    <button class="tab" data-tab="accounts">All accounts</button>
+    <button class="tab" data-tab="settings">Settings &amp; history</button>
+  </div>
+  <div id="view"><div class="empty">Loading…</div></div>
+</main>
+<div class="shade" id="shade"></div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" tabindex="-1"></div>
+<div class="toast" id="toast"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+const accountId = params.get('account_id');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 4500); };
+const q = () => accountId ? '?account_id=' + encodeURIComponent(accountId) : '';
+const fmt = d => d ? new Date(d).toLocaleString() : '—';
+const day = d => d ? new Date(d).toLocaleDateString() : '—';
+const chip = (cls, text) => `<span class="chip ${cls}">${esc(text)}</span>`;
+let CUR = 'USD';
+const money = (v, c) => v == null ? '—' : new Intl.NumberFormat(undefined, {style: 'currency', currency: c || CUR, maximumFractionDigits: 2}).format(v);
+document.getElementById('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q();
+document.getElementById('nav-crit').onclick = () => location.href = 'critical_issues.html' + q();
+
+async function api(view, extra) {
+  const u = new URLSearchParams({view, ...(accountId ? {cloud_account_id: accountId} : {}), ...(extra || {})});
+  const r = await fetch(API + 'cloud-cost?' + u.toString());
+  if (view === 'export' && (extra || {}).format === 'csv') { if (!r.ok) throw new Error('Export failed (HTTP ' + r.status + ').'); return r.text(); }
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Could not load this page (HTTP ' + r.status + ').');
+  return b;
+}
+async function post(body) {
+  const r = await fetch(API + 'cloud-cost', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cloud_account_id: accountId, ...body})});
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Something went wrong (HTTP ' + r.status + ').');
+  return b;
+}
+
+let tab = (location.hash || '#overview').slice(1);
+const view = document.getElementById('view');
+function setTab(t) { tab = t; history.replaceState(null, '', '#' + t); document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t)); render(); }
+document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+if (tab === 'alerts') tab = 'monitors';
+async function render() {
+  if (!accountId && tab !== 'accounts') { view.innerHTML = '<div class="err">Open this page from the dashboard so Niagaros knows which cloud account to show.</div>'; return; }
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try { await (RENDER[tab] || RENDER.overview)(); }
+  catch (e) { view.innerHTML = `<div class="err">${esc(e.message)} <button class="ghost" data-act="reload">Try again</button></div>`; }
+}
+const metric = (v, l) => `<div class="metric"><div class="v">${esc(v ?? '—')}</div><div class="l">${esc(l)}</div></div>`;
+const STATE = {ok: ['c-green', 'read'], not_enabled: ['c-yellow', 'not enabled at AWS'], not_configured: ['c-grey', 'not configured'],
+  no_access: ['c-red', 'no access'], no_data: ['c-grey', 'no data'], error: ['c-red', 'error']};
+const stateChip = s => { const x = STATE[s] || ['c-grey', s]; return chip(x[0], x[1]); };
+
+function chart(daily) {
+  if (!daily.length) return '<div class="empty">No daily data yet.</div>';
+  const W = 900, H = 150, max = Math.max(...daily.map(d => d.amount), 0.01), bw = W / daily.length;
+  const bars = daily.map((d, i) => { const h = Math.max(1, d.amount / max * (H - 10));
+    return `<rect class="${d.estimated ? 'e' : 'b'}" x="${(i * bw + 1).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${h.toFixed(1)}"><title>${esc(d.day)}: ${esc(money(d.amount))}${d.estimated ? ' (AWS estimate)' : ''}</title></rect>`; }).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Daily cost">${bars}</svg>
+    <div class="legend"><span><i style="background:#3b82f6"></i>Final</span><span><i style="background:#93c5fd"></i>AWS estimate (may still change)</span><span>Peak ${esc(money(max))}</span></div>`;
+}
+
+function enablePanel(s) {
+  return `<div class="card"><h2>Turn on cost data for this account</h2>
+    <div class="note">Niagaros reads your bill from AWS Cost Explorer with the read-only scanner role you already connected. AWS charges
+      <b>$0.01 per Cost Explorer request</b> to this AWS account; a refresh makes about 8 requests and runs once a day (about $2–3 per month),
+      plus any refresh you start yourself (at most once an hour). Nothing in your account is changed.</div>
+    <label><input type="checkbox" id="accept" style="width:auto"> I understand that AWS bills these requests to this account</label>
+    <div class="row" style="margin-top:10px"><button data-act="enable">Turn on cost data</button></div></div>`;
+}
+
+const RENDER = {
+  async overview() {
+    const d = await api('overview');
+    const s = d.summary, li = d.latest_ingestion, ok = d.last_successful_ingestion;
+    CUR = s.currency || 'USD';
+    let banner = '';
+    if (li && li.status === 'running') banner += '<div class="warn">A refresh is running. Reload in a minute.</div>';
+    if (li && li.status === 'failed') banner += `<div class="err">The last refresh on ${esc(fmt(li.started_at))} failed: ${esc(li.error || 'unknown error')}.${ok ? ' Showing the last successful data.' : ''}</div>`;
+    document.getElementById('banner').innerHTML = banner;
+    if (!d.settings.enabled && !ok) { view.innerHTML = enablePanel(d.settings); return; }
+    const cov = (ok || {}).coverage || {};
+    view.innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:10px"><div class="note" style="margin:0">Last refresh ${esc(fmt((ok || {}).finished_at))} ·
+        latest day with data ${esc(day(d.freshness.latest_day_with_data))} · ${esc(d.freshness.note)}</div>
+        ${d.settings.enabled ? '<button class="ghost" data-act="refresh">Refresh now</button>' : chip('c-grey', 'cost data turned off — history kept')}</div>
+      <div class="grid">
+        ${metric(money(s.month_to_date), 'This month so far (all record types)')}
+        ${metric(money(s.month_to_date_usage), 'Of which usage')}
+        ${metric(d.forecast ? money(d.forecast.month_total) : null, 'Forecast for the whole month (AWS)')}
+        ${metric(money(s.previous_month), 'Last month')}
+        ${metric(d.opportunities.count, 'Savings opportunities')}
+        ${metric(money(d.opportunities.monthly_savings_known), 'Potential monthly savings (known prices)')}
+        ${metric(money(d.opportunities.verified_monthly_savings), 'Savings verified after a change')}
+        ${metric(d.alerts.open, 'Open cost alerts')}
+      </div>
+      <div class="card"><h2>Daily cost, last 90 days</h2>${chart(s.daily)}</div>
+      <div class="card"><h2>Where the money goes this month</h2>
+        <div class="note">Open security findings are shown for services Niagaros also scans, so cost and risk can be weighed together.</div>
+        ${s.by_service.length ? `<table><thead><tr><th>Service</th><th class="n">This month</th><th>Open security findings</th></tr></thead><tbody>${s.by_service.map(x =>
+          `<tr><td>${esc(x.service)}</td><td class="n">${esc(money(x.amount))}</td><td>${x.open_findings ? Object.entries(x.open_findings).map(([k, v]) => chip(k === 'CRITICAL' ? 'c-red' : k === 'HIGH' ? 'c-orange' : 'c-yellow', k.toLowerCase() + ' ' + v)).join(' ') : '<span class="note">not scanned</span>'}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No cost this month yet.</div>'}
+        <h3>By record type</h3><div class="row">${s.by_record_type.map(x => chip(x.record_type === 'Usage' ? 'c-blue' : 'c-grey', x.record_type + ': ' + money(x.amount))).join(' ') || '—'}</div>
+        <div class="note" style="margin-top:6px">Tax, credits, refunds and discounts are kept apart from usage, as AWS reports them.</div></div>
+      ${d.allocation ? `<div class="card"><h2>Allocation by tag “${esc(d.allocation.tag_key)}”</h2>
+        <div class="note">Untagged spend is shown as unallocated (${esc(d.allocation.unallocated_pct ?? 0)}% this month); it is never spread over the tagged values.</div>
+        <table><tbody>${d.allocation.values.map(v => `<tr><td>${v.value ? esc(v.value) : chip('c-orange', 'unallocated')}</td><td class="n">${esc(money(v.amount))}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="card"><h2>What was read</h2><table><tbody>${Object.entries(cov).filter(([k, v]) => v && typeof v === 'object' && !Array.isArray(v) && k !== 'idle_resources' && k !== 'commitments').map(([k, v]) =>
+          `<tr><td>${esc(k.replace(/_/g, ' '))}</td><td>${stateChip(v.state)}</td><td class="note">${esc(v.reason || '')}</td></tr>`).join('')}</tbody></table>
+        <div class="note">${esc(d.charges_note)}</div></div>`;
+  },
+  async explorer() {
+    const f = RENDER._ex || (RENDER._ex = {group: 'service', from: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), to: new Date(Date.now() + 864e5).toISOString().slice(0, 10)});
+    const d = await api('explorer', f);
+    view.innerHTML = `<div class="card"><div class="row" style="margin-bottom:10px">
+        <select data-ex="group" aria-label="Group by"><option value="service">By service</option><option value="record_type">By record type</option><option value="day">By day</option><option value="tag">By allocation tag</option></select>
+        <input type="date" data-ex="from" aria-label="From" value="${esc(f.from)}"><input type="date" data-ex="to" aria-label="To" value="${esc(f.to)}">
+        <button class="ghost" data-act="ex-csv">Download CSV of all daily records</button></div>
+      ${d.rows.length ? `<table><thead><tr><th>${esc({service: 'Service', record_type: 'Record type', day: 'Day', tag: 'Tag value'}[d.group])}</th><th class="n">Cost</th><th></th></tr></thead><tbody>${d.rows.map(r =>
+        `<tr><td>${esc(d.group === 'day' ? day(r.key) : r.key)}</td><td class="n">${esc(money(r.amount, r.currency))}</td><td>${r.estimated ? chip('c-yellow', 'includes AWS estimates') : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No cost in this period.</div>'}
+      ${d.total != null ? `<div class="note" style="margin-top:8px">Total ${esc(money(d.total))}</div>` : ''}</div>`;
+    view.querySelectorAll('[data-ex]').forEach(el => { if (el.tagName === 'SELECT') el.value = f[el.dataset.ex]; el.onchange = () => { f[el.dataset.ex] = el.value; render(); }; });
+  },
+  async optimize() {
+    const d = await api('opportunities');
+    const SC = {observed: ['c-blue', 'new'], approval_requested: ['c-yellow', 'waiting for approval'], approved: ['c-purple', 'approved'],
+      executed: ['c-yellow', 'done – awaiting check'], verified: ['c-green', 'verified'], dismissed: ['c-grey', 'dismissed'], gone: ['c-grey', 'no longer found']};
+    view.innerHTML = `<div class="card"><h2>Savings opportunities</h2>
+      <div class="note">Found in the regions where this account has spend. Niagaros never changes anything: a person asks for approval, someone else approves,
+        your team makes the change, and the next refresh checks that the resource is gone.</div>
+      ${d.opportunities.length ? `<table><thead><tr><th>Opportunity</th><th>Status</th><th class="n">Per month</th><th class="hide-sm">Confidence</th><th class="hide-sm">Region</th></tr></thead><tbody>${d.opportunities.map(o =>
+        `<tr class="click" data-opp="${esc(o.id)}"><td>${esc(o.title)}<div class="note" style="margin:0">${esc(o.savings_basis)}</div></td><td>${chip((SC[o.status] || ['c-grey'])[0], (SC[o.status] || [, o.status])[1])}</td>
+         <td class="n">${o.monthly_savings != null ? esc(money(o.monthly_savings)) : 'unknown'}</td><td class="hide-sm">${esc(o.confidence)}</td><td class="hide-sm">${esc(o.region)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No idle resources found.</div>'}
+      </div>
+      <div class="card"><h2>Coverage</h2><table><tbody>${Object.entries(d.coverage || {}).map(([r, v]) => `<tr><td>${esc(r)}</td><td>${stateChip(v.state)}</td><td class="note">${v.state === 'ok' ? esc(v.volumes + ' volumes, ' + v.addresses + ' addresses, ' + v.instances + ' instances, ' + v.load_balancers + ' load balancers') : esc(v.reason || '')}</td></tr>`).join('') || '<tr><td class="empty">Not read yet.</td></tr>'}</tbody></table>
+        <h3>Not covered yet</h3><div class="note">${d.not_covered.map(esc).join(' · ')}. ${esc(d.related_findings_note)}</div>
+        <button class="ghost" data-act="opp-csv">Download CSV</button></div>`;
+  },
+  async monitors() {
+    const [b, a] = await Promise.all([api('budgets'), api('alerts')]);
+    CUR = b.currency || CUR;
+    view.innerHTML = `<div class="card"><h2>Budgets</h2><div class="note">Checked at every refresh against month-to-date cost${b.forecast_month_total != null ? ' and the AWS forecast (' + esc(money(b.forecast_month_total)) + ' this month)' : ''}.</div>
+      ${b.budgets.length ? `<table><thead><tr><th>Name</th><th class="n">Budget</th><th class="n">Used</th><th>Thresholds</th><th>Forecast</th><th></th></tr></thead><tbody>${b.budgets.map(x =>
+        `<tr><td>${esc(x.name)} ${x.active ? '' : chip('c-grey', 'archived')}</td><td class="n">${esc(money(x.monthly_amount, x.currency))}</td><td class="n">${esc(x.used_pct)}%</td>
+         <td>${x.thresholds.map(t => chip(x.crossed.includes(t) ? 'c-red' : 'c-grey', t + '%')).join(' ')}</td><td>${x.forecast_over ? chip('c-red', 'will be exceeded') : chip('c-green', 'within')}</td>
+         <td>${x.active ? `<button class="ghost" data-act="archive-budget" data-id="${esc(x.id)}">Archive</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No budgets yet.</div>'}
+      <div class="form"><h3 style="margin-top:0">New monthly budget</h3><div class="row">
+        <input id="b-name" placeholder="Name" aria-label="Budget name"><input id="b-amount" type="number" min="1" step="1" placeholder="Amount" aria-label="Monthly amount">
+        <input id="b-th" value="50,80,100" aria-label="Thresholds in percent"><label style="margin:0"><input type="checkbox" id="b-fc" checked style="width:auto"> alert on forecast</label>
+        <button data-act="create-budget">Add budget</button></div></div></div>
+      <div class="card"><h2>Alerts</h2>${a.alerts.length ? `<table><thead><tr><th>Alert</th><th>Kind</th><th>Status</th><th class="hide-sm">Raised</th><th></th></tr></thead><tbody>${a.alerts.map(x =>
+        `<tr><td>${esc(x.title)}${x.detail && x.detail.method ? `<div class="note" style="margin:0">${esc(x.detail.method)}</div>` : ''}${x.note ? `<div class="note" style="margin:0">Note: ${esc(x.note)}</div>` : ''}</td>
+         <td>${esc(x.kind.replace('_', ' '))}</td><td>${chip(x.status === 'open' ? 'c-red' : x.status === 'acknowledged' ? 'c-yellow' : 'c-green', x.status)}</td><td class="hide-sm">${esc(fmt(x.created_at))}</td>
+         <td>${x.status === 'open' ? `<button class="ghost" data-act="ack" data-id="${esc(x.id)}">Acknowledge</button>` : ''}${x.status !== 'resolved' ? `<button class="ghost" data-act="resolve" data-id="${esc(x.id)}">Resolve</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No alerts.</div>'}</div>`;
+  },
+  async commitments() {
+    const d = await api('commitments');
+    view.innerHTML = `<div class="card"><h2>Reservations and Savings Plans (${esc(d.period)})</h2>
+      ${d.commitments.length ? d.commitments.map(c => `<h3>${esc(c.kind === 'reservations' ? 'Reserved Instances' : 'Savings Plans')}</h3>${c.available
+        ? `<div class="kv">${Object.entries(c.data || {}).filter(([, v]) => typeof v !== 'object').slice(0, 12).map(([k, v]) => `<div>${esc(k)}</div><div>${esc(v)}</div>`).join('') || '<div>No commitments</div><div></div>'}</div>`
+        : `<div class="note">${stateChip(c.data.state)} ${esc(c.data.reason || '')}</div>`}<div class="note">Read ${esc(fmt(c.read_at))}</div>`).join('') : '<div class="empty">Not read yet.</div>'}
+      <h3>Not covered yet</h3><div class="note">${d.not_covered.map(esc).join(' · ')}</div></div>
+      <div class="card"><h2>Your commitments</h2><div class="note">${esc(d.expiry_rule || '')}. Read ${esc(fmt(d.inventory_read_at))}.</div>
+      ${d.inventory_complete === false ? '<div class="warn">Not every commitment could be read at the last refresh, so this list may be incomplete.</div>' : ''}
+      ${(d.inventory || []).length ? `<table><thead><tr><th>Commitment</th><th>Type</th><th>State</th><th>Ends</th><th class="n">Days left</th><th class="hide-sm">Size</th></tr></thead><tbody>${d.inventory.map(c =>
+        `<tr><td>${esc(c.kind.replace(/_/g, ' '))}<div class="note" style="margin:0">${esc(c.id)}</div></td><td>${esc(c.type || '')}</td><td>${esc(c.state || '')}</td>
+         <td>${esc(day(c.end))}</td><td class="n">${c.days_left != null ? (c.days_left <= 90 && c.days_left >= 0 && /active/i.test(c.state || '') ? chip(c.days_left <= 30 ? 'c-red' : 'c-orange', c.days_left) : esc(c.days_left)) : '—'}</td>
+         <td class="hide-sm">${esc(c.commitment || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No Savings Plans or reservations in this account.</div>'}</div>
+      <div class="card"><h2>Purchase recommendations from AWS</h2><div class="note">AWS's own estimate based on the last 30 days. Buying is a financial commitment: propose it, a second person approves, you buy it in AWS, and the next refresh checks that it exists.</div>
+      ${d.recommendations && d.recommendations.note ? `<div class="note">${esc(d.recommendations.note)}</div>` : ''}
+      ${[['savings_plans', 'Compute Savings Plan'], ['reservations', 'EC2 reservation']].map(([k, l]) => { const r = (d.recommendations || {})[k]; if (!r) return '';
+        return `<h3>${esc(l)}</h3>` + (r.available ? `<div class="kv"><div>Estimated saving</div><div>${esc(money(r.estimated_monthly_savings, r.currency))} per month (${esc(r.estimated_savings_pct)}%)</div>
+          ${r.hourly_commitment != null ? `<div>Commitment</div><div>${esc(r.hourly_commitment)} per hour, ${esc(r.term)}, ${esc(r.payment)}</div>` : ''}<div>Source</div><div>${esc(r.basis)}</div></div>
+          <button class="ghost" data-act="propose" data-which="${k}" style="margin-top:8px">Propose this purchase for approval</button>` : `<div class="note">${esc(r.reason || 'Not available')}</div>`); }).join('')}
+      ${(d.proposals || []).length ? `<h3>Proposals</h3><table><tbody>${d.proposals.map(p => `<tr class="click" data-opp="${esc(p.id)}"><td>${esc(p.title)}</td><td>${esc(p.status.replace('_', ' '))}</td><td class="n">${esc(money(p.monthly_savings))}</td></tr>`).join('')}</tbody></table>` : ''}</div>`;
+  },
+  async ai() { await subsetView('ai'); },
+  async k8s() { await subsetView('kubernetes'); },
+  async accounts() {
+    const d = await api('portfolio');
+    view.innerHTML = `<div class="card"><h2>Accounts you can see</h2>${d.accounts.length ? `<table><thead><tr><th>Account</th><th>Business units</th><th>Cost data</th><th class="n">This month</th><th>Last refresh</th></tr></thead><tbody>${d.accounts.map(a =>
+      `<tr class="click" data-account="${esc(a.cloud_account_id)}"><td>${esc(a.account_name)}</td><td>${esc(a.business_units || '—')}</td><td>${a.enabled ? chip('c-green', 'on') : chip('c-grey', 'off')}</td>
+       <td class="n">${a.month_to_date != null ? esc(money(a.month_to_date, a.currency)) : '—'}</td><td>${esc(fmt(a.last_ingested))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No accounts.</div>'}</div>`;
+  },
+  async settings() {
+    const [o, h, au] = await Promise.all([api('overview'), api('ingestions'), api('audit')]);
+    const s = o.settings;
+    view.innerHTML = `<div class="card"><h2>Settings</h2>
+      <label for="s-tag">Cost-allocation tag key (for example team or cost-center; must be activated as a cost allocation tag in AWS Billing)</label><input id="s-tag" value="${esc(s.allocation_tag_key || '')}">
+      <label for="s-min">Ignore anomalies smaller than (per day)</label><input id="s-min" type="number" min="0" step="1" value="${esc(s.anomaly_min_amount)}">
+      <div class="row" style="margin-top:10px"><button data-act="save-settings">Save</button>
+      ${s.enabled ? '<button class="danger" data-act="disable">Turn off cost data</button>' : '<button class="ghost" data-act="tab-overview">Turn on cost data</button>'}</div>
+      <div class="note" style="margin-top:8px">${s.enabled ? 'Turned on by ' + esc(s.enabled_by) + ' on ' + esc(fmt(s.enabled_at)) + '.' : 'Cost data is off.'}</div></div>
+      <div class="card"><h2>Refresh history</h2>${h.ingestions.length ? `<table><thead><tr><th>Started</th><th>Status</th><th>Trigger</th><th class="n">Paid AWS requests</th><th class="hide-sm">Detail</th></tr></thead><tbody>${h.ingestions.map(i =>
+        `<tr><td>${esc(fmt(i.started_at))}</td><td>${chip(i.status === 'succeeded' ? 'c-green' : i.status === 'partial' ? 'c-yellow' : i.status === 'running' ? 'c-blue' : 'c-red', i.status)}</td><td>${esc(i.trigger)}${i.requested_by ? ' by ' + esc(i.requested_by) : ''}</td>
+         <td class="n">${esc(i.ce_requests)}</td><td class="hide-sm note">${esc(i.error || ((i.coverage || {}).revisions ? (i.coverage.revisions + ' amounts corrected by AWS') : ''))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No refreshes yet.</div>'}
+      ${h.revisions.length ? `<h3>Amounts AWS corrected later</h3><table><thead><tr><th>Day</th><th>Service</th><th>Type</th><th class="n">Before</th><th class="n">After</th><th>Seen</th></tr></thead><tbody>${h.revisions.map(r =>
+        `<tr><td>${esc(day(r.day))}</td><td>${esc(r.service)}</td><td>${esc(r.record_type)}</td><td class="n">${esc(money(r.old))}</td><td class="n">${esc(money(r.new))}</td><td>${esc(fmt(r.at))}</td></tr>`).join('')}</tbody></table>` : ''}</div>
+      <div class="card"><h2>Audit log</h2>${au.audit.length ? `<table><tbody>${au.audit.map(x => `<tr><td>${esc(fmt(x.at))}</td><td>${esc(x.actor)}</td><td>${esc(x.action.replace(/_/g, ' '))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nothing yet.</div>'}
+      <div class="row" style="margin-top:10px"><button class="ghost" data-act="export-json">Download daily cost as JSON (with method)</button></div></div>`;
+  },
+};
+async function subsetView(which) {
+  const d = await api(which);
+  CUR = d.summary.currency || CUR;
+  view.innerHTML = `<div class="card"><h2>${esc(d.label)}</h2>
+    <div class="grid">${metric(money(d.summary.month_to_date), 'This month')}${metric(money(d.summary.previous_month), 'Last month')}</div>
+    ${d.summary.by_service.length ? `<table><tbody>${d.summary.by_service.map(x => `<tr><td>${esc(x.service)}</td><td class="n">${esc(money(x.amount))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No spend on these services in the last 90 days.</div>'}
+    ${d.summary.daily.length ? chart(d.summary.daily) : ''}
+    ${d.by_model ? `<h3>Per model (last 90 days)</h3><div class="note">${esc(d.model_basis)}.</div>${d.by_model.length ? `<table><tbody>${d.by_model.map(m => `<tr><td>${esc(m.model)}</td><td class="n">${esc(money(m.amount))}</td></tr>`).join('')}</tbody></table>
+      <h3>Per usage type</h3><table><thead><tr><th>Month</th><th>Model</th><th>What</th><th class="n">Quantity</th><th class="n">Cost</th></tr></thead><tbody>${d.by_usage_type.map(r => `<tr><td>${esc(day(r.month))}</td><td>${esc(r.model)}</td><td>${esc(r.direction)}</td><td class="n">${esc(r.quantity != null ? r.quantity.toLocaleString() + ' ' + (r.unit || '') : '—')}</td><td class="n">${esc(money(r.amount))}${r.estimated ? ' *' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No AI usage types recorded.</div>'}` : ''}
+    ${d.clusters ? `<h3>Clusters</h3>${d.clusters_readable === false ? '<div class="warn">Clusters could not be read in every region at the last refresh.</div>' : ''}${d.clusters.length ? `<table><tbody>${d.clusters.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.region)}</td><td>${esc(c.status)}</td><td>Kubernetes ${esc(c.version)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No EKS clusters found in the regions with spend.</div>'}
+      <h3>Cost per cluster this month</h3>${(d.cost_by_cluster || []).length ? `<table><tbody>${d.cost_by_cluster.map(c => `<tr><td>${esc(c.cluster)}</td><td class="n">${esc(money(c.amount))}</td></tr>`).join('')}</tbody></table>` : `<div class="note">${esc((d.cluster_cost_status || {}).reason || 'Not available yet')}.</div>`}` : ''}
+    <h3>Services counted</h3><div class="note">${d.services_considered.map(esc).join(', ')}</div>
+    <h3>What this does not show</h3><div class="note">${d.limitations.map(esc).join('. ')}.</div></div>`;
+}
+
+const drawer = document.getElementById('drawer'), shade = document.getElementById('shade');
+let currentOpp = null;
+function closeDrawer() { drawer.classList.remove('open'); shade.classList.remove('open'); }
+shade.onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+async function openOpp(id) {
+  currentOpp = id;
+  drawer.innerHTML = '<div class="empty">Loading…</div>'; drawer.classList.add('open'); shade.classList.add('open'); drawer.focus();
+  try {
+    const o = await api('opportunity', {opportunity_id: id});
+    const det = o.detail || {};
+    drawer.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(o.title)}</h2><button class="ghost" data-act="close">Close</button></div>
+      <div class="kv" style="margin-top:10px">
+        <div>Resource</div><div>${esc(o.resource_id)} (${esc(o.region)})</div>
+        <div>Monthly saving</div><div>${o.monthly_savings != null ? esc(money(o.monthly_savings)) : 'unknown'}</div>
+        <div>How it is calculated</div><div>${esc(o.savings_basis)}</div>
+        <div>Confidence / risk</div><div>${esc(o.confidence)} / ${esc(o.risk)}</div>
+        <div>Status</div><div>${esc(o.status.replace('_', ' '))}</div>
+        <div>First / last seen</div><div>${esc(fmt(o.first_seen))} / ${esc(fmt(o.last_seen))}</div>
+        ${o.requested_by ? `<div>Approval asked by</div><div>${esc(o.requested_by)}</div>` : ''}
+        ${o.approved_by ? `<div>Approved by</div><div>${esc(o.approved_by)} (${esc(fmt(o.approved_at))})</div>` : ''}
+        ${o.executed_by ? `<div>Done by</div><div>${esc(o.executed_by)}: ${esc(o.execution_note)}</div>` : ''}
+        ${o.verified_at ? `<div>Verified</div><div>${esc(fmt(o.verified_at))} — the resource is gone</div>` : ''}
+      </div>
+      <h3>Recommendation</h3><div class="note" style="color:#111827">${esc(o.recommendation)}</div>
+      <h3>Rollback</h3><div class="note" style="color:#111827">${esc(o.rollback)}</div>
+      <h3>Evidence (from AWS)</h3><div class="kv">${Object.entries(det).filter(([, v]) => typeof v !== 'object').map(([k, v]) => `<div>${esc(k.replace(/_/g, ' '))}</div><div>${esc(v)}</div>`).join('')}</div>
+      ${o.status === 'observed' ? '<div class="form"><button data-act="req">Ask for approval</button> <button class="danger" data-act="dismiss">Dismiss…</button></div>' : ''}
+      ${o.status === 'approval_requested' ? '<div class="form"><div class="note">Someone other than the requester must decide.</div><button data-act="approve">Approve</button> <button class="danger" data-act="reject">Reject</button></div>' : ''}
+      ${o.status === 'approved' ? '<div class="form"><label for="o-note" style="margin-top:0">What did you change in AWS?</label><textarea id="o-note"></textarea><button data-act="executed" style="margin-top:6px">Mark as done</button></div>' : ''}
+      ${o.status === 'dismissed' ? `<div class="form"><div class="note">Dismissed: ${esc(o.dismissed_reason)}</div><button class="ghost" data-act="restore">Restore</button></div>` : ''}
+      <h3>History</h3>${o.history.map(h => `<div class="note" style="margin:0 0 4px">${esc(fmt(h.at))} · ${esc(h.actor)} · ${esc(h.action.replace(/_/g, ' '))}</div>`).join('') || '<div class="note">—</div>'}`;
+  } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; }
+}
+const val = id => (document.getElementById(id) || {}).value || '';
+async function act(body, after) { try { const r = await post(body); toast(r.note || 'Saved'); if (after) await after(); else render(); } catch (e) { toast(e.message); } }
+async function download(what, format) {
+  try { const d = await api('export', {what, format});
+    const blob = new Blob([format === 'json' ? JSON.stringify(d, null, 2) : d], {type: format === 'json' ? 'application/json' : 'text/csv'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cloud-cost-' + what + '.' + format; a.click(); }
+  catch (e) { toast(e.message); }
+}
+document.addEventListener('click', e => {
+  const r = e.target.closest('tr[data-opp]'); if (r) { openOpp(r.dataset.opp); return; }
+  const ac = e.target.closest('tr[data-account]'); if (ac) { location.href = 'cloud_cost.html?account_id=' + encodeURIComponent(ac.dataset.account); return; }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = b.dataset.id;
+  switch (b.dataset.act) {
+    case 'reload': render(); break;
+    case 'close': closeDrawer(); break;
+    case 'tab-overview': setTab('overview'); break;
+    case 'enable': if (!document.getElementById('accept').checked) { toast('Tick the box to confirm the AWS charges first.'); break; } act({action: 'enable', accept_charges: true}); break;
+    case 'disable': if (confirm('Turn off cost data? Stored history is kept.')) act({action: 'disable'}); break;
+    case 'refresh': act({action: 'refresh'}); break;
+    case 'save-settings': act({action: 'save_settings', allocation_tag_key: val('s-tag').trim(), anomaly_min_amount: Number(val('s-min'))}); break;
+    case 'create-budget': act({action: 'create_budget', name: val('b-name'), monthly_amount: Number(val('b-amount')),
+      thresholds: val('b-th').split(',').map(x => Number(x.trim())).filter(Boolean), forecast_alert: document.getElementById('b-fc').checked}); break;
+    case 'archive-budget': act({action: 'archive_budget', budget_id: id}); break;
+    case 'ack': act({action: 'acknowledge_alert', alert_id: id}); break;
+    case 'resolve': { const note = prompt('How was this resolved?'); if (note) act({action: 'resolve_alert', alert_id: id, note}); break; }
+    case 'req': act({action: 'request_approval', opportunity_id: currentOpp}, () => openOpp(currentOpp)); break;
+    case 'approve': act({action: 'decide_opportunity', opportunity_id: currentOpp, decision: 'approve'}, () => openOpp(currentOpp)); break;
+    case 'reject': act({action: 'decide_opportunity', opportunity_id: currentOpp, decision: 'reject'}, () => openOpp(currentOpp)); break;
+    case 'executed': act({action: 'mark_executed', opportunity_id: currentOpp, note: val('o-note')}, () => openOpp(currentOpp)); break;
+    case 'dismiss': { const reason = prompt('Why is this not worth doing?'); if (reason) act({action: 'dismiss', opportunity_id: currentOpp, reason}, () => openOpp(currentOpp)); break; }
+    case 'restore': act({action: 'restore', opportunity_id: currentOpp}, () => openOpp(currentOpp)); break;
+    case 'ex-csv': download('daily', 'csv'); break;
+    case 'opp-csv': download('opportunities', 'csv'); break;
+    case 'export-json': download('daily', 'json'); break;
+    case 'propose': act({action: 'propose_commitment_purchase', which: b.dataset.which}); break;
+  }
+});
+render();
+</script>
+</body>
+</html>

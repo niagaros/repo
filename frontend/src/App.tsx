@@ -193,6 +193,10 @@ const niagarosTheme: Theme = {
   },
 };
 
+function isPasskeyDomain(): boolean {
+  return location.hostname === "niagaros.com" || location.hostname.endsWith(".niagaros.com");
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 type AppState =
   | { kind: "loading" }
@@ -246,6 +250,13 @@ function AppContent() {
         await acceptPendingInvite(token);
         // Een auditor hoort in zijn portaal en niet in deze stroom.
         if (await redirectAuditorToPortal(token)) return;
+        // Back to the page that asked for a fresh sign-in (step-up on Privacy & Security, #291). Only own settings
+        // paths are accepted, so this can never become an open redirect.
+        const ret = sessionStorage.getItem("niagaros_return_to");
+        if (ret) {
+          sessionStorage.removeItem("niagaros_return_to");
+          if (/^\/settings\/[a-z/-]+$/.test(ret)) { window.location.href = ret; return; }
+        }
       }
 
       const resp = await fetch(`${getApiBase()}/get-dashboard-data?email=${encodeURIComponent(email)}`, {
@@ -370,6 +381,9 @@ export default function App() {
         }}>
           <Authenticator
             loginMechanisms={["email"]}
+            // Passkey sign-in (#291) only where passkeys are registered (relying party niagaros.com). Password stays
+            // the default; email and SMS codes are not offered as a sign-in method.
+            {...(isPasskeyDomain() ? { passwordless: { preferredAuthMethod: "PASSWORD" as const, hiddenAuthMethods: ["EMAIL_OTP" as const, "SMS_OTP" as const], passkeyRegistrationPrompts: false } } : {})}
             signUpAttributes={["email"]}
             formFields={{
               signIn: {
@@ -400,6 +414,7 @@ export default function App() {
               Footer() {
                 return (
                   <div style={{ textAlign: "center", paddingBottom: 16, color: "#1e2d3d", fontSize: 11 }}>
+                    <a href="/account-recovery" style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 8 }}>Lost your authenticator app?</a>
                     © {new Date().getFullYear()} Niagaros · All rights reserved
                   </div>
                 );

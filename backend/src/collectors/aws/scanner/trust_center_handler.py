@@ -33,6 +33,8 @@ import logging
 import os
 import re
 import secrets
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 
 import boto3
@@ -61,6 +63,16 @@ ACCESS_TOKEN_DAYS = 30
 # outcome (sent/failed + AWS's own error) is recorded rather than assumed.
 SES_SENDER_EMAIL = os.environ.get("SES_SENDER_EMAIL", "bottomclipzz@gmail.com")
 FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "https://main.d3joqokkaynfaq.amplifyapp.com")
+
+# Custom Trust Center domain (#272), e.g. trust.domits.com. A domain only serves an account's Trust Center after the
+# account proved it controls that domain's DNS with a TXT record holding a per-account token, so no tenant can claim
+# another company's hostname. Niagaros's own application hosts can never be claimed.
+DOMAIN_RE = re.compile(r"^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+RESERVED_HOSTS = {"niagaros.com", "www.niagaros.com", "app.niagaros.com", "auth.niagaros.com", "api.niagaros.com",
+                  "developers.niagaros.com", "docs.niagaros.com", "status.niagaros.com", "security.niagaros.com"}
+DOMAIN_TXT_PREFIX = "_niagaros-trust"
+DOMAIN_TXT_VALUE = "niagaros-verify={token}"
+DOH_URL = os.environ.get("DOH_URL", "https://cloudflare-dns.com/dns-query")
 
 # Matches the "Trust Documents" list in issue #258's proposed solution.
 DOCUMENT_CATEGORIES = {
@@ -202,11 +214,73 @@ ALTER TABLE trust_document_access_requests
     ADD COLUMN IF NOT EXISTS nda_accepted_at   TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS email_status      VARCHAR(20),
     ADD COLUMN IF NOT EXISTS email_error       TEXT;
+ALTER TABLE trust_center_settings
+    ADD COLUMN IF NOT EXISTS custom_domain             VARCHAR(253),
+    ADD COLUMN IF NOT EXISTS custom_domain_token       VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS custom_domain_verified_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS trust_center_settings_verified_domain_uq
+    ON trust_center_settings (custom_domain) WHERE custom_domain_verified_at IS NOT NULL;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_center_settings TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_documents TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_document_versions TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_document_access_requests TO cspm_lambda;
 GRANT SELECT, INSERT, UPDATE, DELETE ON trust_document_audit_log TO cspm_lambda;
+-- migration 040 (validity, notices, branding, disclosure, analytics, settings history); kept identical to the file
+ALTER TABLE trust_documents
+    ADD COLUMN IF NOT EXISTS valid_from   DATE,
+    ADD COLUMN IF NOT EXISTS valid_until  DATE,
+    ADD COLUMN IF NOT EXISTS issuer       VARCHAR(255);
+DO $$ BEGIN
+    ALTER TABLE trust_documents ADD CONSTRAINT trust_documents_validity_order
+        CHECK (valid_from IS NULL OR valid_until IS NULL OR valid_from <= valid_until);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+ALTER TABLE trust_center_settings
+    ADD COLUMN IF NOT EXISTS brand_color        VARCHAR(7),
+    ADD COLUMN IF NOT EXISTS logo_s3_key        VARCHAR(500),
+    ADD COLUMN IF NOT EXISTS status_page_url    VARCHAR(500),
+    ADD COLUMN IF NOT EXISTS security_contact   VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS disclosure_policy  TEXT;
+DO $$ BEGIN
+    ALTER TABLE trust_center_settings ADD CONSTRAINT trust_center_brand_color_hex
+        CHECK (brand_color IS NULL OR brand_color ~ '^#[0-9a-fA-F]{6}$');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS trust_center_updates (
+    id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    cloud_account_id UUID         NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    kind             VARCHAR(12)  NOT NULL CHECK (kind IN ('incident', 'maintenance', 'notice')),
+    title            VARCHAR(200) NOT NULL,
+    body             TEXT,
+    starts_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    resolved_at      TIMESTAMPTZ,
+    published_by     VARCHAR(255) NOT NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS trust_center_updates_account_idx ON trust_center_updates (cloud_account_id, starts_at DESC);
+
+CREATE TABLE IF NOT EXISTS trust_center_page_views (
+    cloud_account_id UUID         NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    day              DATE         NOT NULL,
+    views            INTEGER      NOT NULL DEFAULT 0,
+    PRIMARY KEY (cloud_account_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS trust_center_events (
+    id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    cloud_account_id UUID         NOT NULL REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    actor            VARCHAR(255) NOT NULL,
+    action           VARCHAR(40)  NOT NULL,
+    detail           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    at               TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS trust_center_events_account_idx ON trust_center_events (cloud_account_id, at DESC);
+
+GRANT SELECT, INSERT, UPDATE ON trust_center_updates, trust_center_page_views TO cspm_lambda;
+GRANT SELECT, INSERT ON trust_center_events TO cspm_lambda;
+REVOKE UPDATE, DELETE, TRUNCATE ON trust_center_events FROM cspm_lambda;
+REVOKE DELETE, TRUNCATE ON trust_center_updates, trust_center_page_views FROM cspm_lambda;
 """
 
 
@@ -254,31 +328,201 @@ def _send_approval_email(requester_email, requester_name, document_title, compan
 
 # ── settings ──────────────────────────────────────────────────────────
 
+SETTINGS_COLUMNS = ("cloud_account_id, is_public, public_slug, company_name, intro_text, contact_email, "
+                    "custom_domain, custom_domain_token, custom_domain_verified_at, brand_color, logo_s3_key, "
+                    "status_page_url, security_contact, disclosure_policy")
+EXPIRY_WARNING_DAYS = 30
+UPDATE_KINDS = ("incident", "maintenance", "notice")
+LOGO_MAX_BYTES = 300_000
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
+
+
+def _settings_dict(row):
+    domain, token, verified_at = row[6], row[7], row[8]
+    return {"cloud_account_id": str(row[0]), "is_public": row[1], "public_slug": row[2],
+            "company_name": row[3], "intro_text": row[4], "contact_email": row[5],
+            "custom_domain": _domain_info(domain, token, verified_at),
+            "brand_color": row[9], "logo_url": _presign_key(row[10]) if row[10] else None,
+            "status_page_url": row[11], "security_contact": row[12], "disclosure_policy": row[13]}
+
+
+def _presign_key(key, expires_in=3600):
+    try:
+        return _s3().generate_presigned_url("get_object", Params={"Bucket": DOCS_BUCKET, "Key": key}, ExpiresIn=expires_in)
+    except Exception:  # noqa: BLE001 - a logo that cannot be signed is simply not shown
+        return None
+
+
+def _doc_status(valid_until, today=None, valid_from=None):
+    """Validity of a certificate or report, recalculated at every read (never stored), so an expired document can
+    never keep showing as current, and one that has not started yet never shows as valid."""
+    today = today or datetime.now(timezone.utc).date()
+    if valid_from and valid_from > today:
+        return "not_yet_valid"
+    if not valid_until:
+        return "no_expiry"
+    if valid_until < today:
+        return "expired"
+    if (valid_until - today).days <= EXPIRY_WARNING_DAYS:
+        return "expiring_soon"
+    return "valid"
+
+
+def _account_event(cur, cloud_account_id, actor, action, detail=None):
+    cur.execute("INSERT INTO trust_center_events (cloud_account_id, actor, action, detail) VALUES (%s, %s, %s, %s)",
+                (cloud_account_id, actor, action, Json(detail or {})))
+
+
 def _get_or_create_settings(cur, cloud_account_id):
-    cur.execute("""
-        SELECT cloud_account_id, is_public, public_slug, company_name, intro_text, contact_email
-        FROM trust_center_settings WHERE cloud_account_id = %s
-    """, (cloud_account_id,))
+    cur.execute(f"SELECT {SETTINGS_COLUMNS} FROM trust_center_settings WHERE cloud_account_id = %s", (cloud_account_id,))
     row = cur.fetchone()
     if row:
-        return {"cloud_account_id": str(row[0]), "is_public": row[1], "public_slug": row[2],
-                "company_name": row[3], "intro_text": row[4], "contact_email": row[5]}
+        return _settings_dict(row)
     slug = secrets.token_urlsafe(6).lower().replace("_", "").replace("-", "")
-    cur.execute("""
+    cur.execute(f"""
         INSERT INTO trust_center_settings (cloud_account_id, public_slug)
         VALUES (%s, %s)
-        RETURNING cloud_account_id, is_public, public_slug, company_name, intro_text, contact_email
+        RETURNING {SETTINGS_COLUMNS}
     """, (cloud_account_id, slug))
+    return _settings_dict(cur.fetchone())
+
+
+# ── custom domain ─────────────────────────────────────────────────────
+
+def normalise_domain(value):
+    """'Trust.Domits.com.' -> 'trust.domits.com'; None when it is not a plain hostname Niagaros may serve."""
+    if not isinstance(value, str):
+        return None
+    host = value.strip().lower().rstrip(".")
+    if not DOMAIN_RE.match(host) or host in RESERVED_HOSTS or host.endswith(".amplifyapp.com"):
+        return None
+    return host
+
+
+def _domain_info(domain, token, verified_at):
+    if not domain:
+        return None
+    return {"domain": domain, "verified": verified_at is not None,
+            "verified_at": verified_at.isoformat() if verified_at else None,
+            "txt_name": f"{DOMAIN_TXT_PREFIX}.{domain}", "txt_value": DOMAIN_TXT_VALUE.format(token=token)}
+
+
+def _dns_lookup(name, rtype):
+    """Answers for one DNS name over DNS-over-HTTPS (the Lambda has no resolver library). Raises on a lookup failure,
+    so 'could not check' is never reported as 'record absent'."""
+    req = urllib.request.Request(f"{DOH_URL}?name={urllib.parse.quote(name)}&type={rtype}",
+                                 headers={"Accept": "application/dns-json"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        data = json.loads(r.read())
+    if data.get("Status") not in (0, 3):          # 0 NOERROR, 3 NXDOMAIN (no such name: a real "absent")
+        raise RuntimeError(f"DNS lookup failed with status {data.get('Status')}")
+    want = {"TXT": 16, "CNAME": 5}[rtype]
+    return [a.get("data", "").strip('"') for a in data.get("Answer") or [] if a.get("type") == want]
+
+
+def _set_custom_domain(conn, cloud_account_id, raw):
+    """Set (or with an empty value remove) the account's custom domain. A new domain always starts unverified with a
+    fresh token."""
+    with conn:
+        with conn.cursor() as cur:
+            _get_or_create_settings(cur, cloud_account_id)
+            if not (raw or "").strip():
+                cur.execute("""UPDATE trust_center_settings SET custom_domain = NULL, custom_domain_token = NULL,
+                               custom_domain_verified_at = NULL, updated_at = NOW() WHERE cloud_account_id = %s""",
+                            (cloud_account_id,))
+                return None
+            domain = normalise_domain(raw)
+            if not domain:
+                raise ValueError("Enter a hostname such as trust.yourcompany.com, without https:// or a path.")
+            cur.execute("SELECT custom_domain FROM trust_center_settings WHERE cloud_account_id = %s", (cloud_account_id,))
+            if cur.fetchone()[0] == domain:
+                return _get_or_create_settings(cur, cloud_account_id)["custom_domain"]
+            cur.execute("""UPDATE trust_center_settings SET custom_domain = %s, custom_domain_token = %s,
+                           custom_domain_verified_at = NULL, updated_at = NOW() WHERE cloud_account_id = %s""",
+                        (domain, secrets.token_hex(16), cloud_account_id))
+            return _get_or_create_settings(cur, cloud_account_id)["custom_domain"]
+
+
+def _verify_custom_domain(conn, cloud_account_id):
+    """Check the TXT record. Returns (http_status, body)."""
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT custom_domain, custom_domain_token FROM trust_center_settings
+                           WHERE cloud_account_id = %s FOR UPDATE""", (cloud_account_id,))
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return 400, {"error": "Set a custom domain first."}
+            domain, token = row
+            info = _domain_info(domain, token, None)
+            try:
+                txt = _dns_lookup(info["txt_name"], "TXT")
+            except Exception as e:
+                logger.warning("DNS lookup for %s failed: %s", info["txt_name"], e)
+                return 503, {"error": "The DNS check could not be completed right now. Please try again in a minute."}
+            if info["txt_value"] not in txt:
+                # a removed record ends the verification, so the stored state always matches what DNS shows now
+                cur.execute("""UPDATE trust_center_settings SET custom_domain_verified_at = NULL, updated_at = NOW()
+                               WHERE cloud_account_id = %s AND custom_domain_verified_at IS NOT NULL""", (cloud_account_id,))
+                return 200, {"verified": False, "custom_domain": info,
+                             "message": f"The TXT record {info['txt_name']} was not found yet. DNS changes can take up to an hour."}
+            cur.execute("""SELECT 1 FROM trust_center_settings WHERE custom_domain = %s
+                           AND custom_domain_verified_at IS NOT NULL AND cloud_account_id <> %s""", (domain, cloud_account_id))
+            if cur.fetchone():
+                return 409, {"error": "This domain is already connected to another Trust Center."}
+            cur.execute("""UPDATE trust_center_settings SET custom_domain_verified_at = NOW(), updated_at = NOW()
+                           WHERE cloud_account_id = %s AND custom_domain_verified_at IS NULL""", (cloud_account_id,))
+            return 200, {"verified": True, "custom_domain": _get_or_create_settings(cur, cloud_account_id)["custom_domain"]}
+
+
+def _slug_for_domain(cur, host):
+    domain = normalise_domain(host)
+    if not domain:
+        return None
+    cur.execute("""SELECT public_slug FROM trust_center_settings
+                   WHERE custom_domain = %s AND custom_domain_verified_at IS NOT NULL""", (domain,))
     row = cur.fetchone()
-    return {"cloud_account_id": str(row[0]), "is_public": row[1], "public_slug": row[2],
-            "company_name": row[3], "intro_text": row[4], "contact_email": row[5]}
+    return row[0] if row else None
 
 
-def _update_settings(conn, cloud_account_id, is_public=None, company_name=None, intro_text=None, contact_email=None):
+def _validate_settings(body):
+    """Raises ValueError with a user-facing message; returns the cleaned optional fields."""
+    out = {}
+    if body.get("brand_color") not in (None, ""):
+        if not _HEX_RE.match(str(body["brand_color"])):
+            raise ValueError("Brand colour must look like #1D4ED8")
+        out["brand_color"] = body["brand_color"]
+    elif "brand_color" in body:
+        out["brand_color"] = None
+    if body.get("status_page_url") not in (None, ""):
+        u = urllib.parse.urlparse(str(body["status_page_url"]).strip())
+        if u.scheme != "https" or not u.netloc or len(body["status_page_url"]) > 500:
+            raise ValueError("Status page must be an https:// address")
+        out["status_page_url"] = str(body["status_page_url"]).strip()
+    elif "status_page_url" in body:
+        out["status_page_url"] = None
+    if body.get("security_contact") not in (None, ""):
+        if not _EMAIL_RE.match(str(body["security_contact"]).strip()):
+            raise ValueError("Security contact must be an email address")
+        out["security_contact"] = str(body["security_contact"]).strip()
+    elif "security_contact" in body:
+        out["security_contact"] = None
+    if "disclosure_policy" in body:
+        dp = (body.get("disclosure_policy") or "").strip()
+        if len(dp) > 5000:
+            raise ValueError("The disclosure policy can be at most 5000 characters")
+        out["disclosure_policy"] = dp or None
+    return out
+
+
+def _update_settings(conn, cloud_account_id, is_public=None, company_name=None, intro_text=None, contact_email=None,
+                     extra=None, actor="Admin"):
     with conn:
         with conn.cursor() as cur:
             _get_or_create_settings(cur, cloud_account_id)
             sets, params = [], []
+            for k, v in (extra or {}).items():
+                sets.append(f"{k} = %s"); params.append(v)
             if is_public is not None:
                 sets.append("is_public = %s"); params.append(is_public)
             if company_name is not None:
@@ -288,9 +532,11 @@ def _update_settings(conn, cloud_account_id, is_public=None, company_name=None, 
             if contact_email is not None:
                 sets.append("contact_email = %s"); params.append(contact_email)
             if sets:
+                changed = [s.split(" = ")[0] for s in sets]
                 sets.append("updated_at = NOW()")
                 params.append(cloud_account_id)
                 cur.execute(f"UPDATE trust_center_settings SET {', '.join(sets)} WHERE cloud_account_id = %s", params)
+                _account_event(cur, cloud_account_id, actor, "settings_updated", {"fields": changed})
 
 
 # ── compliance status ────────────────────────────────────────────────────
@@ -341,10 +587,12 @@ def _get_compliance_status(cur, cloud_account_id):
 
 def _list_documents_admin(cur, cloud_account_id):
     cur.execute("""
-        SELECT id, title, category, visibility, created_at FROM trust_documents
+        SELECT id, title, category, visibility, created_at, valid_from, valid_until, issuer FROM trust_documents
         WHERE cloud_account_id = %s ORDER BY created_at DESC
     """, (cloud_account_id,))
-    docs = [{"id": str(r[0]), "title": r[1], "category": r[2], "visibility": r[3], "created_at": r[4].isoformat()}
+    docs = [{"id": str(r[0]), "title": r[1], "category": r[2], "visibility": r[3], "created_at": r[4].isoformat(),
+             "valid_from": r[5].isoformat() if r[5] else None, "valid_until": r[6].isoformat() if r[6] else None,
+             "issuer": r[7], "validity_status": _doc_status(r[6], valid_from=r[5])}
             for r in cur.fetchall()]
     for d in docs:
         cur.execute("""
@@ -478,6 +726,7 @@ def _decide_access_request(conn, request_id, approve, decided_by):
                         access_token = %s, token_expires_at = NOW() + (%s || ' days')::interval
                     WHERE id = %s
                 """, (decided_by, token, ACCESS_TOKEN_DAYS, request_id))
+                # Always the Niagaros host: a verified custom domain may not serve HTTPS yet
                 download_url = f"{FRONTEND_BASE_URL}/trust_center_public.html?download={document_id}&token={token}"
                 email_status, email_error = _send_approval_email(
                     requester_email, requester_name, doc_title, company_name, download_url)
@@ -551,32 +800,193 @@ def _get_public_qa_highlights(cur, cloud_account_id, limit=12):
             for r in cur.fetchall()]
 
 
+# ── validity, logo, notices, analytics ────────────────────────────────
+
+def _set_document_validity(conn, cloud_account_id, document_id, valid_from, valid_until, issuer, actor):
+    from datetime import date as _date
+
+    def d(v, what):
+        if v in (None, ""):
+            return None
+        try:
+            return _date.fromisoformat(str(v)[:10])
+        except ValueError:
+            raise ValueError(f"{what} must be a date (YYYY-MM-DD)")
+    vf, vu = d(valid_from, "Valid from"), d(valid_until, "Valid until")
+    if vf and vu and vf > vu:
+        raise ValueError("Valid from must be before valid until")
+    issuer = (issuer or "").strip()[:255] or None
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE trust_documents SET valid_from = %s, valid_until = %s, issuer = %s
+                           WHERE id = %s AND cloud_account_id = %s""", (vf, vu, issuer, document_id, cloud_account_id))
+            if cur.rowcount != 1:
+                return None
+            cur.execute("INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'validity_updated')",
+                        (document_id, actor))
+    return {"valid_from": vf.isoformat() if vf else None, "valid_until": vu.isoformat() if vu else None,
+            "validity_status": _doc_status(vu, valid_from=vf)}
+
+
+def _upload_logo(conn, cloud_account_id, filename, file_base64, actor):
+    try:
+        raw = base64.b64decode(file_base64 or "", validate=True)
+    except Exception:
+        raise ValueError("The logo could not be read")
+    if len(raw) > LOGO_MAX_BYTES:
+        raise ValueError("The logo can be at most 300 KB")
+    # Only raster formats (an SVG can carry script), checked by their structure, not only the first bytes.
+    import struct
+    if raw[:8] == b"\x89PNG\r\n\x1a\n" and raw[12:16] == b"IHDR" and b"IEND" in raw[-12:]:
+        w, h = struct.unpack(">II", raw[16:24])
+        if not (0 < w <= 4096 and 0 < h <= 4096):
+            raise ValueError("The logo must be at most 4096 x 4096 pixels")
+        ext, ctype = "png", "image/png"
+    elif raw[:3] == b"\xff\xd8\xff" and raw[-2:] == b"\xff\xd9" and (b"\xff\xc0" in raw or b"\xff\xc2" in raw):
+        ext, ctype = "jpg", "image/jpeg"
+    else:
+        raise ValueError("Upload the logo as a complete PNG or JPEG image")
+    key = f"trust-center/{cloud_account_id}/branding/logo-{secrets.token_hex(6)}.{ext}"
+    _s3().put_object(Bucket=DOCS_BUCKET, Key=key, Body=raw, ContentType=ctype, ServerSideEncryption="AES256")
+    with conn:
+        with conn.cursor() as cur:
+            _get_or_create_settings(cur, cloud_account_id)
+            cur.execute("UPDATE trust_center_settings SET logo_s3_key = %s, updated_at = NOW() WHERE cloud_account_id = %s",
+                        (key, cloud_account_id))
+            _account_event(cur, cloud_account_id, actor, "logo_uploaded", {"bytes": len(raw), "type": ctype})
+    return _presign_key(key)
+
+
+def _create_update(conn, cloud_account_id, body, actor):
+    kind = body.get("kind")
+    title = (body.get("title") or "").strip()
+    text = (body.get("body") or "").strip()
+    if kind not in UPDATE_KINDS:
+        raise ValueError("Choose incident, maintenance or notice")
+    if not title or len(title) > 200:
+        raise ValueError("A title of at most 200 characters is required")
+    if len(text) > 5000:
+        raise ValueError("The text can be at most 5000 characters")
+    starts = body.get("starts_at")
+    try:
+        starts = datetime.fromisoformat(str(starts).replace("Z", "+00:00")) if starts else datetime.now(timezone.utc)
+    except ValueError:
+        raise ValueError("Start must be a date and time")
+    if starts.tzinfo is None:
+        starts = starts.replace(tzinfo=timezone.utc)
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""INSERT INTO trust_center_updates (cloud_account_id, kind, title, body, starts_at, published_by)
+                           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""", (cloud_account_id, kind, title, text or None, starts, actor))
+            uid = str(cur.fetchone()[0])
+            _account_event(cur, cloud_account_id, actor, "update_published", {"id": uid, "kind": kind, "title": title})
+    return uid
+
+
+def _resolve_update(conn, cloud_account_id, update_id, note, actor):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE trust_center_updates SET resolved_at = NOW(), updated_at = NOW(),
+                           body = CASE WHEN %s <> '' THEN COALESCE(body || E'\n\n', '') || 'Resolved: ' || %s ELSE body END
+                           WHERE id = %s AND cloud_account_id = %s AND resolved_at IS NULL""",
+                        (note or "", note or "", update_id, cloud_account_id))
+            if cur.rowcount != 1:
+                return False
+            _account_event(cur, cloud_account_id, actor, "update_resolved", {"id": update_id})
+    return True
+
+
+def _list_updates(cur, cloud_account_id, public=False):
+    cur.execute(f"""SELECT id, kind, title, body, starts_at, resolved_at, published_by FROM trust_center_updates
+                    WHERE cloud_account_id = %s {"AND (resolved_at IS NULL OR starts_at > NOW() - interval '90 days')" if public else ""}
+                    ORDER BY (resolved_at IS NULL) DESC, starts_at DESC LIMIT 50""", (cloud_account_id,))
+    return [{"id": str(r[0]), "kind": r[1], "title": r[2], "body": r[3], "starts_at": r[4].isoformat(),
+             "resolved_at": r[5].isoformat() if r[5] else None, **({} if public else {"published_by": r[6]})}
+            for r in cur.fetchall()]
+
+
+def _analytics(cur, cloud_account_id):
+    cur.execute("""SELECT day, views FROM trust_center_page_views WHERE cloud_account_id = %s AND day > CURRENT_DATE - 30
+                   ORDER BY day""", (cloud_account_id,))
+    views = [{"day": d.isoformat(), "views": v} for d, v in cur.fetchall()]
+    cur.execute("""SELECT d.title, count(*) FILTER (WHERE l.action = 'downloaded'), count(*) FILTER (WHERE l.action = 'viewed')
+                   FROM trust_document_audit_log l JOIN trust_documents d ON d.id = l.document_id
+                   WHERE d.cloud_account_id = %s AND l.at > NOW() - interval '30 days' GROUP BY d.title
+                   ORDER BY 2 DESC, 3 DESC LIMIT 10""", (cloud_account_id,))
+    docs = [{"title": a, "restricted_downloads": b, "listed_on_public_page": c} for a, b, c in cur.fetchall()]
+    cur.execute("""SELECT r.status, count(*) FROM trust_document_access_requests r JOIN trust_documents d ON d.id = r.document_id
+                   WHERE d.cloud_account_id = %s AND r.requested_at > NOW() - interval '90 days' GROUP BY 1""", (cloud_account_id,))
+    reqs = dict(cur.fetchall())
+    decided = reqs.get("approved", 0) + reqs.get("denied", 0)
+    cur.execute("""SELECT count(*) FROM questionnaire_items qi JOIN questionnaires q ON q.id = qi.questionnaire_id
+                   WHERE q.cloud_account_id = %s AND qi.answer_status = 'approved'""", (cloud_account_id,))
+    approved_answers = cur.fetchone()[0]
+    return {"page_loads_30d": views, "page_loads_total_30d": sum(v["views"] for v in views), "documents_30d": docs,
+            "access_requests_90d": reqs,
+            "approval_rate_pct": round(100 * reqs.get("approved", 0) / decided) if decided else None,
+            "approved_answers_shown": min(approved_answers, 12), "approved_answers_total": approved_answers,
+            "method": "Page loads are counted per request to the public page (a reload counts again); no visitor "
+                      "identity, IP address or cookie is stored."}
+
+
+def _events(cur, cloud_account_id):
+    cur.execute("""SELECT at, actor, action, detail FROM trust_center_events WHERE cloud_account_id = %s
+                   ORDER BY at DESC LIMIT 100""", (cloud_account_id,))
+    return [{"at": a.isoformat(), "actor": b, "action": c, "detail": d} for a, b, c, d in cur.fetchall()]
+
+
 # ── public view ───────────────────────────────────────────────────────
 
-def _get_public_view(cur, slug):
+def _granted_documents(cur, cloud_account_id, viewer_email):
+    """Restricted documents this signed-in visitor was approved for (approved request, token not expired), so they
+    can download them after signing in instead of keeping the e-mailed link."""
+    if not viewer_email:
+        return {}
+    cur.execute("""SELECT DISTINCT ON (r.document_id) r.document_id, r.token_expires_at FROM trust_document_access_requests r
+                   JOIN trust_documents d ON d.id = r.document_id
+                   WHERE d.cloud_account_id = %s AND lower(r.requester_email) = lower(%s) AND r.status = 'approved'
+                     AND r.token_expires_at > NOW()
+                   ORDER BY r.document_id, r.token_expires_at DESC""", (cloud_account_id, viewer_email))
+    return {str(d): exp for d, exp in cur.fetchall()}
+
+
+def _get_public_view(cur, slug, viewer_email=None):
     cur.execute("""
-        SELECT cloud_account_id, is_public, company_name, intro_text, contact_email
+        SELECT cloud_account_id, is_public, company_name, intro_text, contact_email, brand_color, logo_s3_key,
+               status_page_url, security_contact, disclosure_policy
         FROM trust_center_settings WHERE public_slug = %s
     """, (slug,))
     row = cur.fetchone()
     if not row or not row[1]:
         return None
-    cloud_account_id, _, company_name, intro_text, contact_email = row
+    (cloud_account_id, _, company_name, intro_text, contact_email, brand_color, logo_key,
+     status_page_url, security_contact, disclosure_policy) = row
+    cur.execute("""INSERT INTO trust_center_page_views (cloud_account_id, day, views) VALUES (%s, CURRENT_DATE, 1)
+                   ON CONFLICT (cloud_account_id, day) DO UPDATE SET views = trust_center_page_views.views + 1""",
+                (cloud_account_id,))
 
     compliance = _get_compliance_status(cur, cloud_account_id)
 
+    granted = _granted_documents(cur, cloud_account_id, viewer_email)
     cur.execute("""
-        SELECT id, title, category, visibility FROM trust_documents
+        SELECT id, title, category, visibility, valid_from, valid_until, issuer FROM trust_documents
         WHERE cloud_account_id = %s ORDER BY category, title
     """, (cloud_account_id,))
     documents = []
-    for doc_id, title, category, visibility in cur.fetchall():
+    for doc_id, title, category, visibility, valid_from, valid_until, issuer in cur.fetchall():
         entry = {"id": str(doc_id), "title": title, "category": DOCUMENT_CATEGORIES.get(category, category),
-                  "visibility": visibility}
+                  "visibility": visibility, "valid_from": valid_from.isoformat() if valid_from else None,
+                  "valid_until": valid_until.isoformat() if valid_until else None, "issuer": issuer,
+                  "validity_status": _doc_status(valid_until, valid_from=valid_from)}
         if visibility == "public":
             entry["download_url"] = _presign_latest(cur, doc_id)
             cur.execute("INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'viewed')",
                         (doc_id, "public"))
+        elif str(doc_id) in granted:
+            entry["download_url"] = _presign_latest(cur, doc_id)
+            entry["granted_until"] = granted[str(doc_id)].isoformat()
+            cur.execute("INSERT INTO trust_document_audit_log (document_id, actor, action) VALUES (%s, %s, 'granted_view')",
+                        (doc_id, viewer_email))
         documents.append(entry)
 
     security_posture = _get_security_posture(cur)
@@ -586,6 +996,10 @@ def _get_public_view(cur, slug):
         "company_name": company_name, "intro_text": intro_text, "contact_email": contact_email,
         "compliance": compliance, "documents": documents,
         "security_posture": security_posture, "qa_highlights": qa_highlights,
+        "branding": {"brand_color": brand_color, "logo_url": _presign_key(logo_key) if logo_key else None},
+        "status": {"status_page_url": status_page_url, "updates": _list_updates(cur, cloud_account_id, public=True)},
+        "disclosure": {"security_contact": security_contact, "policy": disclosure_policy},
+        "viewer": {"signed_in": bool(viewer_email), "granted_documents": len(granted)},
     }
 
 
@@ -617,7 +1031,7 @@ def _resp(status, body):
     return {"statusCode": status, "headers": CORS_HEADERS, "body": json.dumps(body)}
 
 
-from collectors.aws.scanner.tenant_auth import guard
+from collectors.aws.scanner.tenant_auth import authenticate, email_verified, guard
 
 REFS = {
     "document_id": (
@@ -626,11 +1040,17 @@ REFS = {
     "request_id": (
         "SELECT d.cloud_account_id FROM trust_document_access_requests r JOIN trust_documents d ON d.id = r.document_id WHERE r.id = %s"
     ),
+    "update_id": "SELECT cloud_account_id FROM trust_center_updates WHERE id = %s",
 }
 
 
+def _bearer_present(event):
+    h = (event or {}).get("headers") or {}
+    return (h.get("Authorization") or h.get("authorization") or "").startswith("Bearer ")
+
+
 def _is_public(event, qs, body):
-    return (event.get("httpMethod") == "GET" and (bool(qs.get("slug")) or (bool(qs.get("download_document")) and bool(qs.get("access_token"))))) or (event.get("httpMethod") == "POST" and body.get("action") == "request_access")
+    return (event.get("httpMethod") == "GET" and (bool(qs.get("slug")) or bool(qs.get("domain")) or (bool(qs.get("download_document")) and bool(qs.get("access_token"))))) or (event.get("httpMethod") == "POST" and body.get("action") == "request_access")
 
 
 def handler(event, context):
@@ -665,17 +1085,39 @@ def handler(event, context):
     except (ValueError, TypeError):
         return _resp(400, {"error": "Invalid JSON"})
 
+    # guard() skips ids that are not canonical UUIDs, while PostgreSQL also accepts other spellings (no hyphens,
+    # braces); refuse those here so an id can never reach the SQL below without the guard having checked it.
+    for src in (qs, body):
+        for key in ("cloud_account_id", "download_document", *REFS):
+            if src.get(key) not in (None, "") and not _is_uuid(src.get(key)):
+                return _resp(400, {"error": f"{key} must be a valid id"})
+
     conn = _get_connection()
     try:
         denied = guard(event, conn, qs, body, REFS, _is_public)
         if denied:
             return _resp(denied[0], {"error": denied[1]})
+        # Admin actions are attributed to the signed-in person (verified by Cognito), not to a name the browser sends.
+        actor = None
+        if not _is_public(event, qs, body):
+            actor = authenticate(event)
+            if not actor:
+                # Fail closed: never fall back to a name the browser sent while enforcement is on.
+                if os.environ.get("TENANT_AUTH_ENFORCE", "1") != "0":
+                    return _resp(401, {"error": "Unauthorized"})
+                actor = "Admin"
         if method == "GET":
-            if qs.get("slug"):
-                view = _get_public_view(conn.cursor(), qs["slug"])
+            if qs.get("slug") or qs.get("domain"):
+                slug = qs.get("slug") or _slug_for_domain(conn.cursor(), qs["domain"])
+                # Optional sign-in: a valid token unlocks documents this person was approved for; an invalid or
+                # missing one simply gives the anonymous view (never an error on a public page).
+                viewer = authenticate(event) if _bearer_present(event) else None
+                if viewer and not email_verified(event):
+                    viewer = None  # access by email needs a verified mailbox, like the e-mailed link
+                view = _get_public_view(conn.cursor(), slug, viewer) if slug else None
                 conn.commit()
                 if not view:
-                    return _resp(404, {"error": "Deze Trust Center-pagina bestaat niet of is niet openbaar."})
+                    return _resp(404, {"error": "This Trust Center page does not exist or is not public."})
                 return _resp(200, view)
 
             if qs.get("download_document") and qs.get("access_token"):
@@ -683,7 +1125,7 @@ def handler(event, context):
                     url = _download_restricted(cur, qs["download_document"], qs["access_token"])
                 conn.commit()
                 if not url:
-                    return _resp(403, {"error": "Deze link is ongeldig, verlopen, of nog niet goedgekeurd."})
+                    return _resp(403, {"error": "This link is invalid, has expired, or has not been approved yet."})
                 return _resp(200, {"download_url": url})
 
             account_id = qs.get("cloud_account_id")
@@ -694,6 +1136,12 @@ def handler(event, context):
                     return _resp(200, {"entries": _get_audit_log(cur, account_id, qs.get("document_id"))})
                 if qs.get("access_requests"):
                     return _resp(200, {"requests": _list_access_requests(cur, account_id)})
+                if qs.get("analytics"):
+                    return _resp(200, _analytics(cur, account_id))
+                if qs.get("updates"):
+                    return _resp(200, {"updates": _list_updates(cur, account_id)})
+                if qs.get("events"):
+                    return _resp(200, {"events": _events(cur, account_id)})
                 settings = _get_or_create_settings(cur, account_id)
                 conn.commit()
                 documents = _list_documents_admin(cur, account_id)
@@ -703,17 +1151,62 @@ def handler(event, context):
         if method == "POST":
             action = body.get("action")
             if action == "update_settings":
+                try:
+                    extra = _validate_settings(body)
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
                 _update_settings(conn, body["cloud_account_id"], body.get("is_public"), body.get("company_name"),
-                                  body.get("intro_text"), body.get("contact_email"))
+                                  body.get("intro_text"), body.get("contact_email"), extra, actor)
                 return _resp(200, {"updated": True})
+            if action == "set_document_validity":
+                try:
+                    res = _set_document_validity(conn, body["cloud_account_id"], body.get("document_id"), body.get("valid_from"),
+                                                 body.get("valid_until"), body.get("issuer"), actor)
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, res) if res else _resp(404, {"error": "document not found"})
+            if action == "upload_logo":
+                try:
+                    url = _upload_logo(conn, body["cloud_account_id"], body.get("filename"), body.get("file_base64"), actor)
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"logo_url": url})
+            if action == "remove_logo":
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE trust_center_settings SET logo_s3_key = NULL WHERE cloud_account_id = %s", (body["cloud_account_id"],))
+                        _account_event(cur, body["cloud_account_id"], actor, "logo_removed")
+                return _resp(200, {"removed": True})
+            if action == "create_update":
+                try:
+                    uid = _create_update(conn, body["cloud_account_id"], body, actor)
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"id": uid})
+            if action == "resolve_update":
+                note = (body.get("note") or "").strip()[:2000]
+                ok = _resolve_update(conn, body["cloud_account_id"], body.get("update_id"), note, actor)
+                return _resp(200, {"resolved": True}) if ok else _resp(404, {"error": "open notice not found"})
+            if action == "set_custom_domain":
+                try:
+                    info = _set_custom_domain(conn, body["cloud_account_id"], body.get("custom_domain"))
+                except ValueError as e:
+                    return _resp(400, {"error": str(e)})
+                return _resp(200, {"custom_domain": info})
+            if action == "verify_custom_domain":
+                try:
+                    status, result = _verify_custom_domain(conn, body["cloud_account_id"])
+                except psycopg2.IntegrityError:
+                    return _resp(409, {"error": "This domain is already connected to another Trust Center."})
+                return _resp(status, result)
             if action == "upload_document":
                 doc_id = _upload_document(conn, body["cloud_account_id"], body["title"], body.get("category", "other"),
                                            body.get("visibility", "restricted"), body["filename"], body["file_base64"],
-                                           body.get("actor_name", "Admin"))
+                                           actor)
                 return _resp(200, {"id": doc_id})
             if action == "upload_new_version":
                 v = _upload_new_version(conn, body["cloud_account_id"], body["document_id"], body["filename"],
-                                         body["file_base64"], body.get("changelog"), body.get("actor_name", "Admin"))
+                                         body["file_base64"], body.get("changelog"), actor)
                 return _resp(200, {"version_number": v})
             if action == "request_access":
                 nda_name = (body.get("nda_accepted_name") or "").strip()
@@ -723,7 +1216,7 @@ def handler(event, context):
                                           body.get("reason", ""), nda_name)
                 return _resp(200, {"id": req_id})
             if action == "decide_access_request":
-                result = _decide_access_request(conn, body["request_id"], body["approve"], body.get("actor_name", "Admin"))
+                result = _decide_access_request(conn, body["request_id"], body["approve"], actor)
                 if result is None:
                     return _resp(404, {"error": "access request not found"})
                 return _resp(200, result)

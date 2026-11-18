@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Zero Critical Issues</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700;flex-wrap:wrap}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer}
+header a:hover{color:#fff}
+main{max-width:1180px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 14px;max-width:820px;line-height:1.55}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;overflow-x:auto}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+h3{font-size:12.5px;font-weight:700;margin:14px 0 6px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:10px;line-height:1.5}
+label{display:block;font-size:11.5px;font-weight:600;color:#374151;margin:10px 0 4px}
+input,select,textarea{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;background:#fff;width:100%}
+textarea{min-height:64px;resize:vertical}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+button.danger{background:#fff;color:#b91c1c;border:1px solid #fecaca;padding:5px 10px;font-size:11.5px}
+button:disabled{opacity:.55;cursor:default}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid #e5e7eb}
+.tab{background:none;color:#6b7280;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 10px;font-weight:600}
+.tab.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.metric{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+.metric .v{font-size:22px;font-weight:800}
+.metric .l{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.35}
+.metric.bad .v{color:#b91c1c}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6;vertical-align:top}
+tr.click{cursor:pointer} tr.click:hover td{background:#f9fafb}
+.chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;background:#f3f4f6;color:#374151}
+.c-red{background:#fee2e2;color:#991b1b}.c-orange{background:#ffedd5;color:#9a3412}.c-yellow{background:#fef9c3;color:#854d0e}
+.c-green{background:#dcfce7;color:#166534}.c-blue{background:#dbeafe;color:#1e40af}.c-purple{background:#ede9fe;color:#5b21b6}.c-grey{background:#f3f4f6;color:#4b5563}
+.status{border-radius:12px;padding:18px 20px;margin-bottom:16px;border:1px solid}
+.status h2{font-size:18px;font-weight:800}
+.status p{font-size:12.5px;margin-top:4px;line-height:1.5}
+.s-good{background:#f0fdf4;border-color:#bbf7d0;color:#14532d}
+.s-bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}
+.s-warn{background:#fffbeb;border-color:#fde68a;color:#78350f}
+.s-info{background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.filters select{width:auto}
+.drawer{position:fixed;top:0;right:0;width:min(720px,100%);height:100%;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.15);z-index:20;overflow-y:auto;padding:20px 22px 60px;display:none}
+.drawer.open{display:block}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:19;display:none}.shade.open{display:block}
+pre{background:#0d1017;color:#e2e8f0;border-radius:8px;padding:10px 12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:280px}
+.kv{display:grid;grid-template-columns:160px 1fr;gap:4px 10px;font-size:12px}.kv div:nth-child(odd){color:#6b7280}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.form{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-top:10px}
+.tl{border-left:2px solid #e5e7eb;padding-left:12px;margin-left:4px}
+.tl div{font-size:12px;margin-bottom:8px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:30}
+@media (max-width:700px){header{padding:12px 16px}main{padding:0 12px 40px}.kv{grid-template-columns:1fr}.hide-sm{display:none}}
+@media print{header,.tabs,button,.filters,.drawer,.shade{display:none!important}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-ciem">Cloud Entitlements</a></header>
+<main>
+  <h1>Zero Critical Issues</h1>
+  <div class="sub">Every critical problem the Niagaros scanners report for this account, who owns it, when it is due,
+    and whether its fix has been confirmed by a later scan. A zero is only shown as achieved when the evidence is fresh
+    and every required area has been assessed.</div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="issues">Critical issues</button>
+    <button class="tab" data-tab="history">History</button>
+    <button class="tab" data-tab="accounts">All accounts</button>
+    <button class="tab" data-tab="settings">Settings &amp; export</button>
+  </div>
+  <div id="view"><div class="empty">Loading…</div></div>
+</main>
+<div class="shade" id="shade"></div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" tabindex="-1"></div>
+<div class="toast" id="toast"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+const accountId = params.get('account_id');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 4000); };
+const q = () => accountId ? '?account_id=' + encodeURIComponent(accountId) : '';
+const fmt = d => d ? new Date(d).toLocaleString() : '—';
+const day = d => d ? new Date(d).toLocaleDateString() : '—';
+const chip = (cls, text) => `<span class="chip ${cls}">${esc(text)}</span>`;
+document.getElementById('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q();
+document.getElementById('nav-ciem').onclick = () => location.href = 'ciem.html' + q();
+
+const POSTURE = {
+  zero_critical: ['s-good', 'Zero Critical Issues', '✓'],
+  critical_issues_present: ['s-bad', 'Critical Issues Present', '!'],
+  remediation_in_progress: ['s-warn', 'Remediation in Progress', '…'],
+  coverage_incomplete: ['s-warn', 'Coverage Incomplete', '?'],
+  evidence_stale: ['s-warn', 'Evidence Stale', '⏱'],
+  validation_required: ['s-info', 'Validation Required', '…'],
+  accepted_risk: ['s-info', 'Accepted Risk', '!'],
+};
+const STATUS = {
+  open: ['c-red', 'Open'], assigned: ['c-orange', 'Assigned'], in_progress: ['c-blue', 'In progress'],
+  verification_pending: ['c-yellow', 'Fixed – awaiting scan'], remediated: ['c-yellow', 'Fixed – awaiting scan'],
+  resolved: ['c-green', 'Resolved (verified)'], reopened: ['c-red', 'Reopened'],
+  accepted_risk: ['c-purple', 'Accepted risk'], false_positive: ['c-grey', 'False positive'],
+};
+const st = s => { const x = STATUS[s] || ['c-grey', s]; return chip(x[0], x[1]); };
+const EVENT = {
+  detected: 'Detected by scanner', reopened: 'Reopened: the scanner reports it again', assigned: 'Owner assigned',
+  plan_updated: 'Remediation plan updated', remediation_started: 'Remediation started', remediated: 'Marked as fixed',
+  verification_failed: 'Fix not confirmed: a later scan still reports it', verified_resolved: 'Resolved: confirmed by scan',
+  risk_acceptance_requested: 'Risk acceptance requested', risk_accepted: 'Risk acceptance approved', risk_rejected: 'Risk acceptance rejected',
+  risk_acceptance_expired: 'Risk acceptance expired', marked_false_positive: 'Marked as false positive',
+  viewed: 'Viewed', ticket_created: 'Engineering ticket created', ai_explanation_created: 'AI explanation requested',
+  reopened_by_user: 'Reopened by a person', escalated: 'Escalated: deadline passed',
+};
+
+async function api(view, extra) {
+  const u = new URLSearchParams({view, ...(accountId ? {cloud_account_id: accountId} : {}), ...(extra || {})});
+  const r = await fetch(API + 'critical-issues?' + u.toString());
+  if (view === 'export' && (extra || {}).format === 'csv') { if (!r.ok) throw new Error('Export failed (HTTP ' + r.status + ').'); return r.text(); }
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Could not load this page (HTTP ' + r.status + ').');
+  return b;
+}
+async function post(body) {
+  const r = await fetch(API + 'critical-issues', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({cloud_account_id: accountId, ...body})});
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || 'Something went wrong (HTTP ' + r.status + ').');
+  return b;
+}
+
+let tab = (location.hash || '#overview').slice(1);
+const view = document.getElementById('view');
+function setTab(t) {
+  tab = t; history.replaceState(null, '', '#' + t);
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  render();
+}
+document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+async function render() {
+  if (!accountId && tab !== 'accounts') { view.innerHTML = '<div class="err">Open this page from the dashboard so Niagaros knows which cloud account to show.</div>'; return; }
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try { await (RENDER[tab] || RENDER.overview)(); }
+  catch (e) { view.innerHTML = `<div class="err">${esc(e.message)} <button class="ghost" data-act="reload">Try again</button></div>`; }
+}
+const metric = (v, l, bad) => `<div class="metric ${bad ? 'bad' : ''}"><div class="v">${esc(v ?? '—')}</div><div class="l">${esc(l)}</div></div>`;
+function issueTable(list) {
+  if (!list.length) return '<div class="empty">Nothing here.</div>';
+  return `<table><thead><tr><th>Issue</th><th>Status</th><th>Risk</th><th class="hide-sm">Asset</th><th>Owner</th><th>Due</th><th class="hide-sm">Age</th></tr></thead><tbody>${
+    list.map(i => `<tr class="click" data-issue="${esc(i.id)}">
+      <td><b>${esc(i.title)}</b><div class="note" style="margin:2px 0 0">${esc(i.source_label)}${i.reopen_count ? ' · came back ' + esc(i.reopen_count) + '×' : ''}</div></td>
+      <td>${st(i.display_status)}${i.pending_risk_request ? ' ' + chip('c-purple', 'exception requested') : ''}</td>
+      <td>${i.risk_score != null ? esc(i.risk_score) : '—'}</td>
+      <td class="hide-sm">${esc((i.asset || {}).name || (i.asset || {}).id || '—')}<div class="note" style="margin:0">${esc((i.asset || {}).type || '')}</div></td>
+      <td>${i.owner_email ? esc(i.owner_email) : chip('c-orange', 'no owner')}</td>
+      <td>${esc(day(i.due_date))}${i.overdue ? ' ' + chip('c-red', 'overdue') : ''}</td>
+      <td class="hide-sm">${i.age_days != null ? esc(i.age_days) + ' d' : '—'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+const RENDER = {
+  async overview() {
+    const d = await api('overview');
+    const p = POSTURE[d.posture.status] || ['s-info', d.posture.status, ''];
+    const c = d.counts, m = d.metrics, cov = d.coverage;
+    view.innerHTML = `
+      <div class="status ${p[0]}"><h2>${esc(p[2])} ${esc(p[1])}</h2>
+        <p>${esc(d.posture.reason)}.</p>
+        <p class="note" style="color:inherit;opacity:.8">Scope: ${esc(d.scope.account_name || 'this account')} (${esc(d.scope.provider)}) · ${esc(d.scope.rule)} Calculated ${esc(fmt(d.calculated_at))}.</p></div>
+      <div class="grid" style="margin-bottom:16px">
+        ${metric(c.open + c.in_progress, 'Unresolved critical', c.open + c.in_progress > 0)}
+        ${metric(c.new_7d, 'New in the last 7 days')}
+        ${metric(c.in_progress, 'Being remediated')}
+        ${metric(c.verification_pending, 'Fixed, awaiting scan')}
+        ${metric(c.overdue, 'Overdue', c.overdue > 0)}
+        ${metric(c.unassigned, 'Without an owner', c.unassigned > 0)}
+        ${metric(c.without_plan, 'Without a remediation plan', c.without_plan > 0)}
+        ${metric(c.reopened, 'Reopened', c.reopened > 0)}
+        ${metric(c.resolved, 'Resolved and verified')}
+        ${metric(c.accepted, 'Accepted risk (still counted here)')}
+        ${metric(m.mean_time_to_remediate_days != null ? m.mean_time_to_remediate_days + ' d' : null, 'Mean time to remediate')}
+        ${metric(m.oldest_open_days != null ? m.oldest_open_days + ' d' : null, 'Oldest open issue')}
+        ${metric(m.remediation_success_rate_pct != null ? m.remediation_success_rate_pct + '%' : null, 'Fixes confirmed by scan')}
+        ${metric(cov.coverage_pct + '%', 'Required areas assessed')}
+      </div>
+      <div class="card"><h2>Highest risk</h2><div class="note">Risk = severity plus age, scope, recurrence and missing owner. Open an issue to see how its score is built.</div>${issueTable(d.top)}</div>
+      <div class="card"><h2>Coverage and evidence freshness</h2>
+        <div class="note">Evidence older than ${esc(cov.freshness_days)} days does not count. Last full scan: ${esc(fmt(cov.last_scan_at))}.</div>
+        <table><thead><tr><th>Area</th><th>Required for a zero claim</th><th>State</th><th>Evidence from</th><th>Detail</th></tr></thead><tbody>
+        ${cov.domains.map(x => `<tr><td>${esc(x.domain)}</td><td>${x.required ? 'Yes' : 'No'}</td>
+          <td>${chip({fresh: 'c-green', degraded: 'c-yellow', stale: 'c-orange', missing: 'c-red', failed: 'c-red'}[x.state] || 'c-grey', x.state)}</td>
+          <td>${esc(fmt(x.evidence_at))}</td><td>${esc(x.detail)}</td></tr>`).join('')}</tbody></table>
+        <h3>Not assessed by Niagaros</h3><div class="note">${cov.not_assessed.map(esc).join(' · ')}. A zero here says nothing about these areas.</div></div>
+      ${d.accepted_in_modules.length ? `<div class="card"><h2>Critical findings accepted in other modules</h2><table><tbody>${d.accepted_in_modules.map(a =>
+          `<tr><td>${esc(a.title)}</td><td>${esc(a.module)}</td><td>${esc(a.reason || '')}</td><td>until ${esc(day(a.until))}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="card"><h2>By area</h2><div class="row">${Object.entries(d.by_domain).map(([k, v]) => chip('c-red', k + ': ' + v)).join(' ') || '<span class="empty">No unresolved critical issues.</span>'}</div></div>`;
+  },
+  async issues() {
+    const f = RENDER._filters || (RENDER._filters = {status: 'unresolved'});
+    const d = await api('issues', Object.fromEntries(Object.entries(f).filter(([, v]) => v)));
+    view.innerHTML = `<div class="card"><div class="filters">
+        <select data-filter="status" aria-label="Status"><option value="unresolved">Unresolved</option><option value="">All</option>
+          ${Object.entries(STATUS).filter(([k]) => k !== 'remediated').map(([k, v]) => `<option value="${k}">${esc(v[1])}</option>`).join('')}</select>
+        <select data-filter="source" aria-label="Area"><option value="">All areas</option><option value="findings">Cloud posture</option><option value="ciem_findings">Identity (CIEM)</option><option value="ai_inventory_findings">AI assets</option></select>
+        <select data-filter="owner" aria-label="Owner"><option value="">Any owner</option><option value="none">No owner</option></select>
+        <select data-filter="overdue" aria-label="Deadline"><option value="">Any deadline</option><option value="1">Overdue only</option></select>
+      </div>${issueTable(d.issues)}</div>`;
+    view.querySelectorAll('[data-filter]').forEach(s => { s.value = f[s.dataset.filter] || ''; s.onchange = () => { f[s.dataset.filter] = s.value; render(); }; });
+  },
+  async history() {
+    const d = await api('history');
+    view.innerHTML = `<div class="card"><h2>Daily status</h2><div class="note">One record per day the page was opened or exported. Use this to show when the account was at zero, and on what evidence.</div>
+      ${d.snapshots.length ? `<table><thead><tr><th>Day</th><th>Status</th><th>Unresolved</th><th>Accepted</th><th>Overdue</th><th>Coverage</th></tr></thead><tbody>${d.snapshots.map(s =>
+        `<tr><td>${esc(day(s.day))}</td><td>${esc((POSTURE[s.status] || [, s.status])[1])}</td><td>${esc(s.open)}</td><td>${esc(s.accepted)}</td><td>${esc(s.overdue)}</td><td>${esc((s.evidence || {}).coverage_pct)}%</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No history yet.</div>'}</div>
+      <div class="card"><h2>All changes</h2>${d.events.length ? `<table><thead><tr><th>When</th><th>Issue</th><th>What</th><th>By</th></tr></thead><tbody>${d.events.map(e =>
+        `<tr class="click" data-issue="${esc(e.issue_id)}"><td>${esc(fmt(e.at))}</td><td>${esc(e.title)}</td><td>${esc(EVENT[e.event] || e.event)}</td><td>${esc(e.actor)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No changes yet.</div>'}</div>`;
+  },
+  async accounts() {
+    const d = await api('portfolio');
+    view.innerHTML = `<div class="card"><h2>Accounts you can see</h2><div class="note">${esc(d.note || '')}</div>
+      ${d.accounts.length ? `<table><thead><tr><th>Account</th><th>Business units</th><th>Status</th><th>Unresolved</th><th>Accepted</th><th>Last scan</th></tr></thead><tbody>${d.accounts.map(a =>
+        `<tr class="click" data-account="${esc(a.cloud_account_id)}"><td>${esc(a.account_name)}</td><td>${esc(a.business_units || '—')}</td>
+         <td>${a.last_status ? esc((POSTURE[a.last_status] || [, a.last_status])[1]) : 'Not opened yet'}</td><td>${esc(a.unresolved)}</td><td>${esc(a.accepted)}</td><td>${esc(fmt(a.last_scan_at))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No accounts.</div>'}</div>`;
+  },
+  async settings() {
+    const s = await api('settings');
+    view.innerHTML = `<div class="card"><h2>Deadlines and evidence</h2>
+      <label for="sla">Remediation deadline for a new critical issue (days)</label><input id="sla" type="number" min="1" max="90" value="${esc(s.sla_days)}">
+      <label for="fresh">Maximum evidence age for a zero claim (days)</label><input id="fresh" type="number" min="1" max="60" value="${esc(s.freshness_days)}">
+      <h3>Deadline per area (optional, overrides the default)</h3>
+      ${[['findings', 'Cloud posture'], ['ciem_findings', 'Identity (CIEM)'], ['ai_inventory_findings', 'AI assets']].map(([k, l]) =>
+        `<label for="sla-${k}">${esc(l)} (days)</label><input id="sla-${k}" data-sla-src="${k}" type="number" min="1" max="90" placeholder="${esc(s.sla_days)}" value="${esc((s.sla_by_source || {})[k] ?? '')}">`).join('')}
+      <div class="note" style="margin-top:8px">${s.default ? 'Using the defaults.' : 'Last changed by ' + esc(s.updated_by) + ' on ' + esc(fmt(s.updated_at)) + '.'}</div>
+      <button data-act="save-settings">Save</button></div>
+      <div class="card"><h2>Export</h2><div class="note">Includes the status, how it was calculated, coverage, and every issue with its owner, deadline and history fields.</div>
+      <div class="row"><button class="ghost" data-act="export" data-format="csv">Download CSV</button><button class="ghost" data-act="export" data-format="json">Download JSON</button><button class="ghost" data-act="print">Print report</button></div></div>`;
+  },
+};
+
+const drawer = document.getElementById('drawer'), shade = document.getElementById('shade');
+let currentIssue = null;   // kept out of the DOM: a data-issue attribute on the drawer would make every click inside it reopen the issue
+function closeDrawer() { drawer.classList.remove('open'); shade.classList.remove('open'); }
+shade.onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+async function openIssue(id) {
+  drawer.innerHTML = '<div class="empty">Loading…</div>'; drawer.classList.add('open'); shade.classList.add('open'); drawer.focus();
+  try {
+    const d = await api('issue', {issue_id: id});
+    const i = d.issue, unresolved = ['open', 'assigned', 'in_progress', 'reopened', 'remediated'].includes(i.status);
+    const working = ['open', 'assigned', 'in_progress', 'reopened'].includes(i.status);
+    drawer.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(i.title)}</h2><button class="ghost" data-act="close">Close</button></div>
+      <div class="row" style="margin:6px 0 12px">${st(i.display_status)} ${i.overdue ? chip('c-red', 'overdue') : ''} ${chip('c-grey', i.source_label)}</div>
+      <div class="kv">
+        <div>Affected asset</div><div>${esc((i.asset || {}).name || (i.asset || {}).id || '—')} ${esc((i.asset || {}).type ? '(' + i.asset.type + ')' : '')}</div>
+        <div>Check</div><div>${esc(i.check_id || '—')} ${esc(i.framework ? '· ' + i.framework : '')}</div>
+        <div>Severity</div><div>Critical (set by the scanner)</div>
+        <div>Risk score</div><div>${i.risk_score != null ? esc(i.risk_score) + ' / 100' : '—'}</div>
+        <div>First detected</div><div>${esc(fmt(i.first_detected_at))}</div>
+        <div>Last observed by scan</div><div>${esc(fmt(i.last_observed_at))} ${i.still_reported ? '' : '(no longer reported)'}</div>
+        <div>Owner</div><div>${esc(i.owner_email || '—')}</div>
+        <div>Deadline</div><div>${esc(day(i.due_date))}${i.escalated_at ? ' · escalated ' + esc(fmt(i.escalated_at)) : ''}</div>
+        ${i.verified_by_scan_at ? `<div>Verified by scan</div><div>${esc(fmt(i.verified_by_scan_at))}</div>` : ''}
+        ${i.status === 'accepted_risk' || i.pending_risk_request ? `<div>Exception</div><div>${esc(i.risk_justification)}<br>Owner ${esc(i.risk_owner)} · requested by ${esc(i.risk_requested_by)} · ${i.risk_approver ? 'approved by ' + esc(i.risk_approver) : 'waiting for approval'} · expires ${esc(day(i.risk_expires_on))}<br>Compensating controls: ${esc(i.compensating_controls)}</div>` : ''}
+        ${i.false_positive_evidence ? `<div>False positive because</div><div>${esc(i.false_positive_evidence)}</div>` : ''}
+      </div>
+      ${i.risk_factors.length ? `<h3>How the risk score is built</h3><table><tbody>${i.risk_factors.map(f => `<tr><td>${esc(f.factor)}</td><td>+${esc(f.points)}</td></tr>`).join('')}</tbody></table>` : ''}
+      <h3>Recommended fix</h3><div class="note" style="color:#111827">${esc(d.recommendation || 'See the source module for guidance.')}</div>
+      ${d.recommendation_detail && typeof d.recommendation_detail === 'object' ? `<div class="kv">${['reason', 'impact', 'rollback', 'approvals'].filter(k => d.recommendation_detail[k]).map(k => `<div>${esc(k)}</div><div>${esc(d.recommendation_detail[k])}</div>`).join('')}</div>` : ''}
+      ${d.evidence ? `<h3>Evidence from the scanner</h3><pre>${esc(JSON.stringify(d.evidence, null, 2))}</pre>` : ''}
+      <h3>Attack paths</h3>${d.attack_paths && d.attack_paths.available
+        ? (d.attack_paths.paths.length ? `<div class="note">${esc(d.attack_paths.basis)} (${esc(fmt(d.attack_paths.scan_finished_at))}), for ${esc(d.attack_paths.scope)}.</div>
+            ${d.attack_paths.paths.map(pth => `<div class="form" style="margin-top:6px;padding:8px 12px"><b>${esc(pth.from)}</b>: ${esc(pth.title)}
+              ${pth.how ? `<div class="note" style="margin:2px 0 0">${esc(pth.how)}</div>` : ''}
+              ${pth.targets.length ? `<div class="note" style="margin:2px 0 0">Reaches: ${pth.targets.map(esc).join(', ')}</div>` : ''}
+              ${pth.gains.length ? `<div class="note" style="margin:2px 0 0">Gains: ${pth.gains.map(esc).join(', ')}</div>` : ''}</div>`).join('')}`
+          : `<div class="note">The latest identity scan found no escalation path or assumable role for ${esc(d.attack_paths.scope)}.</div>`)
+        : `<div class="note">${esc((d.attack_paths || {}).reason || 'Not available')}.</div>`}
+      <h3>AI explanation</h3>${i.ai_explanation ? `<div class="form" style="margin-top:0"><div class="note" style="color:#92400e">${esc(i.ai_explanation.label)} · ${esc(i.ai_explanation.model)} · ${esc(fmt(i.ai_explanation.at))}</div>
+          <div style="white-space:pre-wrap;font-size:12.5px">${esc(i.ai_explanation.text)}</div><div class="note" style="margin-top:6px">Based on: ${esc((i.ai_explanation.inputs || []).join(', '))}</div>
+          ${unresolved && Date.now() - new Date(i.ai_explanation.at).getTime() > 3600e3 ? '<button class="ghost" data-act="explain">Explain again with the current evidence</button>' : ''}</div>`
+        : (unresolved ? `<button class="ghost" data-act="explain">Explain with AI (uses only the evidence above)</button>` : '<div class="note">—</div>')}
+      <h3>Engineering ticket</h3>${i.ticket ? `<div class="note" style="color:#111827">${esc(i.ticket.provider)} ${i.ticket.url ? `<a href="${esc(i.ticket.url)}" target="_blank" rel="noopener noreferrer">${esc(i.ticket.key || 'ticket')}</a>` : esc(i.ticket.key || '')}
+          · ${esc(i.ticket.status || 'created')} <button class="ghost" data-act="ticket-refresh">Check status</button></div>`
+        : (d.integrations && d.integrations.length && unresolved ? `<div class="row"><select id="f-integ" aria-label="Integration" style="width:auto">${d.integrations.map(g => `<option value="${esc(g.id)}">${esc(g.provider)} · ${esc(g.project || 'no project')}</option>`).join('')}</select>
+            <button class="ghost" data-act="ticket">Create ticket</button></div>` : `<div class="note">${d.integrations && d.integrations.length ? '—' : 'Connect Jira or Monday on the Integrations page to create tickets from here.'}</div>`)}
+      <h3>Remediation plan</h3><div class="note" style="color:#111827">${esc(i.remediation_plan || 'No plan yet.')}</div>
+      ${working ? `
+        <div class="form"><h3 style="margin-top:0">Owner and deadline</h3>
+          <label for="f-owner">Owner (email of someone with access to this account)</label><input id="f-owner" value="${esc(i.owner_email || '')}">
+          <label for="f-due">Deadline</label><input id="f-due" type="date" value="${esc(i.due_date || '')}">
+          <div class="row" style="margin-top:8px"><button data-act="assign">Save owner</button>${['open', 'assigned', 'reopened'].includes(i.status) ? '<button class="ghost" data-act="start">Start remediation</button>' : ''}</div></div>
+        <div class="form"><label for="f-plan" style="margin-top:0">Remediation plan</label><textarea id="f-plan">${esc(i.remediation_plan || '')}</textarea><button class="ghost" data-act="plan" style="margin-top:6px">Save plan</button></div>
+        <div class="form"><label for="f-fixed" style="margin-top:0">What was changed?</label><textarea id="f-fixed"></textarea>
+          <div class="note">It only counts as resolved after the next scan no longer reports it.</div><button class="ghost" data-act="remediated">Mark as fixed</button></div>
+        ${i.pending_risk_request ? `<div class="form"><h3 style="margin-top:0">Exception waiting for approval</h3><div class="note">Requested by ${esc(i.risk_requested_by)}. Someone else must decide.</div>
+          <label for="f-dnote">Note</label><input id="f-dnote"><div class="row" style="margin-top:8px"><button data-act="approve">Approve</button><button class="danger" data-act="reject">Reject</button></div></div>` : `
+        <details class="form"><summary style="cursor:pointer;font-weight:600;font-size:12.5px">Request a risk exception</summary>
+          <label for="r-just">Business justification</label><textarea id="r-just"></textarea>
+          <label for="r-rat">Technical rationale</label><textarea id="r-rat"></textarea>
+          <label for="r-owner">Risk owner</label><input id="r-owner">
+          <label for="r-comp">Compensating controls</label><textarea id="r-comp"></textarea>
+          <label for="r-res">Residual risk</label><input id="r-res">
+          <label for="r-exp">Expires on (max. 1 year)</label><input id="r-exp" type="date">
+          <label for="r-rev">Review every</label><select id="r-rev"><option value="30">30 days</option><option value="60">60 days</option><option value="90" selected>90 days</option><option value="180">180 days</option></select>
+          <div class="note">An accepted risk stays visible and is always counted separately. A second person must approve it.</div>
+          <button class="ghost" data-act="request-risk">Send for approval</button></details>`}
+        <details class="form"><summary style="cursor:pointer;font-weight:600;font-size:12.5px">Mark as false positive</summary>
+          <label for="f-fp">Evidence that this finding is wrong</label><textarea id="f-fp"></textarea><button class="danger" data-act="fp" style="margin-top:6px">Mark as false positive</button></details>` : ''}
+      ${['accepted_risk', 'false_positive'].includes(i.status) ? `<div class="form"><label for="f-reopen" style="margin-top:0">Reason to reopen</label><input id="f-reopen"><button class="ghost" data-act="reopen" style="margin-top:6px">Reopen</button></div>` : ''}
+      <h3>History</h3><div class="tl">${d.history.map(h => `<div><b>${esc(EVENT[h.event] || h.event)}</b> · ${esc(fmt(h.at))} · ${esc(h.actor)}
+        ${h.detail && (h.detail.note || h.detail.reason || h.detail.owner || h.detail.evidence) ? `<div class="note" style="margin:0">${esc(h.detail.note || h.detail.reason || h.detail.owner || h.detail.evidence)}</div>` : ''}</div>`).join('')}</div>
+      <p class="note" style="margin-top:12px"><a href="${esc(i.source_page)}${q()}">Open in ${esc(i.source_label)}</a></p>`;
+    currentIssue = id;
+  } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-act="close">Close</button>`; }
+}
+const val = id => (document.getElementById(id) || {}).value || '';
+async function act(body, okMsg) {
+  try { const r = await post(body); toast(r.note || okMsg); if (body.issue_id) await openIssue(body.issue_id); render(); }
+  catch (e) { toast(e.message); }
+}
+document.addEventListener('click', async e => {
+  const row = e.target.closest('tr[data-issue]'); if (row && !e.target.closest('button')) { openIssue(row.dataset.issue); return; }
+  const accRow = e.target.closest('[data-account]'); if (accRow) { location.href = 'critical_issues.html?account_id=' + encodeURIComponent(accRow.dataset.account); return; }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = currentIssue;
+  switch (b.dataset.act) {
+    case 'reload': render(); break;
+    case 'close': closeDrawer(); break;
+    case 'print': window.print(); break;
+    case 'assign': act({action: 'assign', issue_id: id, owner_email: val('f-owner'), due_date: val('f-due') || null}, 'Owner saved'); break;
+    case 'start': act({action: 'start', issue_id: id}, 'Remediation started'); break;
+    case 'plan': act({action: 'set_plan', issue_id: id, remediation_plan: val('f-plan')}, 'Plan saved'); break;
+    case 'remediated': act({action: 'mark_remediated', issue_id: id, note: val('f-fixed')}, 'Marked as fixed'); break;
+    case 'approve': act({action: 'decide_risk', issue_id: id, decision: 'approve', note: val('f-dnote')}, 'Exception approved'); break;
+    case 'reject': act({action: 'decide_risk', issue_id: id, decision: 'reject', note: val('f-dnote')}, 'Exception rejected'); break;
+    case 'request-risk': act({action: 'request_risk_acceptance', issue_id: id, justification: val('r-just'), rationale: val('r-rat'), risk_owner: val('r-owner'),
+      compensating_controls: val('r-comp'), residual_risk: val('r-res'), expires_on: val('r-exp'), review_every_days: Number(val('r-rev'))}, 'Request sent'); break;
+    case 'fp': act({action: 'mark_false_positive', issue_id: id, evidence: val('f-fp')}, 'Marked as false positive'); break;
+    case 'reopen': act({action: 'reopen', issue_id: id, reason: val('f-reopen')}, 'Reopened'); break;
+    case 'save-settings': {
+      const by = {}; document.querySelectorAll('[data-sla-src]').forEach(el => { if (el.value) by[el.dataset.slaSrc] = Number(el.value); });
+      act({action: 'save_settings', sla_days: Number(val('sla')), freshness_days: Number(val('fresh')), sla_by_source: by}, 'Settings saved'); break;
+    }
+    case 'ticket': act({action: 'create_ticket', issue_id: id, integration_id: val('f-integ')}, 'Ticket created'); break;
+    case 'ticket-refresh': act({action: 'refresh_ticket', issue_id: id}, 'Ticket status updated'); break;
+    case 'explain': b.disabled = true; b.textContent = 'Asking…'; act({action: 'explain', issue_id: id}, 'Explanation added'); break;
+    case 'export': {
+      try {
+        const fmtx = b.dataset.format, data = await api('export', {format: fmtx});
+        const blob = new Blob([fmtx === 'json' ? JSON.stringify(data, null, 2) : data], {type: fmtx === 'json' ? 'application/json' : 'text/csv'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'critical-issues.' + fmtx; a.click();
+      } catch (err) { toast(err.message); }
+      break;
+    }
+  }
+});
+const deep = params.get('issue_id');
+render().then(() => { if (deep && /^[0-9a-f-]{36}$/i.test(deep)) openIssue(deep); });
+</script>
+</body>
+</html>

@@ -36,6 +36,7 @@ SCHEMA_FILES = [
     BACKEND / "migrations" / "002_organizations_and_team.sql",
     BACKEND / "migrations" / "003_role_changes_audit_log.sql",
     BACKEND / "migrations" / "004_mfa_policy.sql",
+    BACKEND / "migrations" / "030_onboarding_step_completions.sql",  # governance records completed onboarding steps
     BACKEND / "migrations" / "031_compliance_governance_training.sql",
 ]
 

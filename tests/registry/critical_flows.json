@@ -420,7 +420,12 @@
         "PostgreSQL"
       ],
       "paths": [
-        "backend/src/collectors/aws/scanner/trust_center_handler.py"
+        "backend/src/collectors/aws/scanner/trust_center_handler.py",
+        "frontend/public/trust_center.html",
+        "frontend/public/trust_center_public.html",
+        "frontend/index.html",
+        "backend/migrations/036_trust_center_custom_domain.sql",
+        "backend/migrations/040_trust_center_enhancements.sql"
       ]
     },
     {
@@ -581,6 +586,171 @@
       "paths": [
         "backend/src/collectors/aws/scanner/integrations_handler.py",
         "frontend/public/integrations.html"
+      ]
+    },
+    {
+      "id": "E2E-CIEM-001",
+      "domain": "Cloud Security",
+      "name": "CIEM: collect IAM entitlements read-only -> effective access, escalation paths, external trust, unused access -> findings with evidence -> status/risk acceptance/review/ticket, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline engine tests + live API isolation",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS IAM (read-only scanner role)",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/ciem_engine.py",
+        "backend/src/collectors/aws/scanner/ciem_collector.py",
+        "backend/src/collectors/aws/scanner/ciem_scanner_handler.py",
+        "backend/src/collectors/aws/scanner/ciem_handler.py",
+        "backend/migrations/032_ciem.sql",
+        "frontend/public/ciem.html"
+      ]
+    },
+    {
+      "id": "E2E-AIINV-001",
+      "domain": "AI Security",
+      "name": "AI Inventory: discover AI assets read-only in AWS and GitHub -> provenance and verification level -> relationships and impact -> findings with evidence -> governance, approval, lifecycle and change history, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline engine tests + PostgreSQL store/API tests + browser",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS Bedrock, SageMaker, Lambda, OpenSearch Serverless, CloudWatch (read-only scanner role)",
+        "GitHub organisation integration",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/ai_inventory_engine.py",
+        "backend/src/collectors/aws/scanner/ai_inventory_collector.py",
+        "backend/src/collectors/aws/scanner/ai_inventory_scanner_handler.py",
+        "backend/src/collectors/aws/scanner/ai_inventory_handler.py",
+        "backend/migrations/033_ai_inventory.sql",
+        "frontend/public/ai_inventory.html"
+      ]
+    },
+    {
+      "id": "E2E-SECAGENTS-001",
+      "domain": "AI Security",
+      "name": "Security Agents: Red analysis -> Blue CloudTrail detections and incidents -> Green plans, tickets and approvals -> verification by a later scan; every action authorised at execution time, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline engine tests + PostgreSQL store/API tests + browser",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS CloudTrail (read-only scanner role)",
+        "CIEM, AI Inventory and scanner findings",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/security_agents_engine.py",
+        "backend/src/collectors/aws/scanner/security_agents_runner_handler.py",
+        "backend/src/collectors/aws/scanner/security_agents_handler.py",
+        "backend/migrations/034_security_agents.sql",
+        "frontend/public/security_agents.html"
+      ]
+    },
+    {
+      "id": "E2E-GITHUB-CIS-001",
+      "domain": "Cloud Security",
+      "name": "CIS GitHub Benchmark: scan the connected organisation; checks whose data the token cannot read are NOT CHECKED, never a pass or fail from missing data",
+      "severity": "P1",
+      "exists": true,
+      "environment": "offline tests with a simulated GitHub API",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "GitHub organisation integration"
+      ],
+      "paths": [
+        "backend/src/collectors/github/lambda_handler.py"
+      ]
+    },
+    {
+      "id": "E2E-CRIT-001",
+      "domain": "Cloud Security",
+      "name": "Zero Critical Issues: scanner critical findings -> issues with owner, deadline, plan -> escalation when overdue -> two-person risk acceptance with expiry -> resolved only when a later scan confirms -> zero claim only with fresh, complete coverage, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "PostgreSQL store/API tests + browser UI + live API isolation",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "PostgreSQL",
+        "Scanner results (findings, ciem_findings, ai_inventory_findings)"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/critical_issues_handler.py",
+        "backend/migrations/037_critical_issues.sql",
+        "frontend/public/critical_issues.html"
+      ]
+    },
+    {
+      "id": "E2E-COST-001",
+      "domain": "FinOps",
+      "name": "Cloud Cost: opt-in for paid AWS Cost Explorer requests -> daily ingestion with record types, estimates and revisions -> explorer, allocation, forecast -> budgets and anomalies -> idle-resource opportunities with two-person approval and verification by a later ingestion, tenant-isolated",
+      "severity": "P1",
+      "exists": true,
+      "environment": "engine unit tests + PostgreSQL store/API tests + browser UI + live API isolation",
+      "owner": "Platform",
+      "frequency": "Every PR",
+      "dependencies": [
+        "AWS Cost Explorer / EC2 / ELB (read-only scanner role)",
+        "AWS Pricing API",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/cost_engine.py",
+        "backend/src/collectors/aws/scanner/cost_scanner_handler.py",
+        "backend/src/collectors/aws/scanner/cost_handler.py",
+        "backend/migrations/038_cloud_cost.sql",
+        "frontend/public/cloud_cost.html"
+      ]
+    },
+    {
+      "id": "E2E-ACCTSEC-001",
+      "domain": "Identity",
+      "name": "Privacy & Security: status from the effective policy and enrolled methods -> TOTP and passkeys (Cognito WebAuthn) -> step-up with recent sign-in and PIN -> one-time recovery codes and public recovery (generic answer, rate-limited) -> sessions and global sign-out -> security history",
+      "severity": "P0",
+      "exists": true,
+      "environment": "PostgreSQL store/API tests + live run with a dedicated test user",
+      "owner": "Security",
+      "frequency": "Every PR",
+      "dependencies": [
+        "Amazon Cognito",
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/account_security_handler.py",
+        "backend/migrations/039_account_security.sql",
+        "frontend/src/settings/PrivacySecurity.tsx",
+        "frontend/src/settings/AccountRecovery.tsx",
+        "frontend/src/App.tsx"
+      ]
+    },
+    {
+      "id": "E2E-MKT-001",
+      "domain": "Integrations",
+      "name": "Marketplace: search/browse/filter 340+ integrations -> detail with real permissions -> guided connect via the existing setup pages -> connection health from real data -> request/withdraw, review, report problem, AI recommendations, tenant-isolated",
+      "severity": "P2",
+      "exists": true,
+      "environment": "catalog unit tests + PostgreSQL store/API tests + browser UI",
+      "owner": "Product",
+      "frequency": "Every PR",
+      "dependencies": [
+        "PostgreSQL"
+      ],
+      "paths": [
+        "backend/src/collectors/aws/scanner/marketplace_lib.py",
+        "backend/src/collectors/aws/scanner/marketplace_handler.py",
+        "backend/src/collectors/aws/scanner/marketplace_catalog.csv",
+        "backend/migrations/043_marketplace.sql",
+        "frontend/public/marketplace.html"
       ]
     }
   ]
