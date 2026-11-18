@@ -752,6 +752,23 @@
         "backend/migrations/043_marketplace.sql",
         "frontend/public/marketplace.html"
       ]
+    },
+    {
+      "id": "E2E-WEB-001",
+      "domain": "Website",
+      "name": "Research Niagaros with AI: footer section on niagaros.com -> six assistants (prefilled where supported, otherwise copy then open) -> copy prompt -> public sources only, disclaimer, responsive",
+      "severity": "P3",
+      "exists": true,
+      "environment": "browser UI against the embeddable widget",
+      "owner": "Marketing",
+      "frequency": "Every PR",
+      "dependencies": [
+        "niagaros.com (WordPress footer embed)"
+      ],
+      "paths": [
+        "frontend/public/ask-ai.js",
+        "frontend/public/ask-ai-demo.html"
+      ]
     }
   ]
 }

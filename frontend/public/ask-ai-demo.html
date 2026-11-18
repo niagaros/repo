@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Niagaros with AI — footer preview</title>
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f0f2f5;color:#111827}
+main{max-width:900px;margin:0 auto;padding:32px 16px}
+footer{background:#0d0f14;color:#e5e7eb;padding:32px 16px}
+footer .cols{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:24px}
+footer h4{margin:0 0 8px;font-size:14px}footer a{color:#9ca3af;text-decoration:none;display:block;font-size:13px;margin:4px 0}
+footer .ai{grid-column:1/-1}
+code{background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;display:block;white-space:pre-wrap;font-size:12px}
+</style>
+</head>
+<body>
+<main>
+  <h1 style="font-size:20px">Footer preview (issue #297)</h1>
+  <p style="font-size:14px;line-height:1.5">How the "Research Niagaros with AI" section looks in a dark website footer. To add it to niagaros.com, put this in a Custom HTML element in the footer:</p>
+  <code>&lt;div data-niagaros-ask-ai&gt;&lt;/div&gt;
+&lt;script src="https://app.niagaros.com/ask-ai.js" defer&gt;&lt;/script&gt;</code>
+</main>
+<footer>
+  <div class="cols">
+    <div><h4>Company</h4><a href="https://niagaros.com/">About</a></div>
+    <div><h4>Products</h4><a href="https://niagaros.com/frameworks/">Frameworks</a></div>
+    <div><h4>Resources</h4><a href="https://niagaros.com/glossary/">Glossary</a></div>
+    <div><h4>Trust Center</h4><a href="https://trust.niagaros.com/">trust.niagaros.com</a></div>
+    <div class="ai" data-niagaros-ask-ai></div>
+  </div>
+</footer>
+<script src="ask-ai.js" defer></script>
+</body>
+</html>
