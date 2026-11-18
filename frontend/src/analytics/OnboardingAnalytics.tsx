@@ -33,6 +33,9 @@ interface FunnelStep {
   completed: number;
   dropoff_pct: number | null;
   median_days: number | null;
+  // Completions the median leaves out because this step was finished before
+  // the one it is measured against. See the comment in _funnel.
+  out_of_order: number;
   blocked_reason: string | null;
 }
 
@@ -202,6 +205,14 @@ export default function OnboardingAnalytics() {
                   <div style={{ width: `${(f.completed / widest) * 100}%`, background: "#38bdf8" }} />
                   <div style={{ width: `${((f.reached - f.completed) / widest) * 100}%`, background: "#334155" }} />
                 </div>
+
+                {f.out_of_order > 0 && (
+                  <p style={{ fontSize: 11.5, color: "#94a3b8", margin: "8px 0 0", lineHeight: 1.6 }}>
+                    The median leaves out {f.out_of_order} {f.out_of_order === 1 ? "customer" : "customers"} who
+                    finished this step before the one it is measured against. The wizard shows the steps in order
+                    but does not require that order.
+                  </p>
+                )}
 
                 {f.blocked_reason && (
                   <p style={{ fontSize: 11.5, color: "#fbbf24", margin: "8px 0 0", lineHeight: 1.6 }}>

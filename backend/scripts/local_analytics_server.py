@@ -198,7 +198,8 @@ if __name__ == "__main__":
     print(f"Serving sample analytics on http://localhost:{PORT}/analytics/onboarding")
     print(f"Total steps in the wizard: {len(ONBOARDING_STEPS)}; measured in this sample: {len(STEPS)}\n")
     for f in payload()["funnel"]:
+        buiten = f"  ({f['out_of_order']} out of order)" if f["out_of_order"] else ""
         print(f"  {f['step']:<16} reached {f['reached']}  completed {f['completed']}  "
-              f"drop-off {f['dropoff_pct']}%  median {f['median_days']}")
+              f"drop-off {f['dropoff_pct']}%  median {f['median_days']}{buiten}")
     print("  summary:", payload()["summary"]["by_status"], "\n")
     ThreadingHTTPServer(("localhost", PORT), Handler).serve_forever()
