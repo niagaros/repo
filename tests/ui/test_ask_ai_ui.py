@@ -38,7 +38,11 @@ def test_six_assistants_with_https_destinations_and_prefill(page, site):
             assert len(href) < 8000, (aid, len(href))  # stays under common URL limits
         else:
             assert not u.query and a.get_attribute("data-prefill") == "no"
-    assert "Research Niagaros with AI" in page.locator(".nai h3").inner_text()
+    assert page.locator(".nai h3").inner_text() == "Ask AI for a summary"  # as in the issue's mock-up
+    # Logo tiles: each has an accessible name and an icon.
+    for i in range(6):
+        assert links.nth(i).get_attribute("aria-label").startswith("Research Niagaros with ")
+        assert links.nth(i).locator("svg path").count() == 1
     assert not page.errors
 
 
