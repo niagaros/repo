@@ -232,7 +232,9 @@ def guard(event, conn, qs, body, refs=None, public=None):
         if accounts:
             cur.execute(ACCESS_SQL, {"ids": list(accounts), "email": email, "write": _is_write(event, body)})
             if len(cur.fetchall()) != len(accounts):
-                logger.warning("tenant isolation: %s denied access to %s", email, sorted(accounts))
+                # Only a count in the log: the account ids come from the request body and the caller's address is
+                # personal data. Who, what and from where is written to security_audit_log by _record_denial.
+                logger.warning("tenant isolation: access denied to %d account(s); details in security_audit_log", len(accounts))
                 _record_denial(conn, email, accounts, event, qs, body)
                 return 403, "Forbidden"
     conn.commit()
