@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="auth-fetch.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niagaros — Marketplace</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f0f2f5;color:#111827;font-size:14px}
+header{background:#0d0f14;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:16px;font-weight:700;flex-wrap:wrap}
+header a{color:#9ca3af;font-weight:500;font-size:12.5px;cursor:pointer}
+header a:hover{color:#fff}
+main{max-width:1180px;margin:24px auto;padding:0 20px 60px}
+h1{font-size:19px;font-weight:800}
+.sub{font-size:12.5px;color:#6b7280;margin:3px 0 14px;max-width:820px;line-height:1.55}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;overflow-x:auto}
+h2{font-size:14px;font-weight:700;margin-bottom:4px}
+h3{font-size:12.5px;font-weight:700;margin:16px 0 6px}
+.note{font-size:11.5px;color:#6b7280;margin-bottom:10px;line-height:1.5}
+label{display:block;font-size:11.5px;font-weight:600;color:#374151;margin:10px 0 4px}
+input,select,textarea{border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font:inherit;font-size:12.5px;background:#fff;max-width:100%}
+textarea{width:100%;min-height:60px}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+button.ghost{background:#fff;color:#374151;border:1px solid #e5e7eb;padding:5px 10px;font-size:11.5px}
+button:disabled{opacity:.55;cursor:default}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid #e5e7eb}
+.tab{background:none;color:#6b7280;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 10px;font-weight:600}
+.tab.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.metric{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+.metric .v{font-size:22px;font-weight:800}
+.metric .l{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.35}
+.layout{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start}
+.cats{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto}
+.cat{display:flex;justify-content:space-between;width:100%;background:none;color:#374151;border:0;border-radius:6px;padding:6px 8px;font-weight:500;font-size:12px;text-align:left}
+.cat:hover{background:#f3f4f6}.cat.on{background:#eff6ff;color:#1d4ed8;font-weight:700}
+.cat span:last-child{color:#9ca3af;font-weight:500}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.filters input[type=search]{flex:1 1 220px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.ic{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:6px}
+.ic:hover{border-color:#93c5fd;box-shadow:0 2px 10px rgba(29,78,216,.08)}
+.ic .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.ic .nm{font-weight:700;font-size:13.5px}
+.ic .vd{font-size:11px;color:#6b7280}
+.ic .ds{font-size:12px;color:#374151;line-height:1.45}
+.ic .ft{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#6b7280;margin-top:auto;gap:6px;flex-wrap:wrap}
+.ic label.cmp{display:inline-flex;gap:4px;align-items:center;margin:0;font-weight:500;color:#6b7280;cursor:pointer}
+.chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;background:#f3f4f6;color:#374151}
+.c-red{background:#fee2e2;color:#991b1b}.c-orange{background:#ffedd5;color:#9a3412}.c-yellow{background:#fef9c3;color:#854d0e}
+.c-green{background:#dcfce7;color:#166534}.c-blue{background:#dbeafe;color:#1e40af}.c-purple{background:#ede9fe;color:#5b21b6}.c-grey{background:#f3f4f6;color:#4b5563}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#9ca3af;padding:8px 6px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:8px 6px;border-bottom:1px solid #f6f6f6;vertical-align:top}
+.empty{color:#6b7280;font-size:12.5px;padding:8px 0}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:12px}
+.rec{display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid #f3f4f6;padding:10px 0;flex-wrap:wrap}
+.rec:first-of-type{border-top:0}
+.rec .t{font-weight:700;font-size:12.5px}.rec .r{font-size:12px;color:#4b5563;line-height:1.45;max-width:760px}
+.drawer{position:fixed;top:0;right:0;width:min(720px,100%);height:100%;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.15);z-index:20;overflow-y:auto;padding:20px 22px 60px;display:none}
+.drawer.open{display:block}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:19;display:none}.shade.open{display:block}
+.kv{display:grid;grid-template-columns:170px 1fr;gap:5px 10px;font-size:12px}.kv>div:nth-child(odd){color:#6b7280}
+ul.l{margin:4px 0 0 18px;font-size:12px;line-height:1.55}
+.steps{counter-reset:s;list-style:none;margin-top:6px}
+.steps li{counter-increment:s;position:relative;padding:8px 0 8px 34px;font-size:12px;border-left:2px solid #e5e7eb;margin-left:12px}
+.steps li::before{content:counter(s);position:absolute;left:-13px;top:6px;width:24px;height:24px;border-radius:50%;background:#e5e7eb;color:#374151;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:11px}
+.steps li.done::before{background:#1d4ed8;color:#fff}
+.form{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-top:10px}
+.stars button{background:none;color:#d1d5db;font-size:20px;padding:0 2px;border:0}.stars button.on{color:#f59e0b}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;display:none;z-index:30}
+.cmpbar{position:sticky;bottom:0;background:#111827;color:#fff;border-radius:10px;padding:10px 14px;margin-top:12px;display:none;justify-content:space-between;align-items:center;gap:10px;font-size:12.5px}
+@media (max-width:800px){header{padding:12px 16px}main{padding:0 12px 40px}.layout{grid-template-columns:1fr}.cats{position:static;max-height:none;display:flex;overflow-x:auto;gap:4px}.cat{white-space:nowrap;gap:6px}.kv{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>🛡 Niagaros <a id="nav-dash">Dashboard</a><a id="nav-int">Integrations</a><a id="nav-notif">Notification settings</a></header>
+<main>
+  <h1>Marketplace</h1>
+  <p class="sub">Every integration Niagaros has researched, in one place. <b>Available</b> integrations can be connected now; their details come from the code that runs them. <b>Planned</b> ones are being built. Everything else can be <b>requested</b> — requests decide what is built next.</p>
+  <div id="error" class="err" hidden></div>
+  <div class="grid" id="metrics"></div>
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-tab="browse">Browse</button>
+    <button class="tab" data-tab="connected">Connected &amp; health</button>
+    <button class="tab" data-tab="activity">Requests &amp; activity</button>
+  </div>
+
+  <section id="t-browse">
+    <div class="card" id="recs-card" hidden><h2>Recommended for this account</h2><p class="note">Worked out from this account's own scans and connections. The AI Agent gives the same advice.</p><div id="recs"></div></div>
+    <div class="layout">
+      <nav class="cats" id="cats" aria-label="Categories"></nav>
+      <div>
+        <div class="filters">
+          <input type="search" id="q" placeholder="Search integrations, vendors, data…" aria-label="Search integrations">
+          <select id="f-status" aria-label="Availability"><option value="">Any availability</option><option>Available</option><option>Planned</option><option>On request</option></select>
+          <select id="f-object" aria-label="Data it brings into Niagaros"><option value="">Any data type</option></select>
+          <select id="f-auth" aria-label="Authentication"><option value="">Any authentication</option></select>
+          <select id="f-fw" aria-label="Supported framework"><option value="">Any framework</option></select>
+          <select id="f-deploy" aria-label="Deployment model"><option value="">Any deployment</option></select>
+          <select id="sort" aria-label="Sort"><option value="name">A–Z</option><option value="popular">Most used / requested</option></select>
+        </div>
+        <p class="note" id="count"></p>
+        <div class="cards" id="cards"></div>
+        <div class="cmpbar" id="cmpbar"><span id="cmptext"></span><span><button class="ghost" id="cmpclear">Clear</button> <button id="cmpgo">Compare</button></span></div>
+        <div class="card" style="margin-top:16px"><h2>Missing a tool?</h2><p class="note">Ask for an integration that is not in the catalog.</p>
+          <div class="filters"><input id="new-name" placeholder="Tool name, e.g. Vendor X" aria-label="Tool name" style="flex:1 1 200px"><input id="new-note" placeholder="What should it bring into Niagaros? (optional)" aria-label="Why" style="flex:2 1 280px"><button id="new-go">Request</button></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="t-connected" hidden>
+    <div class="card"><h2>Connected integrations</h2><p class="note" id="health-note"></p><div id="connected"></div></div>
+  </section>
+
+  <section id="t-activity" hidden>
+    <div class="card"><h2>Your requests</h2><div id="my-requests"></div></div>
+    <div class="card"><h2>Integration activity</h2><p class="note">Every marketplace action and every Jira/Monday connection change for this account.</p><div id="audit"></div></div>
+  </section>
+</main>
+<div class="shade" id="shade"></div>
+<aside class="drawer" id="drawer" aria-label="Integration details"></aside>
+<div class="toast" id="toast" role="status"></div>
+<script>
+const API = 'https://hzf92ft6j7.execute-api.eu-west-1.amazonaws.com/default/';
+const params = new URLSearchParams(location.search);
+let accountId = params.get('account_id');
+const q = () => accountId ? '?account_id=' + encodeURIComponent(accountId) : '';
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const chip = (cls, t) => `<span class="chip ${cls}">${esc(t)}</span>`;
+const fmt = d => d ? new Date(d).toLocaleString() : '—';
+const STATUS_CLS = {'Available': 'c-green', 'Planned': 'c-blue', 'On request': 'c-grey'};
+const HEALTH = {ok: ['c-green', 'Healthy'], stale: ['c-yellow', 'Stale'], failing: ['c-red', 'Failing'], needs_reauth: ['c-red', 'Needs re-authorization'], waiting: ['c-blue', 'Waiting for data']};
+const healthChip = h => chip((HEALTH[h] || ['c-grey'])[0], (HEALTH[h] || [null, h])[1]);
+let data = null, cat = '', compare = [];
+
+$('nav-dash').onclick = () => location.href = 'niagaros-dashboard.html' + q();
+$('nav-int').onclick = () => location.href = 'integrations.html' + q();
+$('nav-notif').onclick = () => location.href = 'notification_settings.html' + q();
+
+function toast(t){ const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = 'none', 3500); }
+function showError(t){ const el = $('error'); el.textContent = t; el.hidden = !t; }
+
+async function api(method, extra){
+  const opts = method === 'GET' ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cloud_account_id: accountId, ...extra})};
+  const url = API + 'marketplace' + (method === 'GET' ? '?' + new URLSearchParams({cloud_account_id: accountId, ...(extra || {})}) : '');
+  const r = await fetch(url, opts);
+  let b = {}; try { b = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(b.error || ('The marketplace could not be loaded (HTTP ' + r.status + ').'));
+  return b;
+}
+
+function setupHref(page){
+  if (page.startsWith('/')) return page;
+  return page + q();
+}
+
+async function load(){
+  try {
+    if (!accountId) {
+      const d = await fetch(API + 'get-dashboard-data').then(r => r.json());
+      accountId = (d.accounts || [])[0] && d.accounts[0].id;
+      if (!accountId) { showError('Connect an AWS account first; the marketplace works per account.'); return; }
+    }
+    data = await api('GET');
+    showError('');
+    renderAll();
+    const open = params.get('integration'); if (open) openDetail(open);
+  } catch (e) { showError(e.message); }
+}
+
+function renderAll(){
+  const c = data.counts;
+  $('metrics').innerHTML = [[c.total, 'integrations in the catalog'], [c.Available, 'available to connect now'], [c.Planned, 'planned'],
+    [c['On request'], 'on request'], [c.connected, 'connected to this account']].map(([v, l]) => `<div class="metric"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div></div>`).join('');
+  const all = data.integrations;
+  $('cats').innerHTML = `<button class="cat ${cat ? '' : 'on'}" data-cat=""><span>All categories</span><span>${all.length}</span></button>` +
+    data.categories.map(k => `<button class="cat ${cat === k.name ? 'on' : ''}" data-cat="${esc(k.name)}"><span>${esc(k.name)}</span><span>${k.count}</span></button>`).join('');
+  const opts = (id, vals) => { const el = $(id); const cur = el.value; el.innerHTML = el.options[0].outerHTML + [...new Set(vals)].sort().map(v => `<option>${esc(v)}</option>`).join(''); el.value = cur; };
+  opts('f-object', all.flatMap(i => i.objects));
+  opts('f-auth', all.flatMap(i => i.auth_methods));
+  opts('f-fw', all.flatMap(i => i.frameworks));
+  opts('f-deploy', all.map(i => i.deployment).filter(Boolean));
+  renderRecs(); renderCards(); renderConnected(); renderActivity();
+}
+
+function renderRecs(){
+  const recs = data.recommendations || [];
+  $('recs-card').hidden = !recs.length;
+  $('recs').innerHTML = recs.map(r => `<div class="rec"><div><div class="t">${esc(r.name)} ${r.kind === 'fix' ? chip('c-red', 'Fix') : r.kind === 'request' ? chip('c-grey', 'Request') : chip('c-green', 'Connect')}</div>
+    <div class="r">${esc(r.reason)}${(r.alternatives || []).length ? ' Alternatives: ' + r.alternatives.map(a => esc((data.integrations.find(i => i.slug === a) || {}).name || a)).join(', ') + '.' : ''}</div></div>
+    <button class="ghost" data-open="${esc(r.slug)}">View</button></div>`).join('');
+}
+
+function filtered(){
+  const term = $('q').value.trim().toLowerCase();
+  const st = $('f-status').value, ob = $('f-object').value, au = $('f-auth').value, fw = $('f-fw').value, dp = $('f-deploy').value;
+  let list = data.integrations.filter(i => (!cat || i.category === cat) && (!st || i.status === st) && (!ob || i.objects.includes(ob)) &&
+    (!au || i.auth_methods.includes(au)) && (!fw || i.frameworks.includes(fw)) && (!dp || i.deployment === dp) &&
+    (!term || [i.name, i.vendor, i.category, i.delivers, ...i.objects].join(' ').toLowerCase().includes(term)));
+  if ($('sort').value === 'popular') list = list.slice().sort((a, b) => ((b.installs || 0) + b.requests) - ((a.installs || 0) + a.requests) || a.name.localeCompare(b.name));
+  else list = list.slice().sort((a, b) => (a.status === 'Available' ? 0 : 1) - (b.status === 'Available' ? 0 : 1) || a.name.localeCompare(b.name));
+  return list;
+}
+
+function renderCards(){
+  const list = filtered();
+  $('count').textContent = list.length + ' of ' + data.integrations.length + ' integrations';
+  $('cards').innerHTML = list.length ? list.map(i => `<div class="ic" data-open="${esc(i.slug)}" tabindex="0" role="button" aria-label="${esc(i.name)} details">
+    <div class="top"><div><div class="nm">${esc(i.name)}</div><div class="vd">${esc(i.vendor)} · ${esc(i.category)}</div></div>${chip(STATUS_CLS[i.status], i.status)}</div>
+    <div class="ds">${esc(i.delivers)}</div>
+    <div class="chips">${i.objects.map(o => chip('c-purple', o)).join('')}</div>
+    <div class="ft"><span>${i.connection ? healthChip(i.connection.health) + ' ' : ''}${i.installs != null ? esc(i.installs) + ' account' + (i.installs === 1 ? '' : 's') + ' use it' : (i.requests ? esc(i.requests) + ' request' + (i.requests === 1 ? '' : 's') : '')}${i.rating ? ' · ★ ' + esc(i.rating.average) + ' (' + esc(i.rating.count) + ')' : ''}${i.requested ? ' · ' + chip('c-blue', 'You requested this') : ''}</span>
+    <label class="cmp"><input type="checkbox" data-cmp="${esc(i.slug)}" ${compare.includes(i.slug) ? 'checked' : ''}> Compare</label></div></div>`).join('') : '<p class="empty">No integration matches these filters. You can request the tool below.</p>';
+  renderCompareBar();
+}
+
+function renderCompareBar(){
+  $('cmpbar').style.display = compare.length ? 'flex' : 'none';
+  $('cmptext').textContent = compare.length + ' selected (up to 3)';
+  $('cmpgo').disabled = compare.length < 2;
+}
+
+function renderConnected(){
+  $('health-note').textContent = data.notes.health;
+  const rows = data.connected || [];
+  $('connected').innerHTML = rows.length ? `<table><thead><tr><th>Integration</th><th>Health</th><th>Why</th><th>Last successful sync</th><th></th></tr></thead><tbody>` +
+    rows.map(c => `<tr><td><b>${esc(c.name)}</b>${c.label ? '<br><span class="note">' + esc(c.label) + '</span>' : ''}${c.items > 1 ? '<br><span class="note">' + esc(c.items) + ' connections</span>' : ''}</td><td>${healthChip(c.health)}</td><td>${esc(c.health_reason)}</td><td>${fmt(c.last_sync)}</td>
+      <td><button class="ghost" data-open="${esc(c.slug)}">Manage</button></td></tr>`).join('') + '</tbody></table>'
+    : '<p class="empty">Nothing is connected to this account yet. Start with a recommendation on the Browse tab.</p>';
+}
+
+function renderActivity(){
+  const reqs = data.integrations.filter(i => i.requested).map(i => ({slug: i.slug, name: i.name})).concat(data.my_requests || []);
+  $('my-requests').innerHTML = reqs.length ? `<table><thead><tr><th>Integration</th><th>Requested by accounts</th><th></th></tr></thead><tbody>` +
+    reqs.map(r => { const i = data.integrations.find(x => x.slug === r.slug); return `<tr><td>${esc(r.name)}${i ? '' : ' ' + chip('c-grey', 'not in catalog')}</td><td>${i ? esc(i.requests) : '—'}</td>
+      <td><button class="ghost" data-withdraw="${esc(r.slug)}">Withdraw</button></td></tr>`; }).join('') + '</tbody></table>'
+    : '<p class="empty">You have not requested any integration yet.</p>';
+  const a = data.audit || [];
+  $('audit').innerHTML = a.length ? `<table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Integration</th></tr></thead><tbody>` +
+    a.map(e => `<tr><td>${fmt(e.at)}</td><td>${esc(e.actor || '—')}</td><td>${esc(String(e.action).replace(/_/g, ' '))}</td><td>${esc(e.integration || '—')}</td></tr>`).join('') + '</tbody></table>'
+    : '<p class="empty">No activity yet.</p>';
+}
+
+function list(items){ return items && items.length ? '<ul class="l">' + items.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>' : '—'; }
+
+async function openDetail(slug){
+  const dr = $('drawer');
+  dr.innerHTML = '<p class="empty">Loading…</p>'; dr.classList.add('open'); $('shade').classList.add('open');
+  let d;
+  try { d = await api('GET', {slug}); } catch (e) { dr.innerHTML = `<div class="err">${esc(e.message)}</div><button class="ghost" data-close>Close</button>`; return; }
+  const det = d.detail || {};
+  const conn = d.connection;
+  let html = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><h2 style="font-size:17px">${esc(d.name)}</h2>
+    <div class="note">${esc(d.vendor)} · ${esc(d.category)}</div></div><button class="ghost" data-close>Close</button></div>
+    <div class="chips" style="margin:6px 0 12px">${chip(STATUS_CLS[d.status], d.status)}${conn ? healthChip(conn.health) : ''}${d.certification ? chip('c-green', d.certification) : ''}</div>
+    <p style="font-size:12.5px;margin-bottom:10px">${esc(d.delivers)}</p>
+    <div class="kv"><div>Brings into Niagaros</div><div>${esc(d.objects.join(', ')) || '—'}</div>
+    <div>Provider</div><div>${esc(d.vendor)}</div>`;
+  if (d.status === 'Available') {
+    html += `<div>Maintained by</div><div>${esc(d.maintained_by)}</div>
+      <div>Authentication</div><div>${esc(det.auth_method)}</div>
+      <div>Deployment</div><div>${esc(det.deployment)}</div>
+      <div>Supported environments</div><div>${esc((det.environments || []).join(', '))}</div>
+      <div>Data types</div><div>${esc((det.data_types || []).join(', '))}</div>
+      <div>Synchronization</div><div>${esc(det.sync)}</div>
+      <div>Accounts using it</div><div>${esc(d.installs)}</div>
+      <div>Rating</div><div>${d.rating ? '★ ' + esc(d.rating.average) + ' from ' + esc(d.rating.count) + ' accounts' : esc(data.notes.ratings)}</div>
+      <div>Last code change</div><div>${esc(det.last_updated)}</div>
+      <div>Source</div><div><code style="font-size:11px">${esc(det.code)}</code></div></div>
+      <h3>Supported compliance frameworks</h3>${det.frameworks && det.frameworks.length ? '<div class="chips">' + det.frameworks.map(f => chip('c-blue', f)).join('') + '</div>' : '<p class="note">None on its own: it supports remediation and evidence of follow-up, not controls.</p>'}
+      <h3>Required permissions</h3>${list(det.permissions)}
+      <h3>Security considerations</h3>${list(det.security)}
+      <h3>Revoking access</h3><p style="font-size:12px">${esc(det.revoke)}</p>`;
+    if (conn) {
+      html += `<h3>Health</h3><div class="kv"><div>Status</div><div>${healthChip(conn.health)}</div><div>Why</div><div>${esc(conn.health_reason)}</div>
+        <div>Last successful sync</div><div>${fmt(conn.last_sync)}</div></div>
+        <p style="margin-top:10px"><a href="${esc(setupHref(det.setup.page))}" class="manage"><button>Manage, re-authorize or disconnect</button></a></p>`;
+    } else {
+      html += `<h3>Connect in ${det.setup.steps.length + 1} steps</h3><ol class="steps" id="wiz">
+        <li id="wiz-1"><b>Review permissions and security</b> — read the two lists above.<br><label style="display:flex;gap:6px;align-items:center;font-weight:500"><input type="checkbox" id="wiz-ok"> I have reviewed the permissions Niagaros needs</label></li>
+        ${det.setup.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+        <p style="margin-top:8px"><button id="wiz-go" data-href="${esc(setupHref(det.setup.page))}" disabled>${esc(det.setup.label)}</button></p>
+        <p class="note" style="margin-top:6px">${det.setup.validates ? 'The setup page checks the connection with the provider before anything is saved.' : 'The URL is saved as you enter it; use Send a test message there to check it works.'} Its health is shown here afterwards.</p>`;
+    }
+    html += conn ? `<div class="form"><h3 style="margin-top:0">Rate and review</h3><div class="stars" id="stars">${[1,2,3,4,5].map(n => `<button data-star="${n}" aria-label="${n} stars">★</button>`).join('')}</div>
+        <p class="note">Reviews are visible to other Niagaros customers, without your name or account. Do not include internal details.</p><textarea id="rv-msg" placeholder="What works well, what does not? (optional)" maxlength="2000"></textarea><p style="margin-top:6px"><button id="rv-go" data-slug="${esc(d.slug)}">Save review</button></p></div>
+      <div class="form"><h3 style="margin-top:0">Report a problem</h3><textarea id="is-msg" placeholder="What goes wrong?" maxlength="2000"></textarea><p style="margin-top:6px"><button class="ghost" id="is-go" data-slug="${esc(d.slug)}">Report</button></p>
+      ${d.my_issues.length ? '<p class="note" style="margin-top:6px">Reported earlier: ' + d.my_issues.map(i => esc(fmt(i.at))).join(', ') + '</p>' : ''}</div>` : '';
+  } else {
+    html += `<div>Requested by</div><div>${esc(d.requests)} account${d.requests === 1 ? '' : 's'}</div></div>
+      <p class="note" style="margin-top:12px">${d.status === 'Planned' ? 'Niagaros is building this integration. Request it to be told when it is ready and to raise its priority.' : 'Niagaros cannot connect to this tool yet. Permissions, authentication and supported frameworks are shown once the integration exists, not guessed before.'}</p>
+      <div class="form"><h3 style="margin-top:0">${d.my_request ? 'You requested this on ' + esc(fmt(d.my_request.at)) : 'Request this integration'}</h3>
+      <textarea id="rq-note" placeholder="What should it bring into Niagaros? (optional)" maxlength="2000">${esc(d.my_request ? d.my_request.note || '' : '')}</textarea>
+      <p style="margin-top:6px"><button id="rq-go" data-slug="${esc(d.slug)}">${d.my_request ? 'Update request' : 'Request'}</button> ${d.my_request ? `<button class="ghost" data-withdraw="${esc(d.slug)}">Withdraw</button>` : ''}</p></div>`;
+  }
+  const others = (d.reviews || []).filter(r => r.message);
+  if (others.length) html += `<h3>Reviews</h3>` + others.map(r => `<div class="rec"><div><div class="t">${'★'.repeat(r.rating)}${r.own ? ' ' + chip('c-blue', 'your account') : ''}</div><div class="r">${esc(r.message)}</div></div><span class="note">${fmt(r.at)}</span></div>`).join('');
+  dr.innerHTML = html;
+  const ok = $('wiz-ok');
+  if (ok) ok.onchange = () => { $('wiz-go').disabled = !ok.checked; $('wiz-1').classList.toggle('done', ok.checked); };
+}
+
+function closeDrawer(){ $('drawer').classList.remove('open'); $('shade').classList.remove('open'); }
+
+async function act(body, msg){
+  try { const r = await api('POST', body); toast(r.note || msg); data = await api('GET'); renderAll(); return true; }
+  catch (e) { toast(e.message); return false; }
+}
+
+document.addEventListener('click', async e => {
+  const t = e.target;
+  if (t.closest('[data-cmp]') || t.closest('label.cmp')) {
+    const cb = t.closest('[data-cmp]'); if (!cb) return;
+    const s = cb.dataset.cmp;
+    if (cb.checked) { if (compare.length >= 3) { cb.checked = false; toast('Compare up to 3 integrations.'); return; } compare.push(s); }
+    else compare = compare.filter(x => x !== s);
+    renderCompareBar(); return;
+  }
+  const tab = t.closest('[data-tab]');
+  if (tab) { document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b === tab)); ['browse', 'connected', 'activity'].forEach(n => $('t-' + n).hidden = n !== tab.dataset.tab); return; }
+  const c = t.closest('[data-cat]'); if (c) { cat = c.dataset.cat; document.querySelectorAll('.cat').forEach(b => b.classList.toggle('on', b === c)); renderCards(); return; }
+  const o = t.closest('[data-open]'); if (o) { openDetail(o.dataset.open); return; }
+  if (t.closest('[data-close]') || t === $('shade')) { closeDrawer(); return; }
+  const w = t.closest('[data-withdraw]'); if (w) { if (await act({action: 'withdraw_request', slug: w.dataset.withdraw}, 'Request withdrawn')) closeDrawer(); return; }
+  const st = t.closest('[data-star]'); if (st) { const n = +st.dataset.star; document.querySelectorAll('[data-star]').forEach(b => b.classList.toggle('on', +b.dataset.star <= n)); $('stars').dataset.value = n; return; }
+  if (t.id === 'wiz-go') { location.href = t.dataset.href; return; }
+  if (t.id === 'rq-go') { if (await act({action: 'request', slug: t.dataset.slug, note: $('rq-note').value}, 'Requested')) openDetail(t.dataset.slug); return; }
+  if (t.id === 'rv-go') { const n = +($('stars').dataset.value || 0); if (!n) { toast('Choose 1 to 5 stars first.'); return; } if (await act({action: 'review', slug: t.dataset.slug, rating: n, message: $('rv-msg').value}, 'Review saved')) openDetail(t.dataset.slug); return; }
+  if (t.id === 'is-go') { if (!$('is-msg').value.trim()) { toast('Describe the problem first.'); return; } if (await act({action: 'report_issue', slug: t.dataset.slug, message: $('is-msg').value}, 'Problem recorded')) openDetail(t.dataset.slug); return; }
+  if (t.id === 'new-go') { const name = $('new-name').value.trim(); if (!name) { toast('Enter the name of the tool.'); return; } if (await act({action: 'request', name, note: $('new-note').value}, 'Requested')) { $('new-name').value = ''; $('new-note').value = ''; } return; }
+  if (t.id === 'cmpclear') { compare = []; renderCards(); return; }
+  if (t.id === 'cmpgo') { showCompare(); return; }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDrawer();
+  if (e.key === 'Enter' && e.target.matches('.ic')) openDetail(e.target.dataset.open);
+});
+['q', 'f-status', 'f-object', 'f-auth', 'f-fw', 'f-deploy', 'sort'].forEach(id => $(id).addEventListener('input', renderCards));
+
+function showCompare(){
+  const items = compare.map(s => data.integrations.find(i => i.slug === s)).filter(Boolean);
+  const row = (label, fn) => `<tr><th>${esc(label)}</th>${items.map(i => `<td>${fn(i)}</td>`).join('')}</tr>`;
+  $('drawer').innerHTML = `<div style="display:flex;justify-content:space-between"><h2 style="font-size:17px">Compare</h2><button class="ghost" data-close>Close</button></div>
+    <table style="margin-top:10px"><tbody>${row('Integration', i => '<b>' + esc(i.name) + '</b>')}${row('Availability', i => chip(STATUS_CLS[i.status], i.status))}
+    ${row('Category', i => esc(i.category))}${row('Delivers', i => esc(i.delivers))}${row('Brings into Niagaros', i => esc(i.objects.join(', ')))}
+    ${row('Authentication', i => esc(i.auth_methods.join(', ') || '—'))}${row('Deployment', i => esc(i.deployment || '—'))}
+    ${row('Frameworks', i => esc(i.frameworks.length ? i.frameworks.length + ' frameworks' : '—'))}${row('Accounts using it', i => esc(i.installs == null ? '—' : i.installs))}
+    ${row('Requests', i => esc(i.requests))}${row('Rating', i => i.rating ? '★ ' + esc(i.rating.average) : '—')}${row('This account', i => i.connection ? healthChip(i.connection.health) : (i.requested ? 'requested' : '—'))}</tbody></table>`;
+  $('drawer').classList.add('open'); $('shade').classList.add('open');
+}
+
+load();
+</script>
+</body>
+</html>

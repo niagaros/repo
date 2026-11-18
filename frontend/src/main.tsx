@@ -20,6 +20,8 @@ import Training        from "./settings/Training";
 import OnboardingHome  from "./onboarding/OnboardingHome";
 import MfaSetup        from "./mfa/MfaSetup";
 import OnboardingAnalytics from "./analytics/OnboardingAnalytics";
+import PrivacySecurity from "./settings/PrivacySecurity";
+import AccountRecovery from "./settings/AccountRecovery";
 
 async function bootstrap() {
   try {
@@ -72,6 +74,8 @@ async function bootstrap() {
           {/* For Niagaros, not for the customer: the backend refuses anyone else.
               Deliberately not in the settings sidebar. */}
           <Route path="/analytics/onboarding"    element={<OnboardingAnalytics />} />
+          <Route path="/settings/user/privacy-security" element={<PrivacySecurity />} />
+          <Route path="/account-recovery"        element={<AccountRecovery />} />
 
           {/* ── Existing app (login / onboarding / dashboard redirect) ── */}
           <Route path="/*" element={<App />} />

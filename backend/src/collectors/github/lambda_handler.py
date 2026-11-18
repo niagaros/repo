@@ -13,7 +13,10 @@ Prerequisites:
     - A row in github_integrations (cloud_account_id, org_name, github_token_secret)
     - github_token_secret: Secrets Manager secret name whose SecretString is either
       plain-text PAT or {"github_token": "<pat>"}
-    - PAT minimum scopes: repo, read:org, admin:org (for 2FA member list)
+    - PAT minimum scopes: repo, read:org. Some checks need an organisation owner (2FA lists, member privilege
+      settings) or repository admin (branch protection, Dependabot, secret scanning). When the token cannot read
+      what a check needs, that check is recorded as NOT CHECKED with the reason; it is never turned into a PASS
+      or FAIL from missing data.
 
 Environment variables:
     DB_SECRET_NAME   (default: cspm/database/credentials)
@@ -85,6 +88,35 @@ class GitHubClient:
             "X-GitHub-Api-Version": "2022-11-28",
         })
 
+    def _fetch(self, path: str, accept: str = None, **kw) -> Tuple[int, Optional[Any]]:
+        """(HTTP status, JSON body or None). Status 0 = the request itself failed."""
+        h = {"Accept": accept} if accept else {}
+        try:
+            r = self.s.get(f"{GITHUB_API}{path}", headers=h, timeout=30, **kw)
+            body = None
+            if r.status_code == 200 and r.content:
+                try:
+                    body = r.json()
+                except ValueError:
+                    body = None
+            return r.status_code, body
+        except Exception as e:
+            logger.warning("GitHub GET %s: %s", path, e)
+            return 0, None
+
+    def _pages_checked(self, path: str, extra_params: dict = None) -> Tuple[List[Any], bool]:
+        """All pages, and whether every page was actually readable (a refused or failed page is not 'empty')."""
+        items, page = [], 1
+        while True:
+            params = {"per_page": 100, "page": page, **(extra_params or {})}
+            status, chunk = self._fetch(path, params=params)
+            if status != 200 or not isinstance(chunk, list):
+                return items, False
+            items.extend(chunk)
+            if len(chunk) < 100:
+                return items, True
+            page += 1
+
     def _get(self, path: str, accept: str = None, **kw) -> Optional[Any]:
         h = {"Accept": accept} if accept else {}
         try:
@@ -120,38 +152,63 @@ class GitHubClient:
     def collect_snapshot(self) -> Dict[str, Any]:
         logger.info("Collecting GitHub snapshot for org: %s", self.org)
 
-        org_data = self._get(f"/orgs/{self.org}") or {}
-        repos = self._pages(f"/orgs/{self.org}/repos")
-        members_no_mfa = self._pages(f"/orgs/{self.org}/members", {"filter": "2fa_disabled"})
-        collabs_no_mfa = self._pages(f"/orgs/{self.org}/outside_collaborators", {"filter": "2fa_disabled"})
+        status, org_data = self._fetch(f"/orgs/{self.org}")
+        if status != 200 or not isinstance(org_data, dict):
+            raise RuntimeError(f"the organisation could not be read (HTTP {status})")
+        unknown = []   # data this token could not read; checks that need it are NOT CHECKED
+        for field in ORG_OWNER_FIELDS:
+            if field not in org_data:          # GitHub only returns these to organisation owners
+                unknown.append(field)
+        repos, repos_ok = self._pages_checked(f"/orgs/{self.org}/repos")
+        if not repos_ok:
+            unknown.append("repositories")
+        members_no_mfa, ok = self._pages_checked(f"/orgs/{self.org}/members", {"filter": "2fa_disabled"})
+        if not ok:
+            unknown.append("members_without_mfa")
+        collabs_no_mfa, ok = self._pages_checked(f"/orgs/{self.org}/outside_collaborators", {"filter": "2fa_disabled"})
+        if not ok:
+            unknown.append("collaborators_without_mfa")
 
         repo_details = []
         for repo in repos:
             rname = repo["name"]
             default_branch = repo.get("default_branch", "main")
-            bp = self._get(f"/repos/{self.org}/{rname}/branches/{default_branch}/protection")
+            is_admin = bool((repo.get("permissions") or {}).get("admin"))
+            repo_unknown = []
 
-            has_codeowners = (
-                self._status(f"/repos/{self.org}/{rname}/contents/CODEOWNERS") == 200
-                or self._status(f"/repos/{self.org}/{rname}/contents/.github/CODEOWNERS") == 200
-                or self._status(f"/repos/{self.org}/{rname}/contents/docs/CODEOWNERS") == 200
-            )
-            has_security_md = (
-                self._status(f"/repos/{self.org}/{rname}/contents/SECURITY.md") == 200
-                if not repo.get("private") else None
-            )
-            vuln_alerts = (
-                self._status(
-                    f"/repos/{self.org}/{rname}/vulnerability-alerts",
-                    accept="application/vnd.github+json",
-                ) == 204
-            )
-            full_repo = self._get(f"/repos/{self.org}/{rname}") or {}
-            secret_scanning = (
-                full_repo.get("security_and_analysis", {})
-                .get("secret_scanning", {})
-                .get("status") == "enabled"
-            )
+            # Branch protection: 200 = rules, 404 = none — but only an admin gets a meaningful 404.
+            st, bp = self._fetch(f"/repos/{self.org}/{rname}/branches/{default_branch}/protection")
+            if st == 200 and isinstance(bp, dict):
+                pass
+            elif st == 404 and is_admin:
+                bp = None
+            else:
+                bp = None
+                repo_unknown.append("branch_protection")
+
+            co = [self._status(f"/repos/{self.org}/{rname}/contents/{p}") for p in ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS")]
+            has_codeowners = True if 200 in co else (False if all(c == 404 for c in co) else None)
+            if has_codeowners is None:
+                repo_unknown.append("codeowners")
+
+            has_security_md = None
+            if not repo.get("private"):
+                st = self._status(f"/repos/{self.org}/{rname}/contents/SECURITY.md")
+                has_security_md = True if st == 200 else (False if st == 404 else None)
+                if has_security_md is None:
+                    repo_unknown.append("security_md")
+
+            # Dependabot alerts: 204 = on, 404 = off, for admins; anything else is unknown.
+            st = self._status(f"/repos/{self.org}/{rname}/vulnerability-alerts", accept="application/vnd.github+json")
+            vuln_alerts = True if st == 204 else (False if st == 404 and is_admin else None)
+            if vuln_alerts is None:
+                repo_unknown.append("vulnerability_alerts")
+
+            st, full_repo = self._fetch(f"/repos/{self.org}/{rname}")
+            ss = ((full_repo or {}).get("security_and_analysis") or {}).get("secret_scanning")
+            secret_scanning = (ss.get("status") == "enabled") if isinstance(ss, dict) and ss.get("status") else None
+            if secret_scanning is None:
+                repo_unknown.append("secret_scanning")   # only shown to repository admins
 
             repo_details.append({
                 "name": rname,
@@ -164,6 +221,8 @@ class GitHubClient:
                 "has_security_md": has_security_md,
                 "vulnerability_alerts": vuln_alerts,
                 "secret_scanning": secret_scanning,
+                "is_admin": is_admin,
+                "unknown": repo_unknown,
             })
             logger.info("Collected repo: %s (branch_protection=%s)", rname, bool(bp))
 
@@ -174,7 +233,38 @@ class GitHubClient:
             "repos": repo_details,
             "members_without_mfa": members_no_mfa,
             "collaborators_without_mfa": collabs_no_mfa,
+            "unknown": unknown,
         }
+
+
+ORG_OWNER_FIELDS = ("two_factor_requirement_enabled", "members_can_create_repositories",
+                    "members_can_delete_repositories", "default_repository_permission")
+
+# What each check needs; when any of it could not be read, the check is NOT CHECKED.
+ORG_NEEDS = {"github_1.2.2": ["members_can_create_repositories"], "github_1.2.3": ["members_can_delete_repositories"],
+             "github_1.3.4": ["collaborators_without_mfa"], "github_1.3.5": ["two_factor_requirement_enabled", "members_without_mfa"],
+             "github_1.3.8": ["default_repository_permission"], "github_1.3.9": []}
+BP_CHECKS = ("github_1.1.3", "github_1.1.4", "github_1.1.7", "github_1.1.9", "github_1.1.11", "github_1.1.12",
+             "github_1.1.13", "github_1.1.14", "github_1.1.16", "github_1.1.17", "github_1.1.20")
+REPO_NEEDS = {**{c: ["branch_protection"] for c in BP_CHECKS}, "github_1.1.6": ["codeowners"], "github_1.2.1": ["security_md"],
+              "github_1.5.1": ["secret_scanning"], "github_1.5.5": ["vulnerability_alerts"]}
+WHY = {"two_factor_requirement_enabled": "only organisation owners can see the 2FA requirement",
+       "members_without_mfa": "only organisation owners can list members without 2FA",
+       "collaborators_without_mfa": "only organisation owners can list outside collaborators",
+       "members_can_create_repositories": "only organisation owners can see member privileges",
+       "members_can_delete_repositories": "only organisation owners can see member privileges",
+       "default_repository_permission": "only organisation owners can see the base permission",
+       "branch_protection": "branch protection is only visible to repository admins",
+       "codeowners": "the repository contents could not be read",
+       "security_md": "the repository contents could not be read",
+       "vulnerability_alerts": "the Dependabot setting is only visible to repository admins",
+       "secret_scanning": "the secret-scanning setting is only visible to repository admins",
+       "repositories": "the organisation's repositories could not be listed"}
+
+
+def _not_checked(control_id: str, resource_id: str, missing: List[str]) -> Dict:
+    return {"control_id": control_id, "resource_id": resource_id, "status": "NOT_CHECKED",
+            "reason": "; ".join(sorted({WHY.get(m, m) for m in missing})), "missing": missing}
 
 
 # ── CIS check helpers ─────────────────────────────────────────────────────────
@@ -495,54 +585,60 @@ def check_1_5_5(repo: Dict, org: str) -> Dict:
 
 # ── Run all checks ────────────────────────────────────────────────────────────
 
-def run_checks(snapshot: Dict) -> List[Dict]:
+ORG_CHECKS = (("github_1.2.2", lambda s, o: check_1_2_2(s["org"], o)), ("github_1.2.3", lambda s, o: check_1_2_3(s["org"], o)),
+              ("github_1.3.4", check_1_3_4), ("github_1.3.5", check_1_3_5),
+              ("github_1.3.8", lambda s, o: check_1_3_8(s["org"], o)), ("github_1.3.9", lambda s, o: check_1_3_9(s["org"], o)))
+REPO_CHECKS = (("github_1.1.3", check_1_1_3), ("github_1.1.4", check_1_1_4), ("github_1.1.6", check_1_1_6),
+               ("github_1.1.7", check_1_1_7), ("github_1.1.9", check_1_1_9), ("github_1.1.11", check_1_1_11),
+               ("github_1.1.12", check_1_1_12), ("github_1.1.13", check_1_1_13), ("github_1.1.14", check_1_1_14),
+               ("github_1.1.16", check_1_1_16), ("github_1.1.17", check_1_1_17), ("github_1.1.20", check_1_1_20),
+               ("github_1.2.1", check_1_2_1), ("github_1.5.1", check_1_5_1), ("github_1.5.5", check_1_5_5))
+
+
+def run_checks(snapshot: Dict) -> Tuple[List[Dict], List[Dict]]:
+    """(findings, not_checked). A check whose input could not be read is never scored."""
     org = snapshot["org_name"]
-    org_data = snapshot.get("org", {})
-    findings = []
-
-    # Organization-level
-    findings += [
-        check_1_2_2(org_data, org),
-        check_1_2_3(org_data, org),
-        check_1_3_4(snapshot, org),
-        check_1_3_5(snapshot, org),
-        check_1_3_8(org_data, org),
-        check_1_3_9(org_data, org),
-    ]
-
-    # Per-repository
+    unknown = set(snapshot.get("unknown") or [])
+    findings, not_checked = [], []
+    for cid, fn in ORG_CHECKS:
+        missing = [k for k in ORG_NEEDS[cid] if k in unknown]
+        if cid == "github_1.3.9" and "is_verified" not in (snapshot.get("org") or {}):
+            missing = ["is_verified"]
+        if missing:
+            not_checked.append(_not_checked(cid, org, missing))
+        else:
+            findings.append(fn(snapshot, org))
     for repo in snapshot.get("repos", []):
-        findings += [
-            check_1_1_3(repo, org),
-            check_1_1_4(repo, org),
-            check_1_1_6(repo, org),
-            check_1_1_7(repo, org),
-            check_1_1_9(repo, org),
-            check_1_1_11(repo, org),
-            check_1_1_12(repo, org),
-            check_1_1_13(repo, org),
-            check_1_1_14(repo, org),
-            check_1_1_16(repo, org),
-            check_1_1_17(repo, org),
-            check_1_1_20(repo, org),
-            check_1_2_1(repo, org),
-            check_1_5_1(repo, org),
-            check_1_5_5(repo, org),
-        ]
-
-    return findings
+        r_unknown = set(repo.get("unknown") or [])
+        for cid, fn in REPO_CHECKS:
+            if cid == "github_1.2.1" and repo.get("private"):
+                continue                       # SECURITY.md applies to public repositories only
+            missing = [k for k in REPO_NEEDS[cid] if k in r_unknown]
+            if missing:
+                not_checked.append(_not_checked(cid, f"{org}/{repo['name']}", missing))
+            else:
+                findings.append(fn(repo, org))
+    if "repositories" in unknown:
+        not_checked.append(_not_checked("github_1.1.*", org, ["repositories"]))
+    return findings, not_checked
 
 
 # ── DB writer ─────────────────────────────────────────────────────────────────
 
 def save_results(conn, findings: List[Dict], snapshot: Dict,
-                 cloud_account_id: str) -> Dict[str, int]:
+                 cloud_account_id: str, not_checked: Optional[List[Dict]] = None) -> Dict[str, int]:
     org = snapshot["org_name"]
 
     # Collect unique resources referenced by findings
-    unique_resources: Dict[str, str] = {}
+    unique_resources: Dict[str, str] = {org: "github_organization"}
     for f in findings:
         unique_resources[f["resource_id"]] = f["resource_type"]
+    for repo in snapshot.get("repos", []):
+        unique_resources.setdefault(f"{org}/{repo['name']}", "github_repository")
+    for n in not_checked or []:
+        unique_resources.setdefault(n["resource_id"], "github_repository" if "/" in n["resource_id"] else "github_organization")
+    org_config = json.dumps({"not_checked": not_checked or [], "collected_at": snapshot.get("collected_at"),
+                             "note": "Checks listed here were not scored because the connected token could not read their data."})
 
     resource_id_map: Dict[str, str] = {}
     resources_upserted = 0
@@ -556,14 +652,15 @@ def save_results(conn, findings: List[Dict], snapshot: Dict,
                 INSERT INTO resources
                     (cloud_account_id, resource_type, resource_id,
                      resource_name, region, config, last_scanned_at)
-                VALUES (%s, %s, %s, %s, 'global', '{}', NOW())
+                VALUES (%s, %s, %s, %s, 'global', %s, NOW())
                 ON CONFLICT (cloud_account_id, resource_id)
                 DO UPDATE SET
                     resource_name   = EXCLUDED.resource_name,
+                    config          = CASE WHEN %s THEN EXCLUDED.config ELSE resources.config END,
                     last_scanned_at = NOW()
                 RETURNING id
                 """,
-                (cloud_account_id, rtype, rid, name),
+                (cloud_account_id, rtype, rid, name, org_config if rid == org else "{}", rid == org),
             )
             resource_id_map[rid] = str(cur.fetchone()[0])
             resources_upserted += 1
@@ -606,6 +703,23 @@ def save_results(conn, findings: List[Dict], snapshot: Dict,
             )
             findings_upserted += 1
 
+        # A check that could not be read this time keeps its last known result, marked as not re-checked; its
+        # detected_at is not refreshed, so the dashboard shows it as stale. Deleting it would make reports call it
+        # resolved. SECURITY.md does not apply to private repositories at all: an old result for one is removed.
+        removed = 0
+        for n in not_checked or []:
+            rid = resource_id_map.get(n["resource_id"])
+            if rid and not n["control_id"].endswith("*"):
+                cur.execute("""UPDATE findings SET details = COALESCE(details, '{}'::jsonb) || %s::jsonb
+                               WHERE resource_id = %s AND check_id = %s AND framework = %s""",
+                            (json.dumps({"not_rechecked": n["reason"], "not_rechecked_at": snapshot.get("collected_at")}),
+                             rid, n["control_id"], FRAMEWORK))
+                removed += cur.rowcount
+        for repo in snapshot.get("repos", []):
+            if repo.get("private") and f"{org}/{repo['name']}" in resource_id_map:
+                cur.execute("DELETE FROM findings WHERE resource_id = %s AND check_id = 'github_1.2.1' AND framework = %s",
+                            (resource_id_map[f"{org}/{repo['name']}"], FRAMEWORK))
+
         total = len(findings)
         passed = sum(1 for f in findings if f["status"] == "PASS")
         score = round((passed / total) * 100) if total else 0
@@ -621,7 +735,7 @@ def save_results(conn, findings: List[Dict], snapshot: Dict,
         resources_upserted, findings_upserted, score,
     )
     return {"resources_upserted": resources_upserted,
-            "findings_upserted": findings_upserted, "score": score}
+            "findings_upserted": findings_upserted, "score": score, "results_marked_not_rechecked": removed}
 
 
 # ── Lambda entry point ────────────────────────────────────────────────────────
@@ -648,21 +762,22 @@ def lambda_handler(event, context):
 
         logger.info("Starting CIS GitHub scan for org=%s", org_name)
         snapshot = GitHubClient(token, org_name).collect_snapshot()
-        findings = run_checks(snapshot)
+        findings, not_checked = run_checks(snapshot)
 
         total = len(findings)
         passed = sum(1 for f in findings if f["status"] == "PASS")
         failed = total - passed
-        logger.info("Scan complete: total=%d passed=%d failed=%d", total, passed, failed)
+        logger.info("Scan complete: total=%d passed=%d failed=%d not_checked=%d", total, passed, failed, len(not_checked))
 
-        db_stats = save_results(conn, findings, snapshot, cloud_account_id)
+        db_stats = save_results(conn, findings, snapshot, cloud_account_id, not_checked)
 
         return {
             "statusCode": 200,
             "body": {
                 "org": org_name,
                 "collected_at": snapshot["collected_at"],
-                "summary": {"total": total, "passed": passed, "failed": failed},
+                "summary": {"total": total, "passed": passed, "failed": failed, "not_checked": len(not_checked)},
+                "not_checked": not_checked,
                 "db": db_stats,
             },
         }

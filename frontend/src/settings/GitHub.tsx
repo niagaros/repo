@@ -122,7 +122,9 @@ export default function GitHub() {
       return;
     }
     const redirectUri = encodeURIComponent(window.location.origin + "/settings/github");
-    const scope = encodeURIComponent("read:org");
+    // read:org for the organisation checks; repo so the AI Inventory can read private repositories and their
+    // Dependabot alerts (GitHub has no read-only variant of this scope for OAuth apps).
+    const scope = encodeURIComponent("read:org repo");
     window.location.href =
       `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=${scope}&redirect_uri=${redirectUri}`;
   };
