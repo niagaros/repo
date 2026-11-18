@@ -202,11 +202,29 @@ def _funnel(orgs: list, completions: dict, steps: list) -> list:
 
         # Indicator 9: the median, because one customer who returns after three
         # months would drag a mean past the point of saying anything.
+        #
+        # The duration is the time from the previous step to this one, and that
+        # question only means something for a customer who did them in that
+        # order. The wizard presents seven steps as a sequence but enforces no
+        # order, so a customer can invite an auditor before a team member. Such
+        # a customer produced a *negative* number of days, which production
+        # showed as "median -7 days" on the auditor step — a duration that
+        # cannot exist, printed as if it could.
+        #
+        # Clamping at zero would hide that. Instead the median is taken over
+        # the customers the label actually describes, and the ones left out are
+        # counted beside it: `out_of_order` is not noise to be swallowed but a
+        # finding about how the wizard is really used.
         durations = []
+        out_of_order = 0
         for oid in completed:
             done = completions[oid]
             start = done[previous] if previous else next(o["created_at"] for o in orgs if o["id"] == oid)
-            durations.append(_days_between(start, done[step]))
+            days = _days_between(start, done[step])
+            if days < 0:
+                out_of_order += 1
+                continue
+            durations.append(days)
 
         out.append({
             "step": step,
@@ -217,6 +235,8 @@ def _funnel(orgs: list, completions: dict, steps: list) -> list:
             # anecdote, and the reader should be able to see that.
             "dropoff_pct": round((1 - len(completed) / len(reached)) * 100) if reached else None,
             "median_days": round(median(durations), 1) if durations else None,
+            # How many completions the median above leaves out, and why.
+            "out_of_order": out_of_order,
             # Only while the claim still holds: one organization through the
             # step is enough to disprove "nobody can finish this".
             "blocked_reason": BLOCKED_STEPS.get(step) if not completed else None,

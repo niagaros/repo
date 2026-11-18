@@ -244,3 +244,52 @@ def test_the_access_route_and_the_data_route_answer_from_the_same_rule(role, org
 def test_an_unknown_caller_is_unauthorized_at_the_access_route_too():
     with patch.object(ah, "_get_caller", return_value=None):
         assert ah.handle_get_access({}, db=None)["statusCode"] == 401
+
+
+def test_a_step_finished_before_the_one_it_is_measured_against_is_left_out():
+    # Production printed "median -7 days" on the auditor step. The wizard shows
+    # seven steps in order but enforces none, so a customer can invite an
+    # auditor before a team member, and the time *since the previous step* is
+    # then negative. A duration that cannot exist was being printed as if it
+    # could.
+    #
+    # Clamping at zero would have hidden it. The median is taken over the
+    # customers the label describes, and the rest are counted beside it.
+    orgs = [org("op-volgorde", 20), org("door-elkaar", 20)]
+    completions = {
+        "op-volgorde": {"infrastructure": at(18), "team": at(16), "auditor": at(12)},
+        # auditor finished four days *before* team
+        "door-elkaar": {"infrastructure": at(18), "team": at(10), "auditor": at(14)},
+    }
+    auditor = next(f for f in ah._funnel(orgs, completions, STEPS) if f["step"] == "auditor")
+
+    assert auditor["completed"] == 2, "beide organisaties hebben de stap afgerond"
+    assert auditor["out_of_order"] == 1, "een ervan deed hem buiten de volgorde"
+    assert auditor["median_days"] == 4.0, "de mediaan telt alleen de organisatie op volgorde"
+
+
+def test_no_funnel_step_ever_reports_a_negative_duration():
+    # The guarantee in one line: whatever the order of the completions, a
+    # duration shown to a reader is zero or more. This is the assertion that
+    # would have caught the production defect.
+    orgs = [org(f"o{i}", 30) for i in range(4)]
+    completions = {
+        "o0": {"infrastructure": at(28), "team": at(26), "auditor": at(24), "workspace": at(22)},
+        "o1": {"infrastructure": at(28), "team": at(20), "auditor": at(25), "workspace": at(10)},
+        "o2": {"infrastructure": at(10), "team": at(28), "auditor": at(27), "workspace": at(26)},
+        "o3": {"infrastructure": at(29), "team": at(29), "auditor": at(29), "workspace": at(29)},
+    }
+    for row in ah._funnel(orgs, completions, STEPS):
+        if row["median_days"] is not None:
+            assert row["median_days"] >= 0, f"{row['step']} gaf {row['median_days']} dagen"
+
+
+def test_the_note_disappears_when_everyone_kept_to_the_order():
+    # out_of_order is a count, not a flag, and it is zero when there is nothing
+    # to explain — so the page does not print a caveat beside a clean number.
+    orgs = [org("a", 20), org("b", 20)]
+    completions = {
+        "a": {"infrastructure": at(18), "team": at(16), "auditor": at(14)},
+        "b": {"infrastructure": at(17), "team": at(15), "auditor": at(13)},
+    }
+    assert all(f["out_of_order"] == 0 for f in ah._funnel(orgs, completions, STEPS))
