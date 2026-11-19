@@ -1170,12 +1170,12 @@ function generatePDF(type){
   const sc={'CRITICAL':'#ef4444','HIGH':'#f97316','MEDIUM':'#f59e0b','LOW':'#3b82f6'};
   const rows = findings.map(f=>`
     <tr>
-      <td style="color:${sc[f.severity]||'#6b7280'};font-weight:700;white-space:nowrap">${f.severity}</td>
-      <td style="font-family:monospace;font-size:11px;white-space:nowrap">${f.check_id||''}</td>
-      <td>${(f.title||f.check_id||'').substring(0,70)}</td>
-      <td style="font-size:11px;color:#6b7280">${f.resource_name||'—'}</td>
-      <td style="color:${f.result==='PASS'?'#10b981':'#ef4444'};font-weight:700;white-space:nowrap">${f.result}</td>
-      <td style="font-size:11px;color:#374151;line-height:1.45">${(f.remediation||'—').substring(0,200)}</td>
+      <td style="color:${sc[f.severity]||'#6b7280'};font-weight:700;white-space:nowrap">${esc(f.severity)}</td>
+      <td style="font-family:monospace;font-size:11px;white-space:nowrap">${esc(f.check_id||'')}</td>
+      <td>${esc((f.title||f.check_id||'').substring(0,70))}</td>
+      <td style="font-size:11px;color:#6b7280">${esc(f.resource_name||'—')}</td>
+      <td style="color:${f.result==='PASS'?'#10b981':'#ef4444'};font-weight:700;white-space:nowrap">${esc(f.result)}</td>
+      <td style="font-size:11px;color:#374151;line-height:1.45">${esc((f.remediation||'—').substring(0,200))}</td>
     </tr>`).join('');
   const S='</';
   const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+def.title+'</title>'
@@ -1201,7 +1201,7 @@ function generatePDF(type){
     +'<div class="meta-item"><div class="lbl">Passing'+S+'div><div class="val g">'+passed+S+'div>'+S+'div>'
     +'<div class="meta-item"><div class="lbl">Failing'+S+'div><div class="val r">'+failed+S+'div>'+S+'div>'
     +'<div class="meta-item"><div class="lbl">Total Checks'+S+'div><div class="val">'+findings.length+S+'div>'+S+'div>'
-    +'<div class="meta-item"><div class="lbl">Account'+S+'div><div class="val" style="font-size:14px;padding-top:6px">'+account+S+'div>'+S+'div>'
+    +'<div class="meta-item"><div class="lbl">Account'+S+'div><div class="val" style="font-size:14px;padding-top:6px">'+esc(account)+S+'div>'+S+'div>'
     +'<div class="meta-item"><div class="lbl">Generated'+S+'div><div class="val" style="font-size:13px;padding-top:7px">'+now+S+'div>'+S+'div>'
     +S+'div>'
     +'<table><thead><tr><th>Severity'+S+'th><th>Check ID'+S+'th><th>Description'+S+'th><th>Resource'+S+'th><th>Status'+S+'th><th>Remediation'+S+'th>'+S+'tr>'+S+'thead>'
