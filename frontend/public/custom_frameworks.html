@@ -368,7 +368,7 @@ function render(){
           <span class="fw-score-pill ${pillCls}">${pillTxt}</span>
           <div class="fw-actions">
             <button class="btn-ghost" onclick="runFramework('${fw.id}')">↻ Run Now</button>
-            <button class="btn-danger-txt" onclick="deleteFramework('${fw.id}','${fw.name.replace(/'/g,"\\'")}')">Delete Framework</button>
+            <button class="btn-danger-txt" onclick="deleteFramework(${esc(JSON.stringify(String(fw.id)))},${esc(JSON.stringify(fw.name||''))})">Delete Framework</button>
           </div>
         </div>
         <div class="fw-body">

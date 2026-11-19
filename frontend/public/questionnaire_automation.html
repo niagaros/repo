@@ -438,7 +438,7 @@ function renderList(){
             <div class="q-progress-track"><div class="q-progress-fill" style="width:${pct}%"></div></div>
             <div class="q-progress-lbl">${q.approved}/${q.total} approved</div>
           </div>
-          <button class="btn-danger-txt" onclick="event.stopPropagation();deleteQuestionnaire('${q.id}','${q.name.replace(/'/g,"\\'")}')">Delete</button>
+          <button class="btn-danger-txt" onclick="event.stopPropagation();deleteQuestionnaire(${esc(JSON.stringify(String(q.id)))},${esc(JSON.stringify(q.name||''))})">Delete</button>
         </div>
       </div>`;
     }).join('');
