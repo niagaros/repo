@@ -182,11 +182,12 @@ function SeverityBar({ level, failed, widest }: { level: string; failed: number;
 // counts printed above it, divided, and it is labelled as such: no threshold
 // for "compliant" has ever been defined, so the card states the share of
 // checks that passed and stops short of calling it a grade.
-function EvidenceRecord({ account, evidence, retrievedBy, retrievedAt }: {
+function EvidenceRecord({ account, evidence, retrievedBy, retrievedAt, fingerprint }: {
   account: ScopeAccount;
   evidence: Evidence;
   retrievedBy: string;
   retrievedAt: string;
+  fingerprint: string;
 }) {
   // The class has to be on the node before the print dialog reads the page,
   // so the call waits a tick instead of going out with the click.
@@ -269,10 +270,19 @@ function EvidenceRecord({ account, evidence, retrievedBy, retrievedAt }: {
       <RecordRow label="Measured at" value={tidyTimestamp(evidence.measured_at)} />
       <RecordRow label="Retrieved by" value={retrievedBy} />
       <RecordRow label="Retrieved at" value={retrievedAt} />
+      {fingerprint && (
+        <RecordRow
+          label="Record fingerprint"
+          value={<span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, wordBreak: "break-all" }}>{fingerprint}</span>}
+        />
+      )}
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 14, marginTop: 12 }}>
         <div className="ev-muted" style={{ flex: 1, color: "#4e627a", fontSize: 11, lineHeight: 1.5 }}>
-          This retrieval has been recorded in the audited organization's activity log.
+          This retrieval has been recorded in the audited organization’s activity log,
+          together with the fingerprint above. The fingerprint is a SHA-256 digest of this
+          record; it lets you show that the copy you keep is the copy you were given, and
+          it was written to that log by the platform, not by you.
         </div>
         <button
           className="ev-noprint"
@@ -292,6 +302,7 @@ export default function AuditorPortal() {
   const [engagement, setEngagement] = useState<Engagement | null>(null);
   const [scope, setScope] = useState<ScopeAccount[]>([]);
   const [evidenceByAccount, setEvidenceByAccount] = useState<Record<string, Evidence>>({});
+  const [fingerprint, setFingerprint] = useState<Record<string, string>>({});
   const [downloadError, setDownloadError] = useState<Record<string, string>>({});
   const [auditLog, setAuditLog] = useState<AuditLogEntry[] | null>(null);
   const [auditLogError, setAuditLogError] = useState("");
@@ -354,6 +365,7 @@ export default function AuditorPortal() {
         return;
       }
       setEvidenceByAccount(prev => ({ ...prev, [accountId]: data.compliance_score }));
+      setFingerprint(prev => ({ ...prev, [accountId]: data.evidence_sha256 || "" }));
       setRetrievedAt(prev => ({ ...prev, [accountId]: new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC" }));
     } catch {
       setDownloadError(prev => ({ ...prev, [accountId]: "Could not reach the server." }));
@@ -455,6 +467,7 @@ export default function AuditorPortal() {
                         evidence={evidenceByAccount[a.id]}
                         retrievedBy={email}
                         retrievedAt={retrievedAt[a.id] || ""}
+                        fingerprint={fingerprint[a.id] || ""}
                       />
                     )}
                   </div>

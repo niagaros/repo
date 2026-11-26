@@ -9,6 +9,7 @@ so the rest of the logic can be verified independently of it.
 Run from the repo root:
     .venv-test/Scripts/python.exe -I -m pytest backend/tests -v
 """
+import hashlib
 import json
 from datetime import date, timedelta
 import sys
@@ -651,18 +652,79 @@ class TestHandleDownloadEvidence:
         assert resp["statusCode"] == 403
         db.log_engagement_activity.assert_not_called()
 
+    def _download(self, db, evidence):
+        import api.auditor_handler as ah
+        db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
+        db.is_cloud_account_in_engagement_scope.return_value = True
+        db.get_cloud_account_compliance.return_value = evidence
+        with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
+            return ah.handle_download_evidence({}, db, "acct-1")
+
     def test_successful_download_logs_activity(self):
+        db = MagicMock()
+        resp = self._download(db, {"account_name": "Prod AWS", "compliance_score": {"score": 90}})
+        assert resp["statusCode"] == 200
+        details = db.log_engagement_activity.call_args.kwargs["details"]
+        assert details["cloud_account_id"] == "acct-1"
+        assert db.log_engagement_activity.call_args.args == (
+            "e1", "auditor@firm.com", "evidence_downloaded",
+        )
+
+    def test_download_carries_a_digest_the_auditor_can_recompute(self):
+        """Issue #269, acceptance criterion #5: the snapshot must be
+        verifiable, not only retrievable. An auditor holding the file has
+        to arrive at the same digest from the file alone, so the rule is
+        fixed here rather than described: sorted keys, no whitespace,
+        UTF-8, and the digest field left out of its own input."""
+        db = MagicMock()
+        evidence = {"account_name": "Prod AWS", "total_checks": 118, "passed": 107, "failed": 11}
+        resp = self._download(db, evidence)
+
+        body = json.loads(resp["body"])
+        digest = body.pop("evidence_sha256")
+        verwacht = hashlib.sha256(
+            json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        assert digest == verwacht
+
+    def test_the_log_records_the_same_digest_as_the_response(self):
+        """Without this the digest proves nothing: the auditor's file can
+        only be held against a record the auditor did not write."""
+        db = MagicMock()
+        resp = self._download(db, {"account_name": "Prod AWS", "failed": 11})
+        uit_respons = json.loads(resp["body"])["evidence_sha256"]
+        uit_log = db.log_engagement_activity.call_args.kwargs["details"]["evidence_sha256"]
+        assert uit_log == uit_respons
+
+    def test_a_different_snapshot_yields_a_different_digest(self):
+        db_een, db_twee = MagicMock(), MagicMock()
+        een = json.loads(self._download(db_een, {"failed": 11})["body"])["evidence_sha256"]
+        twee = json.loads(self._download(db_twee, {"failed": 12})["body"])["evidence_sha256"]
+        assert een != twee
+
+    def test_no_snapshot_still_produces_a_digest(self):
+        """get_cloud_account_compliance returns None when no scan has been
+        recorded. That answer is evidence too — it says "nothing was
+        measured" — so it is hashed like any other."""
+        db = MagicMock()
+        resp = self._download(db, None)
+        assert resp["statusCode"] == 200
+        assert len(json.loads(resp["body"])["evidence_sha256"]) == 64
+
+    def test_nothing_is_logged_when_the_evidence_cannot_be_read(self):
+        """A retrieval that failed on the way out must not stand in the
+        log as though it had succeeded."""
         import api.auditor_handler as ah
         db = MagicMock()
         db.get_active_engagement_for_auditor.return_value = ACTIVE_ENGAGEMENT
         db.is_cloud_account_in_engagement_scope.return_value = True
-        db.get_cloud_account_compliance.return_value = {"account_name": "Prod AWS", "compliance_score": {"score": 90}}
+        db.get_cloud_account_compliance.side_effect = RuntimeError("database unreachable")
         with patch.object(ah, "_get_authenticated_email", return_value="auditor@firm.com"):
-            resp = ah.handle_download_evidence({}, db, "acct-1")
-        assert resp["statusCode"] == 200
-        db.log_engagement_activity.assert_called_once_with(
-            "e1", "auditor@firm.com", "evidence_downloaded", details={"cloud_account_id": "acct-1"},
-        )
+            try:
+                ah.handle_download_evidence({}, db, "acct-1")
+            except RuntimeError:
+                pass
+        db.log_engagement_activity.assert_not_called()
 
     def test_download_stops_working_once_engagement_is_closed(self):
         """The literal proof of AC3: no separate revocation action was

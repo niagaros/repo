@@ -17,9 +17,13 @@ through the same Cognito pool as everyone else (hence reusing
 _get_authenticated_email from team_handler), but are recognized purely
 by email against engagement_auditors, never joining an organization.
 
-Not yet registered on API Gateway — same deployment gap as
-team_handler.py.
+Registered on API Gateway `hzf92ft6j7` since 6 October 2026, together
+with team_handler — one deployment package, two functions. The routes
+and the settings are in docs/internal/architecture/aws/
+onboarding_lambda_deploy.md. The uitrol is manual, so a change to this
+file is not live until that package is rebuilt and uploaded.
 """
+import hashlib
 import json
 import logging
 from datetime import date
@@ -33,6 +37,32 @@ logger = logging.getLogger(__name__)
 
 def _response(status: int, body: dict) -> dict:
     return {"statusCode": status, "body": json.dumps(body)}
+
+
+def _evidence_digest(payload: dict) -> str:
+    """
+    Issue #269, acceptance criterion #5: a configuration snapshot must be
+    "retrievable and verifiable". Retrieval was already there; this is the
+    verifiable half.
+
+    The digest is taken over a canonical serialization of the payload, so
+    that an auditor holding the file can recompute it and get the same
+    answer: keys sorted, no whitespace between tokens, UTF-8 bytes. The
+    digest field itself is never part of its own input.
+
+    What this does and does not prove is worth stating plainly, because
+    the difference matters to the person reading the evidence. It proves
+    that a file has not been altered since it was retrieved: the same
+    digest is written into the engagement activity log at retrieval time,
+    so an auditor can hold their file against a record they did not write.
+    It does not prove that the platform reported the truth at that moment,
+    because the platform produced both the file and the record. Closing
+    that second gap needs a signature from a key the platform cannot forge
+    on its own behalf — KMS asymmetric signing — which is a recommendation,
+    not part of this change.
+    """
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _get_auditor(event: dict, db: Database) -> dict | None:
@@ -347,7 +377,10 @@ def handle_resolve_evidence_request(event: dict, db: Database, engagement_id: st
 
 def handle_download_evidence(event: dict, db: Database, cloud_account_id: str) -> dict:
     """
-    Issue #266, acceptance criterion #4 — every download is logged.
+    Issue #266, acceptance criterion #4 — every download is logged —
+    and issue #269, acceptance criterion #5 — the retrieved snapshot is
+    verifiable, through a SHA-256 digest that goes out with the response
+    and into the activity log (see _evidence_digest).
     "Evidence" for this MVP pass is the account's own compliance data,
     the same real data #269 already scans and stores — not a fabricated
     document — and only ever the account itself, never findings for
@@ -361,12 +394,19 @@ def handle_download_evidence(event: dict, db: Database, cloud_account_id: str) -
     if not db.is_cloud_account_in_engagement_scope(engagement_id, cloud_account_id):
         return _response(403, {"error": "this cloud account is not in your engagement's approved scope"})
 
+    # The evidence is read before the retrieval is logged, not after. The
+    # log is the auditor's counterpart to the file they are holding, so it
+    # has to carry that file's digest — and a retrieval that failed on the
+    # way out should not stand in the log as though it had succeeded.
+    account = db.get_cloud_account_compliance(cloud_account_id)
+    payload = {"cloud_account_id": cloud_account_id, "compliance_score": account}
+    digest = _evidence_digest(payload)
+
     db.log_engagement_activity(
         engagement_id, auditor["email"], "evidence_downloaded",
-        details={"cloud_account_id": cloud_account_id},
+        details={"cloud_account_id": cloud_account_id, "evidence_sha256": digest},
     )
-    account = db.get_cloud_account_compliance(cloud_account_id)
-    return _response(200, {"cloud_account_id": cloud_account_id, "compliance_score": account})
+    return _response(200, {**payload, "evidence_sha256": digest})
 
 
 def handle_view_engagement_activity(event: dict, db: Database, engagement_id: str) -> dict:
