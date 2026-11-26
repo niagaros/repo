@@ -17,8 +17,11 @@ through the same Cognito pool as everyone else (hence reusing
 _get_authenticated_email from team_handler), but are recognized purely
 by email against engagement_auditors, never joining an organization.
 
-Not yet registered on API Gateway — same deployment gap as
-team_handler.py.
+Registered on API Gateway `hzf92ft6j7` since 6 October 2026, together
+with team_handler — one deployment package, two functions. The routes
+and the settings are in docs/internal/architecture/aws/
+onboarding_lambda_deploy.md. The uitrol is manual, so a change to this
+file is not live until that package is rebuilt and uploaded.
 """
 import hashlib
 import json

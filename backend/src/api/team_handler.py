@@ -500,9 +500,10 @@ def handle_onboarding_progress(event: dict, db: Database) -> dict:
 
 def lambda_handler(event, context):
     """
-    Proposed routes (payload format v2.0, matching the other Lambdas behind
-    hzf92ft6j7 — see api_inventory.md). Not yet registered on API Gateway;
-    that's a manual deploy step, same as everything else in this repo.
+    Routes (payload format v2.0, matching the other Lambdas behind
+    hzf92ft6j7 — see api_inventory.md), registered on 6 October 2026 by
+    scripts/routes-aanmelden.ps1. Uploading a changed package stays a
+    manual step, same as everything else in this repo.
 
         GET    /onboarding/progress        -> handle_onboarding_progress
         GET    /team                       -> handle_list_team (includes mfa_required)
